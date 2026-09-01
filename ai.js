@@ -1,12 +1,13 @@
 // ai.js — praat met de Claude API voor classificatie en de chat.
 const Anthropic = require("@anthropic-ai/sdk");
+const settings = require("./settings");
 
 function isConfigured() {
-  return !!process.env.ANTHROPIC_API_KEY;
+  return !!settings.getConfig().anthropicApiKey;
 }
 
 function client() {
-  return new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    return new Anthropic({ apiKey: settings.getConfig().anthropicApiKey });
 }
 
 const CLASSIFY_SYSTEM = `Je bent de AI-assistent van Mailvio, een persoonlijke mailapp voor een zelfstandige dakwerker in Vlaanderen.
