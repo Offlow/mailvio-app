@@ -1,11 +1,13 @@
 // mailbox.js — praat met de IMAP-mailbox en houdt een korte cache bij.
 const { ImapFlow } = require("imapflow");
 const { simpleParser } = require("mailparser");
+const settings = require("./settings");
 
 const MAX_MESSAGES = 25;
 
 function isConfigured() {
-return !!(process.env.IMAP_HOST && process.env.IMAP_USER && process.env.IMAP_PASSWORD);
+  const c = settings.getConfig();
+    return !!(c.imapHost && c.imapUser && c.imapPassword);
 }
 
 async function fetchRecentMails() {
@@ -13,13 +15,14 @@ if (!isConfigured()) {
 return { configured: false, mails: [] };
 }
 
-const client = new ImapFlow({
-host: process.env.IMAP_HOST,
-port: Number(process.env.IMAP_PORT || 993),
+  const c = settings.getConfig();
+  const client = new ImapFlow({
+    host: c.imapHost,
+    port: Number(c.imapPort || 993),
 secure: true,
 auth: {
-user: process.env.IMAP_USER,
-pass: process.env.IMAP_PASSWORD,
+      user: c.imapUser,
+      pass: c.imapPassword,
 },
 logger: false,
 });
