@@ -3,6 +3,7 @@ const express = require("express");
 const path = require("path");
 const mailbox = require("./mailbox");
 const ai = require("./ai");
+const settingsStore = require("./settings");
 
 const app = express();
 app.use(express.json());
@@ -44,6 +45,21 @@ res.json({
 imapConfigured: mailbox.isConfigured(),
 aiConfigured: ai.isConfigured(),
 });
+});
+
+app.get("/api/settings", (req, res) => {
+  res.json(settingsStore.getPublicConfig());
+});
+
+app.post("/api/settings", (req, res) => {
+  try {
+    const updated = settingsStore.updateSettings(req.body || {});
+    cache = { at: 0, mails: [] };
+    res.json(updated);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Kon de instellingen niet opslaan.", detail: e.message });
+  }
 });
 
 app.get("/api/mails", async (req, res) => {
