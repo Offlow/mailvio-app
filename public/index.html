@@ -1,0 +1,179 @@
+<!doctype html>
+  <html lang="nl">
+  <head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mailvio</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&display=swap">
+  <style>
+  :root{
+  --bg:#faf9f6; --surface:#fff; --surface-2:#f5f4f0; --border:#e6e3db;
+  --ink:#2c2620; --ink-soft:#6b6459; --ink-faint:#9a9285;
+--accent:#2f6fe0; --accent-ink:#1d4fae; --accent-soft:#e8effc;
+  --red:#c23b2c; --red-soft:#fbe9e6;
+  --orange:#c07a1f; --orange-soft:#fbf0dd;
+  --yellow:#a68a1f; --yellow-soft:#faf3d9;
+  --green:#2f8a4e; --green-soft:#e6f4ea;
+  }
+*{box-sizing:border-box}
+body{margin:0;font-family:'Manrope',system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--ink)}
+header{padding:20px 24px;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--border);background:var(--surface)}
+header .dot{width:10px;height:10px;border-radius:50%;background:var(--accent)}
+header h1{font-size:18px;margin:0;font-weight:800}
+main{max-width:760px;margin:0 auto;padding:24px 16px 140px}
+.banner{background:var(--yellow-soft);border:1px solid var(--yellow);color:#6b5a12;border-radius:10px;padding:12px 16px;font-size:13.5px;margin-bottom:18px;line-height:1.6}
+.group{font-size:11.5px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-faint);margin:20px 0 8px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 16px;margin-bottom:8px}
+.card .top{display:flex;align-items:center;gap:8px}
+.card .from{font-weight:700;font-size:14px}
+.card .subject{font-size:13.5px;color:var(--ink-soft);margin-top:2px}
+.card .reden{font-size:12.5px;color:var(--ink-faint);margin-top:6px;font-style:italic}
+.pill{font-size:10.5px;font-weight:700;border-radius:99px;padding:2px 9px;margin-left:auto}
+.pill.dringend{background:var(--red-soft);color:var(--red)}
+.pill.vandaag{background:var(--orange-soft);color:var(--orange)}
+.pill.binnenkort{background:var(--yellow-soft);color:var(--yellow)}
+.pill.geen_actie{background:var(--green-soft);color:var(--green)}
+.pill.onbekend{background:var(--surface-2);color:var(--ink-faint)}
+.empty{color:var(--ink-faint);font-size:13.5px;padding:20px 0}
+.refresh{font-size:12.5px;font-weight:700;color:var(--accent-ink);background:none;border:none;cursor:pointer;padding:0}
+.chatbar{position:fixed;left:0;right:0;bottom:0;background:var(--surface);border-top:1px solid var(--border);padding:14px 16px;display:flex;flex-direction:column;gap:10px;max-height:46vh}
+.chatlog{max-width:760px;margin:0 auto;width:100%;overflow-y:auto;display:flex;flex-direction:column;gap:8px;flex:1 1 auto}
+.msg{max-width:85%;padding:9px 13px;border-radius:12px;font-size:13.5px;line-height:1.6;white-space:pre-wrap}
+.msg.user{align-self:flex-end;background:var(--accent);color:#fff;border-bottom-right-radius:3px}
+.msg.bot{align-self:flex-start;background:var(--surface-2);border-bottom-left-radius:3px}
+.inputrow{max-width:760px;margin:0 auto;width:100%;display:flex;gap:8px;align-items:center;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:8px 10px}
+.inputrow input{flex:1 1 auto;border:none;background:none;font-size:14px;font-family:inherit;outline:none}
+.inputrow button{border:none;background:var(--accent);color:#fff;font-weight:700;font-size:13px;border-radius:8px;padding:8px 14px;cursor:pointer}
+.inputrow button:disabled{opacity:.5;cursor:default}
+</style>
+  </head>
+  <body>
+  <header>
+  <span class="dot"></span>
+  <h1>Mailvio</h1>
+  </header>
+  <main>
+  <div id="banner"></div>
+  <div style="display:flex;align-items:center;justify-content:space-between">
+  <div style="font-size:13px;color:var(--ink-soft)" id="lastUpdated"></div>
+  <button class="refresh" id="refreshBtn">Ververs</button>
+  </div>
+  <div id="lists"></div>
+  </main>
+  <div class="chatbar">
+  <div class="chatlog" id="chatlog"></div>
+  <div class="inputrow">
+  <input id="chatInput" type="text" placeholder="Stel een vraag of geef een opdracht...">
+  <button id="sendBtn">Stuur</button>
+  </div>
+  </div>
+  <script>
+  const CATS = [
+{ key: "dringend", label: "Dringend" },
+  { key: "vandaag", label: "Vandaag" },
+{ key: "binnenkort", label: "Binnenkort" },
+{ key: "geen_actie", label: "Geen actie" },
+{ key: "onbekend", label: "Nog niet beoordeeld" },
+  ];
+
+async function loadMails(forceRefresh) {
+const listsEl = document.getElementById("lists");
+const bannerEl = document.getElementById("banner");
+listsEl.innerHTML = '<div class="empty">Bezig met ophalen...</div>';
+const res = await fetch("/api/mails" + (forceRefresh ? "?refresh=1" : ""));
+const data = await res.json();
+
+bannerEl.innerHTML = "";
+if (!data.imapConfigured) {
+bannerEl.innerHTML = '<div class="banner">De mailbox is nog niet gekoppeld. Voeg IMAP_HOST, IMAP_USER en IMAP_PASSWORD toe bij de instellingen van de service.</div>';
+} else if (!data.aiConfigured) {
+bannerEl.innerHTML = '<div class="banner">De AI is nog niet ingesteld. Voeg ANTHROPIC_API_KEY toe bij de instellingen van de service.</div>';
+}
+
+document.getElementById("lastUpdated").textContent = data.mails.length
+  ? `${data.mails.length} mails geladen`
+: "";
+
+listsEl.innerHTML = "";
+if (!data.mails.length) {
+listsEl.innerHTML = '<div class="empty">Nog geen mails om te tonen.</div>';
+return;
+}
+
+for (const cat of CATS) {
+  const items = data.mails.filter((m) => m.categorie === cat.key);
+  if (!items.length) continue;
+const groupEl = document.createElement("div");
+groupEl.className = "group";
+groupEl.textContent = `${cat.label} — ${items.length}`;
+listsEl.appendChild(groupEl);
+for (const m of items) {
+  const card = document.createElement("div");
+card.className = "card";
+const redenHtml = m.reden ? ('<div class="reden">' + escapeHtml(m.reden) + '</div>') : "";
+card.innerHTML = `
+  <div class="top">
+  <span class="from">${escapeHtml(m.from)}</span>
+  <span class="pill ${m.categorie}">${cat.label}</span>
+  </div>
+  <div class="subject">${escapeHtml(m.subject)}</div>
+  ${redenHtml}
+  `;
+listsEl.appendChild(card);
+         }
+              }
+     }
+
+function escapeHtml(str) {
+  return String(str || "").replace(/[&<>"']/g, (c) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+    }[c]));
+}
+
+function addMsg(text, who) {
+  const log = document.getElementById("chatlog");
+const el = document.createElement("div");
+el.className = "msg " + who;
+el.textContent = text;
+log.appendChild(el);
+log.scrollTop = log.scrollHeight;
+}
+
+async function sendChat() {
+const input = document.getElementById("chatInput");
+const btn = document.getElementById("sendBtn");
+const text = input.value.trim();
+if (!text) return;
+addMsg(text, "user");
+input.value = "";
+btn.disabled = true;
+addMsg("...", "bot");
+const log = document.getElementById("chatlog");
+try {
+const res = await fetch("/api/chat", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ message: text }),
+  });
+const data = await res.json();
+log.lastChild.remove();
+addMsg(data.answer || data.error || "Geen antwoord ontvangen.", "bot");
+} catch (e) {
+log.lastChild.remove();
+addMsg("Er ging iets mis: " + e.message, "bot");
+} finally {
+btn.disabled = false;
+}
+}
+
+document.getElementById("sendBtn").addEventListener("click", sendChat);
+document.getElementById("chatInput").addEventListener("keydown", (e) => {
+if (e.key === "Enter") sendChat();
+});
+document.getElementById("refreshBtn").addEventListener("click", () => loadMails(true));
+
+loadMails(false);
+</script>
+</body>
+</html>
+</html>
