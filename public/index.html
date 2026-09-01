@@ -25,15 +25,21 @@
   .banner a.bannerLink{color:#6b5a12;font-weight:700;text-decoration:underline;cursor:pointer}
   .overlay{position:fixed;inset:0;background:rgba(44,38,32,.45);display:flex;align-items:flex-start;justify-content:center;padding:32px 16px;overflow-y:auto;z-index:50}
   .overlay[hidden]{display:none}
-  .modal{background:var(--surface);border-radius:14px;max-width:440px;width:100%;padding:22px;box-shadow:0 12px 40px rgba(0,0,0,.18)}
+  .modal{background:var(--surface);border-radius:14px;max-width:460px;width:100%;padding:22px;box-shadow:0 12px 40px rgba(0,0,0,.18)}
   .modal h2{margin:0 0 4px;font-size:17px;font-weight:800}
-  .modal p.hint{margin:0 0 18px;font-size:12.5px;color:var(--ink-faint);line-height:1.6}
-  .field{margin-bottom:14px}
-  .field label{display:block;font-size:12px;font-weight:700;color:var(--ink-soft);margin-bottom:4px}
-  .field input{width:100%;padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:13.5px;font-family:inherit;background:var(--surface-2)}
-  .field-row{display:flex;gap:10px}
-  .field-row .field{flex:1 1 auto}
-  .field-row .field.port{flex:0 0 90px}
+  .modal p.hint{margin:0 0 16px;font-size:12.5px;color:var(--ink-faint);line-height:1.6}
+  .sectionLabel{font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-faint);margin:18px 0 6px}
+  .sectionLabel:first-of-type{margin-top:0}
+  .fieldList{border:1px solid var(--border);border-radius:10px;overflow:hidden;background:var(--surface-2)}
+  .fieldRow{display:flex;align-items:center;gap:10px;padding:9px 12px;border-bottom:1px solid var(--border)}
+  .fieldRow:last-child{border-bottom:none}
+  .fieldRow label{flex:0 0 108px;font-size:12.5px;font-weight:700;color:var(--ink-soft)}
+  .fieldRow input{flex:1 1 auto;min-width:0;border:none;background:none;font-size:13.5px;font-family:inherit;padding:3px 0;color:var(--ink);outline:none}
+  .fieldRow.split{gap:14px}
+  .fieldRow.split .sub{flex:1 1 auto;display:flex;align-items:center;gap:8px;min-width:0}
+  .fieldRow.split .sub label{flex:0 0 auto}
+  .fieldRow.split .sub.port{flex:0 0 84px}
+  .fieldRow.split .sub.port input{width:100%}
   .modal-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:18px}
   .modal-actions button{border:none;border-radius:8px;padding:9px 16px;font-weight:700;font-size:13px;cursor:pointer}
   .btn-secondary{background:var(--surface-2);color:var(--ink-soft)}
@@ -71,57 +77,88 @@
 </head>
 <body>
 <header>
-  <span class="dot"></span>
-  <h1>Mailvio</h1>
-  <button class="settingsBtn" id="settingsBtn" title="Instellingen" aria-label="Instellingen">&#9881;</button>
+<span class="dot"></span>
+<h1>Mailvio</h1>
+<button class="settingsBtn" id="settingsBtn" title="Instellingen" aria-label="Instellingen">&#9881;</button>
 </header>
 <main>
-  <div id="banner"></div>
-  <div style="display:flex;align-items:center;justify-content:space-between">
-    <div style="font-size:13px;color:var(--ink-soft)" id="lastUpdated"></div>
-    <button class="refresh" id="refreshBtn">Ververs</button>
-  </div>
-  <div id="lists"></div>
+<div id="banner"></div>
+<div style="display:flex;align-items:center;justify-content:space-between">
+<div style="font-size:13px;color:var(--ink-soft)" id="lastUpdated"></div>
+<button class="refresh" id="refreshBtn">Ververs</button>
+</div>
+<div id="lists"></div>
 </main>
 <div class="chatbar">
-  <div class="chatlog" id="chatlog"></div>
-  <div class="inputrow">
-    <input id="chatInput" type="text" placeholder="Stel een vraag of geef een opdracht...">
-    <button id="sendBtn">Stuur</button>
-  </div>
+<div class="chatlog" id="chatlog"></div>
+<div class="inputrow">
+<input id="chatInput" type="text" placeholder="Stel een vraag of geef een opdracht...">
+<button id="sendBtn">Stuur</button>
+</div>
 </div>
 <div class="overlay" id="settingsOverlay" hidden>
-  <div class="modal">
-    <h2>Instellingen</h2>
-    <p class="hint">Vul hier je mailbox- en Claude-gegevens in. Deze worden bewaard op de server (niet zichtbaar voor anderen). Bij een nieuwe deploy van de app moet je ze mogelijk opnieuw invullen.</p>
-    <div class="field">
-      <label for="setEmail">E-mailadres</label>
-      <input id="setEmail" type="text" placeholder="info@daklo.be" autocomplete="off">
-    </div>
-    <div class="field-row">
-      <div class="field">
-        <label for="setHost">IMAP-server (inkomend)</label>
-        <input id="setHost" type="text" placeholder="imap.mailprotect.be" autocomplete="off">
-      </div>
-      <div class="field port">
-        <label for="setPort">Poort</label>
-        <input id="setPort" type="text" placeholder="993" autocomplete="off">
-      </div>
-    </div>
-    <div class="field">
-      <label for="setPassword">IMAP-wachtwoord</label>
-      <input id="setPassword" type="password" placeholder="" autocomplete="off">
-    </div>
-    <div class="field">
-      <label for="setApiKey">Claude API-sleutel</label>
-      <input id="setApiKey" type="password" placeholder="" autocomplete="off">
-    </div>
-    <div id="settingsMsg"></div>
-    <div class="modal-actions">
-      <button class="btn-secondary" id="settingsCancel">Sluiten</button>
-      <button class="btn-primary" id="settingsSave">Opslaan</button>
-    </div>
+<div class="modal">
+<h2>Account instellen</h2>
+<p class="hint">Vul je mailaccount in zoals je dat ook in Outlook of Apple Mail zou doen. Wordt bewaard op de server (niet zichtbaar voor anderen). Bij een nieuwe deploy van de app moet je dit mogelijk opnieuw invullen.</p>
+
+<div class="sectionLabel">Account</div>
+<div class="fieldList">
+  <div class="fieldRow">
+    <label for="setName">Naam</label>
+    <input id="setName" type="text" placeholder="Dakwerken Daklo" autocomplete="off">
   </div>
+  <div class="fieldRow">
+    <label for="setEmail">E-mailadres</label>
+    <input id="setEmail" type="text" placeholder="info@daklo.be" autocomplete="off">
+  </div>
+</div>
+
+<div class="sectionLabel">Inkomende server (IMAP)</div>
+<div class="fieldList">
+  <div class="fieldRow">
+    <label for="setHost">Server</label>
+    <input id="setHost" type="text" placeholder="imap.mailprotect.be" autocomplete="off">
+  </div>
+  <div class="fieldRow">
+    <label for="setPort">Poort</label>
+    <input id="setPort" type="text" placeholder="993" autocomplete="off">
+  </div>
+  <div class="fieldRow">
+    <label for="setPassword">Wachtwoord</label>
+    <input id="setPassword" type="password" placeholder="" autocomplete="off">
+  </div>
+</div>
+
+<div class="sectionLabel">Uitgaande server (SMTP)</div>
+<div class="fieldList">
+  <div class="fieldRow">
+    <label for="setSmtpHost">Server</label>
+    <input id="setSmtpHost" type="text" placeholder="smtp-auth.mailprotect.be" autocomplete="off">
+  </div>
+  <div class="fieldRow">
+    <label for="setSmtpPort">Poort</label>
+    <input id="setSmtpPort" type="text" placeholder="587" autocomplete="off">
+  </div>
+  <div class="fieldRow">
+    <label for="setSmtpPassword">Wachtwoord</label>
+    <input id="setSmtpPassword" type="password" placeholder="" autocomplete="off">
+  </div>
+</div>
+
+<div class="sectionLabel">Claude AI</div>
+<div class="fieldList">
+  <div class="fieldRow">
+    <label for="setApiKey">API-sleutel</label>
+    <input id="setApiKey" type="password" placeholder="sk-ant-..." autocomplete="off">
+  </div>
+</div>
+
+<div id="settingsMsg"></div>
+<div class="modal-actions">
+  <button class="btn-secondary" id="settingsCancel">Sluiten</button>
+  <button class="btn-primary" id="settingsSave">Opslaan</button>
+</div>
+</div>
 </div>
 <script>
 const CATS = [
@@ -142,6 +179,8 @@ async function loadMails(forceRefresh) {
   bannerEl.innerHTML = "";
   if (!data.imapConfigured) {
     bannerEl.innerHTML = '<div class="banner">De mailbox is nog niet gekoppeld. <a class="bannerLink" id="bannerSettingsLink">Vul je mailgegevens in</a>.</div>';
+  } else if (!data.smtpConfigured) {
+    bannerEl.innerHTML = '<div class="banner">De uitgaande server (SMTP) is nog niet ingesteld. <a class="bannerLink" id="bannerSettingsLink">Vul die in</a>.</div>';
   } else if (!data.aiConfigured) {
     bannerEl.innerHTML = '<div class="banner">De AI is nog niet ingesteld. <a class="bannerLink" id="bannerSettingsLink">Vul je Claude API-sleutel in</a>.</div>';
   }
@@ -239,12 +278,17 @@ async function openSettings() {
   try {
     const res = await fetch("/api/settings");
     const data = await res.json();
+    document.getElementById("setName").value = data.displayName || "";
     document.getElementById("setEmail").value = data.imapUser || "";
     document.getElementById("setHost").value = data.imapHost || "";
     document.getElementById("setPort").value = data.imapPort || "993";
     document.getElementById("setPassword").placeholder = data.hasImapPassword ? "•••••• (al ingesteld, laat leeg om te behouden)" : "";
+    document.getElementById("setSmtpHost").value = data.smtpHost || "";
+    document.getElementById("setSmtpPort").value = data.smtpPort || "587";
+    document.getElementById("setSmtpPassword").placeholder = data.hasSmtpPassword ? "•••••• (al ingesteld, laat leeg om te behouden)" : "";
     document.getElementById("setApiKey").placeholder = data.hasApiKey ? "•••••• (al ingesteld, laat leeg om te behouden)" : "sk-ant-...";
     document.getElementById("setPassword").value = "";
+    document.getElementById("setSmtpPassword").value = "";
     document.getElementById("setApiKey").value = "";
   } catch (e) {
     msgEl.textContent = "Kon de huidige instellingen niet ophalen.";
@@ -259,11 +303,17 @@ function closeSettings() {
 async function saveSettings() {
   const saveBtn = document.getElementById("settingsSave");
   const msgEl = document.getElementById("settingsMsg");
+  const email = document.getElementById("setEmail").value;
   const body = {
-    imapUser: document.getElementById("setEmail").value,
+    displayName: document.getElementById("setName").value,
+    imapUser: email,
     imapHost: document.getElementById("setHost").value,
     imapPort: document.getElementById("setPort").value,
     imapPassword: document.getElementById("setPassword").value,
+    smtpUser: email,
+    smtpHost: document.getElementById("setSmtpHost").value,
+    smtpPort: document.getElementById("setSmtpPort").value,
+    smtpPassword: document.getElementById("setSmtpPassword").value,
     anthropicApiKey: document.getElementById("setApiKey").value,
   };
   saveBtn.disabled = true;
