@@ -166,6 +166,26 @@
   .navHomeTekst b{font-size:14.5px;font-weight:800}
   .navHomeTekst small{font-size:11.5px;color:var(--ink-faint);font-weight:600}
 
+  /* Dashboard: gewoon lijsten, geen kaartjes. Je ziet in één blik wat er
+     vandaag moet en wat later deze week moet, en klikt door naar de mail. */
+  .zaakBlok{margin-top:26px}
+  .zaakKop{display:flex;align-items:baseline;gap:9px;margin-bottom:2px}
+  .zaakKop h2{margin:0;font-size:16.5px;font-weight:800}
+  .zaakAantal{background:var(--surface-2);border-radius:99px;padding:1px 9px;font-size:12px;font-weight:800;color:var(--ink-soft)}
+  .zaakUitleg{font-size:12px;color:var(--ink-faint);margin-bottom:9px;font-weight:600}
+  .zaakRij{display:flex;align-items:center;gap:11px;padding:11px 6px;border-bottom:1px solid var(--border);cursor:pointer;min-width:0}
+  .zaakRij:hover{background:var(--surface)}
+  .stip{width:8px;height:8px;border-radius:50%;flex:0 0 auto;background:var(--ink-faint)}
+  .stip.rood{background:var(--red)} .stip.oranje{background:var(--orange)} .stip.geel{background:var(--yellow)}
+  .zaakVan{flex:0 0 165px;min-width:0;font-size:13px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .zaakOnderwerp{flex:1 1 auto;min-width:0;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .zaakMerk{flex:0 0 auto;font-size:11px;font-weight:800;color:var(--accent-ink);background:var(--accent-soft);border-radius:99px;padding:2px 9px}
+  .zaakWacht{flex:0 0 auto;font-size:11.5px;color:var(--ink-faint);min-width:62px;text-align:right}
+  .zaakAf{flex:0 0 auto;border:1px solid var(--border);background:var(--surface);border-radius:7px;width:26px;height:26px;cursor:pointer;color:var(--ink-faint);font-size:12px}
+  .zaakAf:hover{border-color:var(--accent);background:var(--accent-soft);color:var(--accent-ink)}
+  .zaakLeeg{font-size:13px;color:var(--ink-faint);padding:10px 6px}
+  @media (max-width:760px){.zaakVan{flex:0 0 110px}.zaakMerk{display:none}}
+
   /* Dashboard: drie kolommen naast elkaar */
   .kolomRij{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:18px}
   @media (max-width:1100px){.kolomRij{grid-template-columns:1fr}}
@@ -2192,23 +2212,19 @@ function timeGreeting() {
 
 function renderVandaag() {
   const mount = document.getElementById("viewMount");
-  // Hoe Mailvio je aanspreekt: eerst wat je zelf bij de instellingen invulde.
-  // Zo blijft het "Goedemiddag Lorenzo", ook als je in de boekhoudingmailbox zit.
   const naam = (state.settings.aanspreektitel || "").trim() || (state.settings.displayName || "").split(" ")[0] || "";
-  // Afgehandelde mails tellen niet meer mee — ze verdwijnen ENKEL doordat je ze
-  // afvinkt of effectief beantwoordt, nooit vanzelf door tijd of een herscan.
-  const open = state.mails.filter((m) => !m.resolved && m.soort !== "reclame");
-
+  const open = state.mails.filter((m) => !m.resolved && !m.genegeerd && m.soort !== "reclame");
   const nieuwste = (a, b) => new Date(b.date) - new Date(a.date);
-  const actie = open.filter((m) => m.categorie === "dringend" || m.categorie === "vandaag").sort(nieuwste);
-  const opvolgen = open.filter((m) => m.categorie === "binnenkort").sort(nieuwste);
-  const wachten = open.filter((m) => !m.unread && !m.resolved && m.categorie && m.categorie !== "geen_actie" && m.categorie !== "onbekend" && daysAgo(m.date) >= 2).sort(nieuwste);
-  const afspraken = open.filter((m) => m.soort === "afspraak").sort(nieuwste);
-  const offertes = open.filter((m) => m.soort === "offerte").sort(nieuwste);
-  const belangrijk = open.filter((m) => m.belangrijk).sort(nieuwste);
 
-  // Mails waar de AI twijfelt of het reclame is. Jij beslist — één keer per
-  // afzender, daarna gaat alles van dat adres vanzelf naar de juiste plek.
+  // Twee eenvoudige lijsten: wat vandaag moet, en wat deze week nog moet.
+  const vandaag = open.filter((m) => m.categorie === "dringend" || m.categorie === "vandaag").sort(nieuwste);
+  const week = open.filter((m) => m.categorie === "binnenkort").sort(nieuwste);
+  // En wat geregeld moet worden zonder dat het dringend is.
+  const regelen = open
+    .filter((m) => (m.soort === "offerte" || m.soort === "afspraak" || m.soort === "factuur") &&
+                   m.categorie !== "dringend" && m.categorie !== "vandaag" && m.categorie !== "binnenkort")
+    .sort(nieuwste);
+
   const openTaken = (state.taken || []).filter((t) => !t.klaar);
 
   const gezien = new Set();
@@ -2223,23 +2239,29 @@ function renderVandaag() {
     .sort(nieuwste)
     .slice(0, 6);
 
-  // Eén kolom: duidelijke titel, één zin uitleg over wat er precies in zit,
-  // de vijf recentste mails, en een knop naar de volledige lijst.
-  function kolom(titel, kleur, uitleg, mails, doel) {
-    const top = mails.slice(0, 3);
+  // Eén regel per mail: van wie, waarover, hoe lang het al wacht. Klik erop en
+  // je zit in de mail. Geen kaartjes, geen kolommen — gewoon een lijst.
+  const soortMerk = { offerte: "Offerte", afspraak: "Afspraak", factuur: "Factuur" };
+  const regel = (m) => {
+    const d = daysAgo(m.date);
     return `
-      <div class="kolom">
-        <div class="kolomKop"><span class="dotmark" style="background:${kleur}"></span> ${titel}<span class="aantal">${mails.length}</span></div>
-        <div class="kolomUitleg">${uitleg}</div>
-        ${top.length ? top.map((m) => `
-          <div class="kolomItem" data-open="${m.uid}">
-            <div class="kolomVan">${escapeHtml(m.from)}<span class="wanneer">${tijdOfDatum(m.date)}</span></div>
-            <div class="kolomOnderwerp">${escapeHtml(m.subject)}</div>
-          </div>
-        `).join("") : '<div class="kolomLeeg">Niets openstaand hier.</div>'}
-        <button class="kolomAlles" data-goto="${doel}">${mails.length > 3 ? `Bekijk alle ${mails.length} →` : "Open deze lijst →"}</button>
+      <div class="zaakRij" data-open="${m.uid}">
+        <span class="stip ${m.categorie === "dringend" ? "rood" : m.categorie === "vandaag" ? "oranje" : "geel"}"></span>
+        <span class="zaakVan">${escapeHtml(m.from)}</span>
+        <span class="zaakOnderwerp">${escapeHtml(m.subject)}</span>
+        ${m.soort && soortMerk[m.soort] ? `<span class="zaakMerk">${soortMerk[m.soort]}</span>` : ""}
+        <span class="zaakWacht">${d === 0 ? "vandaag" : d === 1 ? "1 dag" : d + " dagen"}</span>
+        <button class="zaakAf" data-resolve="${m.uid}" title="Afgehandeld">✓</button>
       </div>`;
-  }
+  };
+
+  const lijst = (titel, uitleg, mails, doel) => `
+    <div class="zaakBlok">
+      <div class="zaakKop"><h2>${titel}</h2><span class="zaakAantal">${mails.length}</span></div>
+      <div class="zaakUitleg">${uitleg}</div>
+      ${mails.length ? mails.slice(0, 8).map(regel).join("") : '<div class="zaakLeeg">Niets — goed bezig.</div>'}
+      ${mails.length > 8 ? `<button class="kolomAlles" data-goto="${doel}">Alle ${mails.length} bekijken →</button>` : ""}
+    </div>`;
 
   mount.innerHTML = `
     <div class="vandaagView"><div class="inner">
@@ -2258,63 +2280,40 @@ function renderVandaag() {
       <div class="promptAnswer" id="vandaagAnswer" ${state.chatAntwoord ? "" : "hidden"}>${escapeHtml(state.chatAntwoord || "")}</div>
 
       ${twijfel.length ? `
-      <div class="sectionTitle" style="margin-top:26px"><span class="dotmark" style="background:var(--yellow)"></span> Is dit reclame?</div>
-      <div class="kolomUitleg" style="margin-bottom:10px">Mailvio twijfelt bij ${twijfel.length} afzender${twijfel.length === 1 ? "" : "s"}. Zeg het één keer, dan weet ze het voorgoed voor dat adres.</div>
-      ${twijfel.map((m) => `
-        <div class="twijfelKaart">
-          <span class="avatar">${initials(m.from)}</span>
-          <div class="info">
-            <div class="van">${escapeHtml(m.from)} <span style="font-weight:600;color:var(--ink-faint)">${escapeHtml(m.fromAddress || "")}</span></div>
-            <div class="onderwerp">${escapeHtml(m.subject)}</div>
-          </div>
-          <button class="twijfelKnop ja" data-reclame="${escapeHtml(m.fromAddress || "")}">✓ Reclame</button>
-          <button class="twijfelKnop nee" data-geenreclame="${escapeHtml(m.fromAddress || "")}">✗ Echte mail</button>
-        </div>`).join("")}
-      ` : ""}
+      <div class="zaakBlok">
+        <div class="zaakKop"><h2>Is dit reclame?</h2><span class="zaakAantal">${twijfel.length}</span></div>
+        <div class="zaakUitleg">Zeg het één keer, dan weet Mailvio het voorgoed voor die afzender.</div>
+        ${twijfel.map((m) => `
+          <div class="twijfelKaart">
+            <div class="info">
+              <div class="van">${escapeHtml(m.from)} <span style="font-weight:600;color:var(--ink-faint)">${escapeHtml(m.fromAddress || "")}</span></div>
+              <div class="onderwerp">${escapeHtml(m.subject)}</div>
+            </div>
+            <button class="twijfelKnop ja" data-reclame="${escapeHtml(m.fromAddress || "")}">✓ Reclame</button>
+            <button class="twijfelKnop nee" data-geenreclame="${escapeHtml(m.fromAddress || "")}">✗ Echte mail</button>
+          </div>`).join("")}
+      </div>` : ""}
 
       ${!state.mails.length ? '<div class="empty">Nog geen mails geladen.</div>' : `
-      <div class="sectionTitle" style="margin-top:26px"><span class="dotmark" style="background:var(--red)"></span> Openstaande zaken</div>
-      <div class="kolomRij">
-        ${kolom("Actie nodig", "var(--red)", "Mails die vandaag een antwoord van jou vragen — klachten, dringende klantvragen, alles wat niet kan wachten.", actie, "dringend")}
-        ${kolom("Opvolgen", "var(--orange)", "Mag nog een paar dagen wachten, maar mag je niet vergeten — leveranciers, losse vragen, dingen zonder deadline.", opvolgen, "binnenkort")}
-        ${kolom("Wachten op antwoord", "var(--yellow)", "Jij hebt gereageerd of gelezen, de andere kant is aan zet. Al twee dagen of langer stil.", wachten, "wachten")}
-      </div>
+      ${lijst("Vandaag nog te beantwoorden", "Mails die vandaag een antwoord van jou vragen.", vandaag, "dringend")}
+      ${lijst("Later deze week te beantwoorden", "Mag nog een paar dagen wachten, maar niet vergeten.", week, "binnenkort")}
+      ${lijst("Nog te regelen", "Offertes, afspraken en facturen die geordend moeten worden, maar niet dringend zijn.", regelen, "offertes")}
+      `}
 
       ${openTaken.length ? `
-      <div class="sectionTitle" style="margin-top:26px"><span class="dotmark" style="background:var(--accent)"></span> Op je to-do</div>
-      ${openTaken.slice(0, 3).map((t) => `
-        <div class="todoCard">
-          <button class="vink" data-taakaf="${t.id}" title="Afvinken">✓</button>
-          <div class="info">
-            <div class="name">${escapeHtml(t.titel)}</div>
-            <div class="reden">${(t.subtaken || []).filter((x) => !x.klaar).length ? `${(t.subtaken || []).filter((x) => !x.klaar).length} subtaak/subtaken open` : ""}${(t.mails || []).length ? `${(t.subtaken || []).filter((x) => !x.klaar).length ? " · " : ""}${t.mails.length} mail${t.mails.length === 1 ? "" : "s"} eraan gekoppeld` : ""}</div>
-          </div>
-        </div>`).join("")}
-      <div class="extraLinks" style="margin-bottom:6px"><button data-naartodo="1">${openTaken.length > 3 ? `Alle ${openTaken.length} taken bekijken →` : "Open je to-dolijst →"}</button></div>
-      ` : ""}
-
-      <div class="extraLinks">
-        <button data-zakentab="genegeerd">Niet meer opvolgen</button>
-        <button data-zakentab="verzonden">Verzonden, nog geen antwoord</button>
-      </div>
-
-      <div class="sectionTitle" style="margin-top:26px"><span class="dotmark" style="background:var(--accent)"></span> Per soort</div>
-      <div class="kolomRij">
-        ${kolom("Afspraken", "var(--accent)", "Mails met een datum, plaatsbezoek of planning die vastgelegd of bevestigd moet worden.", afspraken, "afspraken")}
-        ${kolom("Offertes", "var(--yellow)", "Prijsvragen, offertes, bestekken en bestellingen — waar geld aan hangt.", offertes, "offertes")}
-        ${kolom("Belangrijk", "var(--ink-faint)", "Alles wat Mailvio als belangrijk inschat, ook als er nog geen actie nodig is. Aanvragen via daklo.be staan hier altijd bij.", belangrijk, "belangrijk")}
-      </div>
-      `}
+      <div class="zaakBlok">
+        <div class="zaakKop"><h2>Op je to-do</h2><span class="zaakAantal">${openTaken.length}</span></div>
+        ${openTaken.slice(0, 3).map((t) => `
+          <div class="zaakRij">
+            <button class="vink" data-taakaf="${t.id}" title="Afvinken">✓</button>
+            <span class="zaakOnderwerp" style="flex:1 1 auto">${escapeHtml(t.titel)}</span>
+            ${(t.mails || []).length ? `<span class="zaakMerk">${t.mails.length} mail${t.mails.length === 1 ? "" : "s"}</span>` : ""}
+          </div>`).join("")}
+        <button class="kolomAlles" data-naartodo="1">${openTaken.length > 3 ? `Alle ${openTaken.length} taken bekijken →` : "Open je to-dolijst →"}</button>
+      </div>` : ""}
     </div></div>
   `;
 
-  mount.querySelectorAll("[data-open]").forEach((b) => b.addEventListener("click", () => openMail(Number(b.dataset.open))));
-  koppelSleepbareMails(mount);
-  mount.querySelectorAll("[data-goto]").forEach((b) => b.addEventListener("click", () => {
-    const doel = b.dataset.goto;
-    state.view = "inbox"; state.filter = doel;
-    renderSidebarCounts(); renderView();
-  }));
   mount.querySelectorAll("[data-naartodo]").forEach((b) => b.addEventListener("click", () => {
     state.view = "taken"; renderSidebarCounts(); renderView(true);
   }));
@@ -2322,14 +2321,14 @@ function renderVandaag() {
     await taakActie(`/api/taken/${b.dataset.taakaf}`, jsonPost({ klaar: true }, "PATCH"));
     renderVandaag();
   }));
-  mount.querySelectorAll("[data-zakentab]").forEach((b) => b.addEventListener("click", () => {
-    state.zakenTab = b.dataset.zakentab;
-    state.view = "zaken";
-    renderSidebarCounts();
-    renderView(true);
-  }));
   mount.querySelectorAll("[data-reclame]").forEach((b) => b.addEventListener("click", () => beslisOverAfzender(b.dataset.reclame, true)));
   mount.querySelectorAll("[data-geenreclame]").forEach((b) => b.addEventListener("click", () => beslisOverAfzender(b.dataset.geenreclame, false)));
+  mount.querySelectorAll("[data-resolve]").forEach((b) => b.addEventListener("click", (e) => { e.stopPropagation(); resolveMail(Number(b.dataset.resolve), true); }));
+  mount.querySelectorAll("[data-open]").forEach((b) => b.addEventListener("click", () => openMail(Number(b.dataset.open))));
+  mount.querySelectorAll("[data-goto]").forEach((b) => b.addEventListener("click", () => {
+    state.view = "inbox"; state.filter = b.dataset.goto;
+    renderSidebarCounts(); renderView(true);
+  }));
   mount.querySelectorAll(".chip").forEach((c) => c.addEventListener("click", () => askVandaag(c.dataset.q)));
   document.getElementById("vandaagAsk").addEventListener("click", () => askVandaag(document.getElementById("vandaagPrompt").value));
   document.getElementById("vandaagPrompt").addEventListener("keydown", (e) => { if (e.key === "Enter") askVandaag(e.target.value); });

@@ -151,7 +151,9 @@ let envelopeCache = { at: 0, mails: [], total: 0, capped: false };
 // moet worden.
 // Kleinere porties: 40 mails tegelijk inlezen kostte te veel geheugen op een
 // kleine server. 15 per keer scant even snel door, maar veel rustiger.
-const SCAN_BATCH_SIZE = 15;
+// Hoeveel mails de AI per ronde beoordeelt. Groter = de achterstand van een
+// grote mailbox is sneller weggewerkt; te groot maakt één oproep traag en duur.
+const SCAN_BATCH_SIZE = 30;
 let cache = { at: 0, mails: [], total: 0, capped: false, scanned: 0, scanning: false };
 const suggestionCache = new Map(); // uid -> voorstel, leegt mee met de mail-cache
 let folderCache = { at: 0, folders: [] };
@@ -163,6 +165,48 @@ const VLAGGEN_CONTROLE = 60;
 // Hoeveel oudere mails we per ronde extra binnenhalen bij een grote mailbox.
 const BACKFILL_BATCH = 300;
 let backfillResterend = 0;
+
+// Synchroniseert ÉÉN map met de mailserver: nieuwe berichten erbij, verdwenen
+// berichten eruit, gelezen-status bijwerken, en per ronde een portie oudere
+// berichten binnenhalen tot de map volledig op schijf staat. Werkt voor de
+// inbox én voor Verzonden, Archief, Prullenmand en je eigen mappen — zo hoeft
+// geen enkele map ooit nog volledig opnieuw ingeladen te worden.
+async function syncMap(accountKey, folder, opties = {}) {
+  const backfill = opties.backfill === undefined ? BACKFILL_BATCH : opties.backfill;
+  const hoogste = mailstore.getHoogsteUid(accountKey, folder);
+  const vorigeValidity = mailstore.getUidValidity(accountKey, folder);
+
+  const data = await mailbox.fetchNieuweMails(folder, hoogste);
+  if (!data.configured) return mailstore.getMails(accountKey, folder);
+
+  if (vorigeValidity && data.uidValidity && vorigeValidity !== data.uidValidity) {
+    console.log(`uidValidity gewijzigd — mailcache voor ${folder} opnieuw opbouwen`);
+    mailstore.wisMap(accountKey, folder);
+    const volledig = await mailbox.fetchAllMails(folder);
+    mailstore.bewaarMails(accountKey, folder, volledig.mails, data.uidValidity);
+    return mailstore.getMails(accountKey, folder);
+  }
+
+  if (data.nieuwe.length) mailstore.bewaarMails(accountKey, folder, data.nieuwe, data.uidValidity);
+  if (data.alleUids && data.alleUids.length) mailstore.verwijderOntbrekende(accountKey, folder, data.alleUids);
+
+  const recent = mailstore.getMails(accountKey, folder).slice(0, VLAGGEN_CONTROLE).map((m) => m.uid);
+  if (recent.length) {
+    const vlaggen = await mailbox.fetchVlaggen(folder, recent);
+    for (const [uid, v] of vlaggen) mailstore.werkBij(accountKey, folder, uid, v);
+  }
+
+  if (backfill && !mailstore.isVolledig(accountKey, folder)) {
+    const laagste = mailstore.getLaagsteUid(accountKey, folder);
+    if (laagste > 0) {
+      const ouder = await mailbox.fetchOudereMails(folder, laagste, backfill);
+      if (ouder.mails && ouder.mails.length) mailstore.bewaarMails(accountKey, folder, ouder.mails, data.uidValidity);
+      if (ouder.klaar) mailstore.markeerVolledig(accountKey, folder);
+      if (folder === "INBOX") backfillResterend = ouder.resterend || 0;
+    }
+  }
+  return mailstore.getMails(accountKey, folder);
+}
 
 // Haalt de kopregels op. Werkt als Outlook: wat we al hebben komt van de
 // schijf (dus meteen zichtbaar), en van de server halen we enkel de NIEUWE
@@ -197,49 +241,7 @@ async function getLightMails(forceRefresh) {
 
   let mails = bewaard;
   try {
-    const hoogste = mailstore.getHoogsteUid(accountKey, "INBOX");
-    const vorigeValidity = mailstore.getUidValidity(accountKey, "INBOX");
-
-    const data = await mailbox.fetchNieuweMails("INBOX", hoogste);
-    if (data.configured) {
-      // Wisselt de mailserver van nummering, dan kloppen onze bewaarde
-      // nummers niet meer en beginnen we voor deze map opnieuw.
-      if (vorigeValidity && data.uidValidity && vorigeValidity !== data.uidValidity) {
-        console.log("uidValidity gewijzigd — mailcache voor INBOX opnieuw opbouwen");
-        mailstore.wisMap(accountKey, "INBOX");
-        const volledig = await mailbox.fetchAllMails("INBOX");
-        mailstore.bewaarMails(accountKey, "INBOX", volledig.mails, data.uidValidity);
-      } else {
-        if (data.nieuwe.length) {
-          mailstore.bewaarMails(accountKey, "INBOX", data.nieuwe, data.uidValidity);
-        }
-        // Wat op de server weg is (verplaatst of verwijderd), hier ook weghalen.
-        if (data.alleUids && data.alleUids.length) {
-          mailstore.verwijderOntbrekende(accountKey, "INBOX", data.alleUids);
-        }
-        // Gelezen-status van de recentste berichten bijwerken.
-        const recent = mailstore.getMails(accountKey, "INBOX").slice(0, VLAGGEN_CONTROLE).map((m) => m.uid);
-        if (recent.length) {
-          const vlaggen = await mailbox.fetchVlaggen("INBOX", recent);
-          for (const [uid, v] of vlaggen) mailstore.werkBij(accountKey, "INBOX", uid, v);
-        }
-
-        // Achterstand wegwerken: bij een grote mailbox (duizenden mails) halen
-        // we per ronde een portie oudere berichten erbij, tot alles binnen is.
-        if (!mailstore.isVolledig(accountKey, "INBOX")) {
-          const laagste = mailstore.getLaagsteUid(accountKey, "INBOX");
-          if (laagste > 0) {
-            const ouder = await mailbox.fetchOudereMails("INBOX", laagste, BACKFILL_BATCH);
-            if (ouder.mails && ouder.mails.length) {
-              mailstore.bewaarMails(accountKey, "INBOX", ouder.mails, data.uidValidity);
-            }
-            if (ouder.klaar) mailstore.markeerVolledig(accountKey, "INBOX");
-            backfillResterend = ouder.resterend || 0;
-          }
-        }
-      }
-      mails = mailstore.getMails(accountKey, "INBOX");
-    }
+    mails = await syncMap(accountKey, "INBOX");
   } catch (e) {
     // Server even niet bereikbaar? Dan tonen we gewoon wat we al hebben.
     console.error("Nieuwe mails ophalen mislukt, bewaarde mails worden getoond:", e.message);
@@ -517,21 +519,44 @@ app.get("/api/folders", async (req, res) => {
 
 // Bladeren door een andere map dan de inbox (Verzonden, Concepten, ...).
 // Bewust zonder AI-beoordeling: dat hoort bij de inbox, niet bij je archief.
+// Een andere map openen (Verzonden, Archief, Prullenmand, je eigen mappen).
+// Net als de inbox: wat al op schijf staat komt METEEN op je scherm, en de
+// nieuwe berichten worden op de achtergrond bijgehaald. Zo hoeft Verzonden met
+// zijn duizenden berichten nooit meer volledig ingeladen te worden.
+const mapBezig = new Set();
 app.get("/api/folder-mails", async (req, res) => {
   try {
     const folder = req.query.folder;
     if (!folder) return res.status(400).json({ error: "Geen map opgegeven." });
-    const data = await mailbox.fetchAllMails(folder);
+    if (!mailbox.isConfigured()) return res.json({ configured: false, folder, mails: [], total: 0 });
+
+    const accountKey = settingsStore.getConfig().imapUser || "default";
+    const bewaard = mailstore.getMails(accountKey, folder);
+
+    if (bewaard.length) {
+      // Op de achtergrond bijwerken, maar de gebruiker niet laten wachten.
+      if (!mapBezig.has(folder)) {
+        mapBezig.add(folder);
+        syncMap(accountKey, folder)
+          .catch((e) => console.error(`Map ${folder} bijwerken mislukt:`, e.message))
+          .finally(() => mapBezig.delete(folder));
+      }
+      return res.json({
+        configured: true, folder, mails: bewaard, total: bewaard.length,
+        capped: false, envelopeCap: mailbox.ENVELOPE_CAP,
+        volledig: mailstore.isVolledig(accountKey, folder),
+      });
+    }
+
+    // Eerste keer: nu wél ophalen, en meteen bewaren voor de volgende keer.
+    const mails = await syncMap(accountKey, folder);
     res.json({
-      configured: data.configured,
-      folder,
-      mails: data.mails,
-      total: data.total,
-      capped: data.capped,
-      envelopeCap: mailbox.ENVELOPE_CAP,
+      configured: true, folder, mails, total: mails.length,
+      capped: false, envelopeCap: mailbox.ENVELOPE_CAP,
+      volledig: mailstore.isVolledig(accountKey, folder),
     });
   } catch (e) {
-    console.error(e);
+    console.error("Map openen mislukt:", e.message);
     res.status(500).json({ error: "Kon deze map niet openen.", detail: e.message });
   }
 });
@@ -1323,9 +1348,32 @@ async function achtergrondRonde() {
     // wachten.
     let data = await getMails(true);
     let rondes = 0;
-    while (data.scanning && rondes < 8) {
+    while (data.scanning && rondes < 25) {
       data = await getMails(true);
       rondes++;
+    }
+
+    // Ook de andere mappen bijhouden — Verzonden, Archief, Prullenmand en je
+    // eigen mappen. Zo staat ALLES op de schijf van de server en hoeft er nooit
+    // iets opnieuw ingeladen te worden als je zo'n map opent.
+    const accountKey = settingsStore.getConfig().imapUser || "default";
+    try {
+      const mappen = folderCache.folders.length ? folderCache.folders : (await mailbox.listFolders()).folders || [];
+      folderCache = { at: Date.now(), folders: mappen };
+      for (const f of mappen) {
+        if (!f.path || f.path.toUpperCase() === "INBOX") continue;
+        if (mapBezig.has(f.path)) continue;
+        mapBezig.add(f.path);
+        try {
+          await syncMap(accountKey, f.path);
+        } catch (e) {
+          console.error(`Map ${f.path} bijwerken mislukt:`, e.message);
+        } finally {
+          mapBezig.delete(f.path);
+        }
+      }
+    } catch (e) {
+      console.error("Mappen bijwerken mislukt:", e.message);
     }
   } catch (e) {
     console.error("Achtergrondronde mislukt (wordt straks opnieuw geprobeerd):", e.message);
