@@ -220,12 +220,18 @@ function inhoudBestand(accountKey, folder, uid) {
 // vooraf inladen van duizenden mails werden dat evenveel schrijfbeurten na
 // elkaar, en daar stond de app seconden voor stil.
 const versGeheugen = new Map();      // bestandspad -> inhoud
-const MAX_VERS = 300;
+// Bewust klein gehouden. De server heeft maar 512 MB; honderden mailteksten in
+// het geheugen houden zorgt voor opruimpauzes die je als haperingen voelt.
+const MAX_VERS = 25;
+const MAX_VERS_BYTES = 100000;
 
 function bewaarBody(accountKey, folder, uid, body) {
   const pad = inhoudBestand(accountKey, folder, uid);
   const inhoud = { ...body, bewaardOp: Date.now() };
-  versGeheugen.set(pad, inhoud);
+  // Alleen kleine berichten in het geheugen houden; een nieuwsbrief van een
+  // halve megabyte hoort op schijf en nergens anders.
+  const grootte = (inhoud.text || "").length + (inhoud.html || "").length;
+  if (grootte < MAX_VERS_BYTES) versGeheugen.set(pad, inhoud);
   // Het geheugen niet laten vollopen: enkel de laatst bewaarde blijven hangen,
   // de rest staat dan toch al op schijf.
   if (versGeheugen.size > MAX_VERS) {

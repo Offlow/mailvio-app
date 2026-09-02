@@ -7,6 +7,7 @@ const mailer = require("./mailer");
 const settingsStore = require("./settings");
 const classifications = require("./classifications");
 const mailstore = require("./mailstore");
+const belasting = require("./belasting");
 const auth = require("./auth");
 const afzenders = require("./afzenders");
 const bijlagen = require("./bijlagen");
@@ -182,6 +183,7 @@ async function syncMap(accountKey, folder, opties = {}) {
   const hoogste = mailstore.getHoogsteUid(accountKey, folder);
   const vorigeValidity = mailstore.getUidValidity(accountKey, folder);
 
+  belasting.zetBezig(`nieuwe mails ophalen uit ${folder}`);
   const data = await mailbox.fetchNieuweMails(folder, hoogste);
   if (!data.configured) return mailstore.getMails(accountKey, folder);
 
@@ -198,6 +200,7 @@ async function syncMap(accountKey, folder, opties = {}) {
 
   const recent = mailstore.getMails(accountKey, folder).slice(0, VLAGGEN_CONTROLE).map((m) => m.uid);
   if (recent.length) {
+    belasting.zetBezig(`gelezen/ongelezen nakijken in ${folder}`);
     const vlaggen = await mailbox.fetchVlaggen(folder, recent);
     for (const [uid, v] of vlaggen) mailstore.werkBij(accountKey, folder, uid, v);
   }
@@ -211,6 +214,7 @@ async function syncMap(accountKey, folder, opties = {}) {
     for (let i = 0; i < maxRondes; i++) {
       const laagste = mailstore.getLaagsteUid(accountKey, folder);
       if (laagste <= 0) break;
+      belasting.zetBezig(`oudere mails ophalen uit ${folder} (ronde ${i + 1})`);
       const ouder = await mailbox.fetchOudereMails(folder, laagste, backfill);
       if (ouder.mails && ouder.mails.length) mailstore.bewaarMails(accountKey, folder, ouder.mails, data.uidValidity);
       if (folder === "INBOX") backfillResterend = ouder.resterend || 0;
@@ -289,6 +293,7 @@ async function beoordeelPortie(accountKey, unclassified) {
     const batch = unclassified.slice(0, SCAN_BATCH_SIZE);
     let snippetByUid = new Map();
     try {
+      belasting.zetBezig(`fragmenten ophalen van ${batch.length} mails`);
       snippetByUid = await mailbox.fetchSnippetsForUids(batch.map((m) => m.uid));
     } catch (e) {
       console.error("Fragmenten ophalen mislukt:", e.message);
@@ -296,6 +301,7 @@ async function beoordeelPortie(accountKey, unclassified) {
     const forAi = batch.map((m) => ({ ...m, snippet: snippetByUid.get(m.uid) || "" }));
     let results = [];
     try {
+      belasting.zetBezig(`${forAi.length} mails laten beoordelen door de AI`);
       results = await ai.classifyMails(forAi);
     } catch (e) {
       console.error("Classificatie mislukt:", e.message);
@@ -373,10 +379,13 @@ async function laadVoorafIn(accountKey, maxRondes) {
       // het inladen op de achtergrond.
       await mailbox.wachtOpRust();
       if (mailbox.gebruikerBezig()) break;
+      // En ook wachten tot de server zelf weer bijbeen is.
+      await belasting.wachtOpRust();
 
       // In één keer over ÉÉN verbinding. Per mail apart verbinden kost een halve
       // seconde aan aanmelden alleen al — bij duizenden mails is dat uren.
       let bewaard = 0;
+      belasting.zetBezig(`inhoud inladen van ${teDoen.length} mails (portie ${i + 1})`);
       await mailbox.fetchMailBodies(teDoen, "INBOX", (mail) => {
         bewaarInhoud(accountKey, "INBOX", mail.uid, mail, mailstore.getBody(accountKey, "INBOX", mail.uid));
         bewaard++;
@@ -535,6 +544,19 @@ async function getMails(forceRefresh) {
   }
   return cache;
 }
+
+// Waaraan ligt het als de app traag aanvoelt? Dit vertelt het, in gewone taal.
+// Geen giswerk meer: hier staat hoe lang de server stilstond en waarmee hij
+// toen bezig was.
+app.get("/api/diagnose", (req, res) => {
+  const o = belasting.overzicht();
+  res.json({
+    ...o,
+    uitleg: o.ergsteBlokkades.length
+      ? o.ergsteBlokkades.map((b) => `${(b.ms / 1000).toFixed(1)}s stil tijdens: ${b.bezigMet}`)
+      : ["Geen enkele blokkade gemeten. De server bleef de hele tijd vlot antwoorden."],
+  });
+});
 
 app.get("/api/status", (req, res) => {
   const fout = ai.getLaatsteFout();
@@ -1531,6 +1553,12 @@ let achtergrondBezig = false;
 async function achtergrondRonde() {
   if (achtergrondBezig) return;
   if (!mailbox.isConfigured()) return;
+  // Loopt de server al achter op zichzelf? Dan is dit geen moment om er werk
+  // bij te nemen. We komen straks gewoon terug.
+  if (belasting.drukbezet()) {
+    console.log("Achtergrondronde overgeslagen: de server heeft het te druk.");
+    return;
+  }
   achtergrondBezig = true;
   try {
     // Nieuwe mails ophalen en beoordelen. Zolang er nog niet-beoordeelde mails
@@ -1628,6 +1656,7 @@ async function achtergrondRonde() {
     console.error("Achtergrondronde mislukt (wordt straks opnieuw geprobeerd):", e.message);
   } finally {
     achtergrondBezig = false;
+    belasting.zetBezig("niets");
   }
 }
 
