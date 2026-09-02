@@ -221,7 +221,11 @@ function verwijderMail(accountKey, folder, uid) {
   const data = lees(accountKey, folder);
   delete data.mails[uid];
   delete data.bodies[uid];
-  try { fs.unlinkSync(inhoudBestand(accountKey, folder, uid)); } catch (e) { /* niet bewaard */ }
+  try {
+    const pad = inhoudBestand(accountKey, folder, uid);
+    fs.unlinkSync(pad);
+    inhoudIndex().delete(path.basename(pad));
+  } catch (e) { /* niet bewaard */ }
   data.bijgewerkt = Date.now();
   schrijf(accountKey, folder, data);
 }
@@ -255,6 +259,7 @@ const MAX_VERS_BYTES = 100000;
 function bewaarBody(accountKey, folder, uid, body) {
   const pad = inhoudBestand(accountKey, folder, uid);
   const inhoud = { ...body, bewaardOp: Date.now() };
+  inhoudIndex().add(path.basename(pad));
   // Alleen kleine berichten in het geheugen houden; een nieuwsbrief van een
   // halve megabyte hoort op schijf en nergens anders.
   const grootte = (inhoud.text || "").length + (inhoud.html || "").length;
@@ -274,6 +279,26 @@ function bewaarBody(accountKey, folder, uid, body) {
     }
   })();
   ruimInhoudOp(accountKey);
+}
+
+// WELKE MAILS HEBBEN AL INHOUD OP SCHIJF?
+// Dit werd tot nu nagegaan door het bestand écht in te lezen en te ontleden —
+// voor elke mail opnieuw. Bij het zoeken naar "wat moet er nog ingeladen
+// worden" gebeurde dat duizenden keren per portie, en werd het inladen trager
+// naarmate er méér ingeladen was. Precies verkeerd om.
+// Nu houden we één lijst bij van welke bestanden er zijn. Nakijken kost niets.
+let bekendeInhoud = null;
+function inhoudIndex() {
+  if (bekendeInhoud) return bekendeInhoud;
+  bekendeInhoud = new Set();
+  try {
+    for (const naam of fs.readdirSync(INHOUD_DIR)) bekendeInhoud.add(naam);
+  } catch (e) { /* map bestaat nog niet */ }
+  return bekendeInhoud;
+}
+
+function heeftBody(accountKey, folder, uid) {
+  return inhoudIndex().has(path.basename(inhoudBestand(accountKey, folder, uid)));
 }
 
 function getBody(accountKey, folder, uid) {
@@ -357,7 +382,7 @@ function inhoudVoortgang(accountKey, folder) {
   const uids = Object.keys(lees(accountKey, folder).mails || {});
   let klaar = 0;
   for (const uid of uids) {
-    if (fs.existsSync(inhoudBestand(accountKey, folder, uid))) klaar++;
+    if (heeftBody(accountKey, folder, uid)) klaar++;
   }
   return { totaal: uids.length, klaar };
 }
@@ -377,6 +402,7 @@ function getMappen(accountKey) {
 
 module.exports = {
   flush,
+  heeftBody,
   inhoudVoortgang,
   getMappen,
   getMails,

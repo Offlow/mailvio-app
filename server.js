@@ -8,6 +8,7 @@ const settingsStore = require("./settings");
 const classifications = require("./classifications");
 const mailstore = require("./mailstore");
 const belasting = require("./belasting");
+const voorstellen = require("./voorstellen");
 const auth = require("./auth");
 const afzenders = require("./afzenders");
 const bijlagen = require("./bijlagen");
@@ -164,7 +165,7 @@ const SCAN_BATCH_SIZE = 30;
 // Hoeveel mails er per keer op de achtergrond binnengehaald worden. Bewust
 // klein: de server heeft één processor, en het ontleden van echte mails kost
 // rekenkracht. Liever een uur rustig doorwerken dan jou laten wachten.
-const VOORAF_PER_RONDE = 30;
+const VOORAF_PER_RONDE = 60;
 let cache = { at: 0, mails: [], total: 0, capped: false, scanned: 0, scanning: false };
 const suggestionCache = new Map(); // uid -> voorstel, leegt mee met de mail-cache
 let folderCache = { at: 0, folders: [] };
@@ -346,6 +347,55 @@ async function beoordeelPortie(accountKey, unclassified) {
   cache.at = 0;
 }
 
+// ---------------------------------------------------------------------------
+// HET ANTWOORD STAAT AL KLAAR VOOR JE DE MAIL OPENT
+// ---------------------------------------------------------------------------
+// Een antwoord laten opstellen duurt tot een minuut. Gebeurt dat pas wanneer jij
+// de mail opent, dan zit jij die minuut te wachten — en dan heeft het geen nut
+// meer. Daarom maakt Mailvio het voorstel al klaar zodra een mail binnen is,
+// voor de recentste berichten waar effectief een antwoord op moet.
+const VOORSTEL_MAILS = 250;   // hoe ver terug we voorstellen klaarzetten
+const VOORSTEL_PER_RONDE = 8; // hoeveel er per ronde bijkomen
+let voorstelBezig = false;
+
+async function maakVoorstellenKlaar(accountKey) {
+  if (voorstelBezig || !ai.isConfigured()) return;
+  voorstelBezig = true;
+  try {
+    const data = await getMails(false);
+    const kandidaten = (data.mails || [])
+      .slice(0, VOORSTEL_MAILS)
+      .filter((m) => !m.resolved && !m.genegeerd)
+      .filter((m) => m.soort !== "reclame" && m.soort !== "phishing")
+      .filter((m) => m.categorie && m.categorie !== "geen_actie" && m.categorie !== "onbekend")
+      .filter((m) => !voorstellen.heeft(accountKey, m.uid));
+
+    let gemaakt = 0;
+    for (const m of kandidaten) {
+      if (gemaakt >= VOORSTEL_PER_RONDE) break;
+      if (mailbox.gebruikerBezig() || belasting.drukbezet()) break;
+      belasting.zetBezig("antwoord klaarzetten");
+      try {
+        const body = await haalMailOp(accountKey, m.uid, "INBOX");
+        if (!body) continue;
+        const voorstel = await ai.suggestReply({ ...m, ...body });
+        if (voorstel && voorstel.antwoord) {
+          voorstellen.bewaar(accountKey, m.uid, voorstel);
+          gemaakt++;
+        }
+      } catch (e) {
+        console.error(`Voorstel voor mail ${m.uid} mislukt:`, e.message);
+      }
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    if (gemaakt) console.log(`${gemaakt} antwoorden alvast klaargezet (${voorstellen.aantal(accountKey)} in totaal).`);
+  } catch (e) {
+    console.error("Antwoorden klaarzetten mislukt:", e.message);
+  } finally {
+    voorstelBezig = false;
+  }
+}
+
 // Haalt op de achtergrond de inhoud op van de mails die je waarschijnlijk gaat
 // openen. Loopt rustig verder en houdt bij wat er al is, zodat er nooit iets
 // dubbel gehaald wordt.
@@ -372,7 +422,9 @@ async function laadVoorafIn(accountKey, maxRondes) {
       const alle = mailstore.getMails(accountKey, "INBOX");
       const teDoen = [];
       for (const m of alle) {
-        if (mailstore.getBody(accountKey, "INBOX", m.uid)) continue;
+        // Nakijken zonder het bestand in te lezen — anders wordt het zoeken naar
+        // "wat moet er nog?" trager naarmate er meer ingeladen is.
+        if (mailstore.heeftBody(accountKey, "INBOX", m.uid)) continue;
         teDoen.push(m.uid);
         if (teDoen.length >= VOORAF_PER_RONDE) break;
       }
@@ -391,15 +443,16 @@ async function laadVoorafIn(accountKey, maxRondes) {
       let bewaard = 0;
       belasting.zetBezig(`inhoud inladen van ${teDoen.length} mails (portie ${i + 1})`);
       await mailbox.fetchMailBodies(teDoen, "INBOX", (mail) => {
-        bewaarInhoud(accountKey, "INBOX", mail.uid, mail, mailstore.getBody(accountKey, "INBOX", mail.uid));
+        bewaarInhoud(accountKey, "INBOX", mail.uid, mail);
         bewaard++;
       });
       if (!bewaard) break; // lukt het niet, dan stoppen we deze ronde
       console.log(`${bewaard} mails ingeladen (portie ${i + 1}).`);
-      // Een echte pauze tussen twee porties. Het inladen op de achtergrond
-      // heeft geen haast; jouw kliks wel. Zo blijft er altijd rekenkracht over
-      // voor het scherm waar jij op zit te kijken.
-      await new Promise((r) => setTimeout(r, 1500));
+      // Een korte pauze tussen twee porties. Jouw kliks komen er sowieso al
+      // tussen — na élke mail wordt de app losgelaten — dus deze pauze mag
+      // kort zijn. Anderhalve seconde per portie kostte bij duizenden mails
+      // uren extra.
+      await new Promise((r) => setTimeout(r, 250));
     }
   } catch (e) {
     console.error("Vooraf inladen mislukt:", e.message);
@@ -820,15 +873,28 @@ app.get("/api/mails/:uid/suggestion", async (req, res) => {
     // "Maak een nieuw antwoord" stuurt force=1 mee: dan negeren we het bewaarde
     // voorstel en laten we de AI er echt een ander maken.
     const opnieuw = req.query.force === "1" || req.headers["x-force"] === "1";
+    const accountKey = settingsStore.getConfig().imapUser || "default";
     if (!opnieuw && suggestionCache.has(uid)) {
       return res.json(suggestionCache.get(uid));
     }
+    // OP SCHIJF BEWAARD. Tot nu stond een voorstel enkel in het geheugen en werd
+    // het bij elke verversing weggegooid — dus zat je telkens opnieuw te wachten.
+    if (!opnieuw) {
+      const bewaardVoorstel = voorstellen.get(accountKey, uid);
+      if (bewaardVoorstel) {
+        suggestionCache.set(uid, bewaardVoorstel);
+        return res.json(bewaardVoorstel);
+      }
+    }
     const data = await getMails(false);
     const meta = data.mails.find((m) => m.uid === uid) || {};
-    const body = await mailbox.fetchMailBody(uid);
+    // Uit de bewaarde inhoud, niet opnieuw van de mailserver — dat scheelde
+    // seconden per mail.
+    const body = await haalMailOp(accountKey, uid, "INBOX");
     if (!body) return res.status(404).json({ error: "Mail niet gevonden." });
     const suggestion = await ai.suggestReply({ ...meta, ...body });
     suggestionCache.set(uid, suggestion);
+    voorstellen.bewaar(accountKey, uid, suggestion);
     res.json(suggestion);
   } catch (e) {
     console.error(e);
@@ -1118,9 +1184,26 @@ app.post("/api/mails/:uid/read", async (req, res) => {
 app.post("/api/mails/:uid/move", async (req, res) => {
   try {
     const uid = Number(req.params.uid);
-    const doel = req.body?.to === "prullenmand" ? "prullenmand" : "archief";
+    // "prullenmand" en "archief" zijn rollen; "map:Naam" is een echte map op je
+    // mailserver, zodat je vanuit het rechtsklikmenu overal naartoe kan.
+    const gevraagd = String(req.body?.to || "");
+    const doel = gevraagd.startsWith("map:") ? gevraagd
+      : gevraagd === "prullenmand" ? "prullenmand"
+      : gevraagd === "reclame" ? "map:Reclame"
+      : "archief";
     const folder = req.body?.folder;
     const result = await mailbox.verplaatsMail(uid, doel, folder);
+    // NAAR RECLAME GESLEEPT = VOORTAAN ALTIJD RECLAME.
+    // Zet je een mail zelf bij de reclame, dan is dat een oordeel over die
+    // afzender. Dat onthouden we, zodat je het geen tweede keer hoeft te doen.
+    if (/reclame|junk|spam|ongewenst/i.test(doel)) {
+      const bron = (cache.mails || []).find((m) => m.uid === uid) || (envelopeCache.mails || []).find((m) => m.uid === uid);
+      const adres = bron && bron.fromAddress;
+      if (adres) {
+        afzenders.beslis(taakAccount(), adres, true);
+        console.log(`${adres} voortaan als reclame behandeld (mail zelf verplaatst).`);
+      }
+    }
     // Weg uit de inbox: ook uit de caches halen zodat de lijst meteen klopt.
     cache.mails = (cache.mails || []).filter((m) => m.uid !== uid);
     envelopeCache.mails = (envelopeCache.mails || []).filter((m) => m.uid !== uid);
@@ -1656,6 +1739,10 @@ async function achtergrondRonde() {
       if (ai.getLaatsteFout()) break;
     }
     cache.at = 0;
+
+    // De antwoorden voor je recentste mails alvast klaarzetten, zodat je nooit
+    // meer op de AI moet wachten als je een mail opent.
+    await maakVoorstellenKlaar(accountKey0);
 
     // PAS HIERNA de volledige inhoud van elke mail binnenhalen. Dit stond
     // vroeger VOOR de beoordeling, en dan bleef je dashboard leeg zolang er

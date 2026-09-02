@@ -109,7 +109,26 @@
   .chips{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 24px}
   .chip{border:1px solid var(--border);background:var(--surface);border-radius:99px;padding:7px 14px;font-size:12.5px;font-weight:600;cursor:pointer;color:var(--ink-soft)}
   .chip:hover{background:var(--surface-2)}
-  .promptAnswer{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 16px;font-size:13.5px;line-height:1.6;margin-bottom:22px;white-space:pre-wrap}
+  /* Het antwoord op je vraag: met opmaak, en wegklikbaar. */
+  .promptAnswer{position:relative;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px 44px 16px 18px;font-size:13.5px;line-height:1.65;margin-bottom:22px}
+  .promptAnswer p{margin:0 0 10px}
+  .promptAnswer p:last-child{margin-bottom:0}
+  .promptAnswer ul,.promptAnswer ol{margin:0 0 10px;padding-left:20px}
+  .promptAnswer li{margin:3px 0}
+  .promptAnswer h3{font-size:14px;margin:14px 0 6px}
+  .promptAnswer h3:first-child{margin-top:0}
+  .promptAnswer strong{font-weight:800}
+  .promptAnswer code{background:var(--surface-2);border-radius:4px;padding:1px 5px;font-size:12.5px}
+  .promptAnswer .denkt{color:var(--ink-faint);font-style:italic}
+  .antwoordSluit{position:absolute;top:8px;right:8px;border:0;background:transparent;font-size:20px;line-height:1;color:var(--ink-faint);cursor:pointer;padding:4px 8px;border-radius:6px}
+  .antwoordSluit:hover{background:var(--surface-2);color:var(--ink)}
+  .antwoordKnoppen{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+  .antwoordKnoppen button{border:1px solid var(--border);background:var(--surface-2);border-radius:8px;padding:7px 13px;font-size:12.5px;font-weight:700;cursor:pointer}
+  .antwoordKnoppen button.primair{background:var(--accent);color:#fff;border-color:transparent}
+  /* De spraakknop naast het vraagveld. */
+  .micKnop{border:1px solid var(--border);background:var(--surface);border-radius:10px;padding:0 13px;font-size:16px;cursor:pointer;line-height:1}
+  .micKnop.luistert{background:var(--red,#c0392b);color:#fff;border-color:transparent;animation:micPuls 1.2s infinite}
+  @keyframes micPuls{0%,100%{opacity:1}50%{opacity:.55}}
   .sectionTitle{display:flex;align-items:center;gap:8px;font-weight:800;font-size:15px;margin:0 0 12px}
   .sectionTitle .dotmark{width:8px;height:8px;border-radius:50%;background:var(--red)}
   .todoCard{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 16px;display:flex;align-items:center;gap:12px;margin-bottom:8px}
@@ -488,7 +507,14 @@
   .aiSuggest .row b{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint);margin-bottom:2px;font-weight:800}
   .draftBox{margin-top:14px}
   .draftBox .label{font-size:11px;text-transform:uppercase;letter-spacing:.05em;font-weight:800;color:var(--ink-faint);margin-bottom:6px}
-  .draftBox textarea{width:100%;min-height:160px;border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:13px;font-family:inherit;line-height:1.6;resize:vertical}
+  .draftBox textarea{width:100%;min-height:280px;border:1px solid var(--border);border-radius:9px;padding:12px 14px;font-size:13.5px;font-family:inherit;line-height:1.65;resize:vertical;background:var(--surface)}
+  .draftBox .draftKop{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:6px}
+  .draftGroot{border:1px solid var(--border);background:var(--surface-2);border-radius:7px;padding:4px 9px;font-size:11.5px;font-weight:700;cursor:pointer;color:var(--ink-soft)}
+  .draftGroot:hover{background:var(--surface)}
+  /* Volledig scherm: schrijven zonder in een smal kolommetje te turen. */
+  .draftBox.groot{position:fixed;inset:24px;z-index:220;background:var(--surface);border:1px solid var(--border);border-radius:14px;box-shadow:0 24px 70px rgba(0,0,0,.28);padding:20px 22px;display:flex;flex-direction:column;margin:0}
+  .draftBox.groot textarea{flex:1 1 auto;min-height:0;font-size:14.5px;line-height:1.7}
+  .draftHandtekening{font-size:12px;color:var(--ink-faint);border-top:1px dashed var(--border);margin-top:8px;padding-top:8px;white-space:pre-wrap}
   .draftActions{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
   .sendMsg{font-size:12.5px;margin-top:8px;line-height:1.5}
   .sendMsg.ok{color:var(--green)}
@@ -779,6 +805,83 @@ function escapeHtml(str) {
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
   }[c]));
 }
+
+// ---------------------------------------------------------------------------
+// Antwoorden van de AI leesbaar maken
+// ---------------------------------------------------------------------------
+// De AI schrijft met sterretjes en streepjes (**vet**, - opsomming). Dat is
+// bedoeld als opmaak, maar het stond hier gewoon als tekens op je scherm. Dit
+// zet het om naar echte opmaak: vet, opsommingen, tussentitels, alinea's.
+// De tekst wordt EERST onschadelijk gemaakt, zodat een mail met html erin
+// nooit iets kan uitvoeren.
+function opmaak(tekst) {
+  const veilig = escapeHtml(String(tekst || "").replace(/\r\n/g, "\n"));
+  if (!veilig.trim()) return "";
+
+  const inline = (r) => r
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<em>$2</em>")
+    .replace(/`([^`]+)`/g, "<code>$1</code>");
+
+  const uit = [];
+  let lijst = null;      // "ul" of "ol" zolang we in een opsomming zitten
+  let alinea = [];
+
+  const sluitAlinea = () => {
+    if (!alinea.length) return;
+    uit.push(`<p>${inline(alinea.join("<br>"))}</p>`);
+    alinea = [];
+  };
+  const sluitLijst = () => {
+    if (!lijst) return;
+    uit.push(`</${lijst}>`);
+    lijst = null;
+  };
+
+  for (const ruw of veilig.split("\n")) {
+    const regel = ruw.trim();
+    if (!regel) { sluitAlinea(); sluitLijst(); continue; }
+
+    const kop = regel.match(/^#{1,4}\s+(.*)$/);
+    if (kop) { sluitAlinea(); sluitLijst(); uit.push(`<h3>${inline(kop[1])}</h3>`); continue; }
+
+    const punt = regel.match(/^[-*\u2022]\s+(.*)$/);
+    if (punt) {
+      sluitAlinea();
+      if (lijst !== "ul") { sluitLijst(); uit.push("<ul>"); lijst = "ul"; }
+      uit.push(`<li>${inline(punt[1])}</li>`);
+      continue;
+    }
+
+    const nummer = regel.match(/^(\d{1,2})[.)]\s+(.*)$/);
+    if (nummer) {
+      sluitAlinea();
+      if (lijst !== "ol") { sluitLijst(); uit.push("<ol>"); lijst = "ol"; }
+      uit.push(`<li>${inline(nummer[2])}</li>`);
+      continue;
+    }
+
+    sluitLijst();
+    alinea.push(regel);
+  }
+  sluitAlinea();
+  sluitLijst();
+  return uit.join("");
+}
+
+// Dezelfde tekst, maar dan ZONDER die tekens — voor in een mail, waar
+// sterretjes en hekjes niets te zoeken hebben.
+function platteTekst(tekst) {
+  return String(tekst || "")
+    .replace(/\r\n/g, "\n")
+    .replace(/^#{1,4}\s+/gm, "")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/(^|[^*])\*([^*\n]+)\*/g, "$1$2")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/^[-*\u2022]\s+/gm, "\u2022 ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
 function initials(name) {
   const parts = String(name || "?").trim().split(/\s+/);
   return ((parts[0]?.[0] || "") + (parts[1]?.[0] || "")).toUpperCase() || "?";
@@ -910,6 +1013,16 @@ async function nieuweMailbox() {
 // Mappen (echte IMAP-mappen van de mailbox)
 // ---------------------------------------------------------------------------
 const STANDAARD_ROLLEN = ["verzonden", "concepten", "archief", "prullenmand", "spam"];
+
+// Je eigen mappen op de mailserver — die je in het rechtsklikmenu als
+// bestemming aangeboden krijgt. Hoogstens acht, anders wordt dat menu een
+// telefoonboek.
+function eigenMappen() {
+  return (state.folders || [])
+    .filter((f) => f.rol !== "inbox" && !STANDAARD_ROLLEN.includes(f.rol) && f.path)
+    .slice(0, 8)
+    .map((f) => ({ path: f.path, naam: f.name || f.path }));
+}
 const ROL_LABEL = {
   verzonden: "Verzonden",
   concepten: "Concepten",
@@ -1356,8 +1469,11 @@ function openCtxMenu(e, uid, folder) {
     <div class="lijn"></div>
     <button data-ctx="todo">✓ Toevoegen aan to-do</button>
     <button data-ctx="lezen">${m.unread ? "◉ Markeren als gelezen" : "○ Markeren als ongelezen"}</button>
+    <button data-ctx="reclame">📣 Dit is reclame</button>
     <div class="lijn"></div>
     <button data-ctx="archief">🗄 Archiveren</button>
+    ${eigenMappen().map((f) => `<button data-ctx="map:${escapeHtml(f.path)}">📁 Naar ${escapeHtml(f.naam || f.path)}</button>`).join("")}
+    <div class="lijn"></div>
     <button class="gevaar" data-ctx="prullenmand">🗑 Verwijderen</button>`;
 
   menu.hidden = false;
@@ -1377,9 +1493,17 @@ function openCtxMenu(e, uid, folder) {
         renderSidebarCounts();
         return renderView();
       }
-      if (actie === "archief" || actie === "prullenmand") {
+      if (actie === "archief" || actie === "prullenmand" || actie.startsWith("map:")) {
         state.currentFolder = uitMap ? folder : "INBOX";
         return verplaatsMail(uid, actie);
+      }
+      if (actie === "reclame") {
+        // Twee dingen tegelijk: deze mail naar de reclamemap, en de afzender
+        // voortaan altijd als reclame behandelen.
+        state.currentFolder = uitMap ? folder : "INBOX";
+        await verplaatsMail(uid, "reclame");
+        if (m.fromAddress) await beslisOverAfzender(m.fromAddress, true);
+        return;
       }
       if (actie === "todo") {
         return maakTaakVanMail({
@@ -2373,16 +2497,30 @@ function koppelTwijfelKnoppen(mount) {
 // contactvraag: via je website, via dakwAIrker, of rechtstreeks van een klant.
 // Ze blijven ook gewoon bij "vandaag te beantwoorden" staan; dit is een extra
 // ingang omdat hier het geld binnenkomt.
+// Hier hoort ALLEEN werk dat naar jou toe komt. Wat er vroeger ten onrechte
+// tussen stond: bevestigingen van formulieren die JIJ ergens invulde ("bedankt
+// voor je aanvraag"), en mails van leveranciers, de boekhouder of de overheid
+// waar toevallig het woord "aanvraag" in staat. Dat is geen nieuw werk.
+const EIGEN_AANVRAAG = /bedankt voor (je|uw) (aanvraag|bericht|interesse|inschrijving)|we?(ij)? hebben (je|uw) (aanvraag|bericht|vraag)|(aanvraag|bericht) (goed )?ontvangen|bevestiging van (je|uw)|kopie van (je|uw) bericht|dit is een automatisch|no-?reply bevestiging|je aanvraag is|uw aanvraag is|inschrijving (is )?bevestigd|bedankt om ons te contacteren/i;
+
+// Van wie een aanvraag WEL kan komen. Een leverancier, je boekhouder, je bank
+// of de overheid sturen je geen offerteaanvraag.
+const AANVRAAG_VAN = ["klant", "platform", "onbekend"];
+
 function aanvraagLijst() {
-  const woorden = /offerte|offert|prijsvraag|prijsaanvraag|prijs aanvra|contactformulier|contact formulier|aanvraag|aanvragen|nieuw bericht via|bestek|raming/i;
+  const woorden = /offerte|offert|prijsvraag|prijsaanvraag|prijs aanvra|contactformulier|contact formulier|nieuwe aanvraag|aanvraag voor|nieuw bericht via|bestek|raming|prijsopgave/i;
   return (state.mails || [])
     .filter((m) => !m.resolved && !m.genegeerd && m.soort !== "reclame" && m.soort !== "phishing" && m.vanType !== "prive")
-    .filter((m) =>
-      m.soort === "offerte" ||
-      m.viaWebsite ||
-      m.vanType === "platform" ||
-      woorden.test(`${m.subject || ""} ${m.from || ""} ${m.fromAddress || ""}`)
-    )
+    // Bevestigingen van je eigen ingevulde formulieren horen hier niet.
+    .filter((m) => !EIGEN_AANVRAAG.test(`${m.subject || ""} ${m.snippet || ""}`))
+    .filter((m) => {
+      // Via je eigen website of via dakwAIrker: altijd een echte aanvraag.
+      if (m.viaWebsite || m.vanType === "platform") return true;
+      // Anders moet het van een klant (of iemand die we nog niet kennen) komen.
+      if (!AANVRAAG_VAN.includes(m.vanType || "onbekend")) return false;
+      if (m.soort === "offerte") return true;
+      return woorden.test(`${m.subject || ""} ${m.from || ""} ${m.fromAddress || ""}`);
+    })
     .sort((a, b) => new Date(b.date) - new Date(a.date));
 }
 
@@ -2473,6 +2611,7 @@ function renderVandaag() {
 
       <div class="promptBar">
         <input id="vandaagPrompt" type="text" placeholder="Stel een vraag of geef een opdracht...">
+        <button class="micKnop" id="vandaagMic" title="Inspreken in het Nederlands">&#127908;</button>
         <button id="vandaagAsk">Stuur</button>
       </div>
       <div class="chips">
@@ -2480,7 +2619,11 @@ function renderVandaag() {
         <button class="chip" data-q="Wat zijn mijn belangrijkste mails?">Wat zijn mijn belangrijkste mails?</button>
         <button class="chip" data-q="Welke offertes moet ik opvolgen?">Welke offertes moet ik opvolgen?</button>
       </div>
-      <div class="promptAnswer" id="vandaagAnswer" ${state.chatAntwoord ? "" : "hidden"}>${escapeHtml(state.chatAntwoord || "")}</div>
+      <div class="promptAnswer" id="vandaagAnswer" ${state.chatAntwoord ? "" : "hidden"}>
+        <button class="antwoordSluit" id="vandaagAnswerSluit" title="Wegklikken">&times;</button>
+        <div id="vandaagAnswerInhoud">${opmaak(state.chatAntwoord || "")}</div>
+        <div class="antwoordKnoppen" id="vandaagAnswerKnoppen"></div>
+      </div>
 
       ${twijfel.length ? `
       <div class="zaakBlok">
@@ -2537,6 +2680,14 @@ function renderVandaag() {
   mount.querySelectorAll(".chip").forEach((c) => c.addEventListener("click", () => askVandaag(c.dataset.q)));
   document.getElementById("vandaagAsk").addEventListener("click", () => askVandaag(document.getElementById("vandaagPrompt").value));
   document.getElementById("vandaagPrompt").addEventListener("keydown", (e) => { if (e.key === "Enter") askVandaag(e.target.value); });
+  const sluit = document.getElementById("vandaagAnswerSluit");
+  if (sluit) sluit.addEventListener("click", wisChatAntwoord);
+  // Inspreken in het Nederlands, met dezelfde spraakknop als bij de to-do's.
+  koppelSpraak(document.getElementById("vandaagPrompt"), "vandaagMic", null, () => {
+    const v = document.getElementById("vandaagPrompt");
+    if (v && v.value.trim()) askVandaag(v.value);
+  });
+  toonChatAntwoord();
 }
 
 // Jouw oordeel over een afzender bewaren. Vanaf nu belandt élke mail van dit
@@ -2554,7 +2705,88 @@ async function beslisOverAfzender(adres, reclame) {
     return;
   }
   showToast(reclame ? `Alles van ${adres} gaat voortaan naar Reclame.` : `${adres} blijft gewone post.`);
+  // METEEN WEG UIT HET SCHERM.
+  // Vroeger bleef de kaart staan tot de mails op de achtergrond ververst waren
+  // — en omdat er verder niets veranderde, werd het scherm soms helemaal niet
+  // opnieuw getekend. Nu passen we het hier zelf aan en tekenen we meteen.
+  const a = String(adres).toLowerCase();
+  for (const m of state.mails || []) {
+    if (String(m.fromAddress || "").toLowerCase() !== a) continue;
+    m.afzenderBeslist = true;
+    m.reclameTwijfel = false;
+    if (reclame) { m.soort = "reclame"; m.categorie = "geen_actie"; m.belangrijk = false; m.actieLabel = ""; }
+    else if (m.soort === "reclame") { m.soort = "overig"; }
+  }
+  state._mailAfdruk = null; // zorgt dat de volgende verversing wél hertekent
+  renderSidebarCounts();
+  renderView(true);
   await loadMails(true);
+}
+
+// Vroeg je om een mail te schrijven? Dan bieden we hem meteen aan om te
+// versturen, in plaats van dat je hem moet overtypen.
+function vraagtOmMail(vraag) {
+  return /\b(mail|bericht|antwoord|brief|schrijf|opstellen|opstel|stuur|verstuur|reageer)\b/i.test(String(vraag || ""));
+}
+
+function toonChatAntwoord() {
+  const vak = document.getElementById("vandaagAnswer");
+  if (!vak) return;
+  vak.hidden = !state.chatAntwoord;
+  const inhoud = document.getElementById("vandaagAnswerInhoud");
+  if (inhoud) {
+    inhoud.innerHTML = state.chatBezig && !state.chatKlaar
+      ? '<p class="denkt">Bezig met nadenken\u2026</p>'
+      : opmaak(state.chatAntwoord || "");
+  }
+  const knoppen = document.getElementById("vandaagAnswerKnoppen");
+  if (knoppen) {
+    knoppen.innerHTML = "";
+    if (!state.chatBezig && state.chatAntwoord) {
+      if (vraagtOmMail(state.chatVraag)) {
+        const b = document.createElement("button");
+        b.className = "primair";
+        b.textContent = "\u2709 Als mail versturen";
+        b.onclick = () => maakMailVanAntwoord();
+        knoppen.appendChild(b);
+      }
+      const k = document.createElement("button");
+      k.textContent = "\u29c9 Kopiëren";
+      k.onclick = async () => {
+        try { await navigator.clipboard.writeText(platteTekst(state.chatAntwoord)); showToast("Gekopieerd."); }
+        catch (e) { showToast("Kopiëren lukte niet."); }
+      };
+      knoppen.appendChild(k);
+    }
+  }
+  const b = document.getElementById("vandaagAsk");
+  if (b) b.disabled = state.chatBezig;
+}
+
+function wisChatAntwoord() {
+  state.chatAntwoord = "";
+  state.chatVraag = "";
+  const vak = document.getElementById("vandaagAnswer");
+  if (vak) vak.hidden = true;
+}
+
+// Van het antwoord een echte, verstuurbare mail maken: zonder sterretjes, met
+// je handtekening eronder, in het gewone opstelvenster.
+function maakMailVanAntwoord() {
+  const tekst = platteTekst(state.chatAntwoord);
+  // Staat er een onderwerpregel in ("Onderwerp: ..."), dan halen we die eruit.
+  let onderwerp = "";
+  let body = tekst;
+  const m = tekst.match(/^\s*(?:onderwerp|subject)\s*:\s*(.+)$/im);
+  if (m) {
+    onderwerp = m[1].trim();
+    body = tekst.replace(m[0], "").trim();
+  }
+  // Een adres alvast invullen: eerst uit het antwoord, anders uit je eigen
+  // vraag ("schrijf een mail naar jan@example.be over ...").
+  const zoekAdres = (t) => (String(t || "").match(/[\w.+-]+@[\w-]+\.[\w.-]+/) || [""])[0];
+  const adres = zoekAdres(body) || zoekAdres(state.chatVraag);
+  openCompose({ to: adres, subject: onderwerp, body });
 }
 
 async function askVandaag(question) {
@@ -2563,15 +2795,11 @@ async function askVandaag(question) {
   // Het antwoord wordt in de state bewaard. Vroeger stond het enkel in het
   // scherm, en dan verdween het (samen met de knop) zodra de mails op de
   // achtergrond ververst werden — precies terwijl je op je antwoord wachtte.
-  state.chatAntwoord = "Bezig met nadenken...";
-  const toon = () => {
-    const el = document.getElementById("vandaagAnswer");
-    if (el) { el.hidden = false; el.textContent = state.chatAntwoord; }
-    const b = document.getElementById("vandaagAsk");
-    if (b) b.disabled = state.chatBezig;
-  };
+  state.chatVraag = q;
+  state.chatAntwoord = "";
+  state.chatKlaar = false;
   state.chatBezig = true;
-  toon();
+  toonChatAntwoord();
   try {
     const res = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: q }) });
     const data = await res.json();
@@ -2580,7 +2808,8 @@ async function askVandaag(question) {
     state.chatAntwoord = "Er ging iets mis: " + e.message;
   } finally {
     state.chatBezig = false;
-    toon();
+    state.chatKlaar = true;
+    toonChatAntwoord();
   }
 }
 
@@ -2849,7 +3078,14 @@ function renderInbox() {
         </div>
         <div class="aiChatBox">
           <div style="font-size:12.5px;color:var(--ink-soft)">Stel gerust een vraag over je inbox.</div>
-          <input id="inboxAsk" type="text" placeholder="Vraag iets over je mailbox...">
+          <div style="display:flex;gap:6px;align-items:stretch">
+            <input id="inboxAsk" type="text" placeholder="Vraag iets over je mailbox..." style="flex:1 1 auto;min-width:0">
+            <button class="micKnop" id="inboxMic" title="Inspreken in het Nederlands">&#127908;</button>
+          </div>
+          <div class="promptAnswer" id="inboxAnswer" hidden style="margin:10px 0 0;font-size:13px">
+            <button class="antwoordSluit" id="inboxAnswerSluit" title="Wegklikken">&times;</button>
+            <div id="inboxAnswerInhoud"></div>
+          </div>
         </div>
       </aside>
     </div>
@@ -2883,20 +3119,36 @@ function renderInbox() {
     state.getoondeRijen = RIJEN_PER_KEER;
     tekenMailRijen();
   });
-  document.getElementById("inboxAsk").addEventListener("keydown", async (e) => {
-    if (e.key !== "Enter") return;
-    const q = e.target.value.trim();
-    if (!q) return;
-    e.target.value = "Bezig...";
-    e.target.disabled = true;
+  // Het antwoord kwam vroeger als een tijdelijk melding-balkje voorbij, afgekapt
+  // op 180 tekens. Nu staat het gewoon in de kolom, met opmaak, en blijft het
+  // staan tot jij het wegklikt.
+  const vraagInbox = async (q) => {
+    const veld = document.getElementById("inboxAsk");
+    const vak = document.getElementById("inboxAnswer");
+    const inhoud = document.getElementById("inboxAnswerInhoud");
+    if (!q || !vak || !inhoud) return;
+    vak.hidden = false;
+    inhoud.innerHTML = '<p class="denkt">Bezig met nadenken\u2026</p>';
+    if (veld) veld.disabled = true;
     try {
       const res = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: q }) });
       const data = await res.json();
-      showToast((data.answer || data.error || "Geen antwoord.").slice(0, 180));
+      inhoud.innerHTML = opmaak(data.answer || data.error || "Geen antwoord ontvangen.");
+    } catch (err) {
+      inhoud.innerHTML = opmaak("Er ging iets mis: " + err.message);
     } finally {
-      e.target.value = "";
-      e.target.disabled = false;
+      if (veld) { veld.disabled = false; veld.value = ""; }
     }
+  };
+  document.getElementById("inboxAsk").addEventListener("keydown", (e) => {
+    if (e.key !== "Enter") return;
+    vraagInbox(e.target.value.trim());
+  });
+  const inboxSluit = document.getElementById("inboxAnswerSluit");
+  if (inboxSluit) inboxSluit.addEventListener("click", () => { document.getElementById("inboxAnswer").hidden = true; });
+  koppelSpraak(document.getElementById("inboxAsk"), "inboxMic", null, () => {
+    const v = document.getElementById("inboxAsk");
+    if (v && v.value.trim()) vraagInbox(v.value.trim());
   });
 }
 
@@ -3444,28 +3696,95 @@ function vulHtmlMail(m) {
   // Dit stukje draait BINNEN de afgeschermde mail en geeft enkel de hoogte door.
   // De mail zelf kan niets: geen toegang tot Mailvio, geen cookies, geen eigen
   // scripts (die zijn er op de server al uit gehaald).
+  // DIT MAT ZICHZELF EN GROEIDE DAARDOOR EINDELOOS DOOR.
+  // De oude versie mat document.documentElement — en dat is precies zo hoog als
+  // het venster dat wij daarna instelden. Elke meting maakte het venster dus
+  // groter, wat een nieuwe meting uitlokte, wat het weer groter maakte. Zo
+  // scrolde je bij sommige mails eindeloos naar beneden door een berg witruimte.
+  // Nu meten we ALLEEN de inhoud zelf (het blokje eromheen), en die verandert
+  // niet mee met het venster. Er wordt bovendien pas iets doorgegeven als de
+  // hoogte echt anders is.
   const meetScript = `<script>(function(){
     var sleutel = ${JSON.stringify(sleutel)};
+    var vorige = 0;
     function meet(){
-      var h = Math.max(
-        document.body ? document.body.scrollHeight : 0,
-        document.body ? document.body.offsetHeight : 0,
-        document.documentElement ? document.documentElement.scrollHeight : 0,
-        document.documentElement ? document.documentElement.offsetHeight : 0
-      );
-      if (h > 0) parent.postMessage({ mailvioHoogte: h, sleutel: sleutel }, "*");
+      var wrap = document.getElementById("mailvioInhoud");
+      if (!wrap) return;
+      var h = Math.max(wrap.scrollHeight, wrap.offsetHeight, wrap.getBoundingClientRect().height);
+      h = Math.ceil(h);
+      if (h <= 0 || Math.abs(h - vorige) < 4) return;
+      vorige = h;
+      parent.postMessage({ mailvioHoogte: h, sleutel: sleutel }, "*");
     }
     window.addEventListener("load", meet);
-    window.addEventListener("resize", meet);
     document.addEventListener("DOMContentLoaded", meet);
-    if (window.ResizeObserver && document.documentElement) {
-      new ResizeObserver(meet).observe(document.documentElement);
+    if (window.ResizeObserver) {
+      // Enkel de INHOUD in de gaten houden, nooit het venster zelf.
+      var start = function(){
+        var wrap = document.getElementById("mailvioInhoud");
+        if (wrap) new ResizeObserver(meet).observe(wrap);
+      };
+      if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start);
+      else start();
     }
     // Afbeeldingen en lettertypes maken de mail vaak hoger dan bij de eerste meting.
     [0, 60, 200, 500, 1200, 2500].forEach(function(t){ setTimeout(meet, t); });
     document.addEventListener("load", meet, true);
     document.addEventListener("error", meet, true);
   })();<\/script>`;
+
+  // ---------------------------------------------------------------------------
+  // DE GESCHIEDENIS ONDER DE MAIL INKLAPPEN
+  // ---------------------------------------------------------------------------
+  // Bij een mail die al een paar keer heen en weer is gegaan, hangt het hele
+  // gesprek er nog eens onder — soms tientallen schermen lang. Je scrolt dan
+  // eindeloos naar beneden voor iets dat je al gelezen hebt, en het inladen
+  // duurt navenant. Dat oudere stuk zit nu achter één regel: "Vorige berichten
+  // tonen". Er gaat niets verloren, je moet er alleen niet meer door.
+  // Veel mails zijn zelf een volledig html-document (<html><head><body>). Dat
+  // in ons eigen document plakken breekt de opbouw: de browser ziet halverwege
+  // een </body> en sluit alles af, waardoor inklappen niet werkt en de opmaak
+  // scheeftrekt. We halen daarom eerst de kern eruit.
+  const pakBody = (html) => {
+    let h = String(html || "");
+    h = h.replace(/<!doctype[^>]*>/gi, "");
+    h = h.replace(/<\/?html[^>]*>/gi, "");
+    h = h.replace(/<head[\s\S]*?<\/head>/gi, "");
+    h = h.replace(/<body[^>]*>/gi, "").replace(/<\/body>/gi, "");
+    return h.trim();
+  };
+
+  const klapGeschiedenisIn = (html) => {
+    if (!html) return html;
+    // De plek waar het antwoord ophoudt en de geschiedenis begint. Dit zijn de
+    // vaste patronen van Outlook, Gmail, Apple Mail en Thunderbird.
+    const merkers = [
+      /<blockquote[^>]*(?:gmail_quote|cite=)/i,
+      /<div[^>]*class="[^"]*gmail_quote/i,
+      /<div[^>]*id="(?:appendonsend|divRplyFwdMsg)"/i,
+      /<hr[^>]*id="stopSpelling"/i,
+      /-{4,}\s*(?:Origin[ae]l [Mm]essage|Oorspronkelijk bericht|Forwarded message|Doorgestuurd bericht)\s*-{4,}/i,
+      /(?:Op|On)\s[^<]{4,80}\s(?:schreef|wrote)\s*:?/i,
+      /<b>\s*(?:Van|From)\s*:\s*<\/b>/i,
+    ];
+    let punt = -1;
+    for (const merker of merkers) {
+      const m = html.match(merker);
+      if (m && m.index !== undefined && (punt === -1 || m.index < punt)) punt = m.index;
+    }
+    // Alleen inklappen als er écht iets te winnen valt: er moet bovenaan nog
+    // een leesbaar bericht staan, en het oude stuk moet fors zijn.
+    if (punt <= 0) return html;
+    const oud = html.slice(punt);
+    if (oud.length < 1500) return html;
+    const zichtbaar = html.slice(0, punt).replace(/<[^>]+>/g, " ").replace(/&nbsp;/gi, " ").trim();
+    if (zichtbaar.length < 5) return html;
+    return `${html.slice(0, punt)}
+      <div class="mailvioOuder">
+        <button type="button" class="mailvioMeer" onclick="var d=this.nextElementSibling;d.hidden=!d.hidden;this.textContent=d.hidden?'\u2304 Vorige berichten tonen':'\u2303 Vorige berichten verbergen';">\u2304 Vorige berichten tonen</button>
+        <div hidden>${oud}</div>
+      </div>`;
+  };
 
   const bouwDoc = (metAfbeeldingen) => `<!doctype html><html><head><meta charset="utf-8">
 <style>
@@ -3476,7 +3795,10 @@ function vulHtmlMail(m) {
   a{color:#2f5fd8}
   blockquote{margin:8px 0 8px 10px;padding-left:12px;border-left:3px solid #ddd;color:#555}
   pre{white-space:pre-wrap;word-break:break-word}
-</style></head><body>${metAfbeeldingen ? herstelAfbeeldingen(m.html || "") : (m.html || "")}${meetScript}</body></html>`;
+  .mailvioOuder{margin-top:14px;border-top:1px solid #e6e6e6;padding-top:10px}
+  .mailvioMeer{border:1px solid #ddd;background:#f6f6f6;border-radius:8px;padding:6px 12px;font-family:inherit;font-size:12.5px;font-weight:700;color:#555;cursor:pointer}
+  .mailvioMeer:hover{background:#eee}
+</style></head><body><div id="mailvioInhoud">${klapGeschiedenisIn(pakBody(metAfbeeldingen ? herstelAfbeeldingen(m.html || "") : (m.html || "")))}</div>${meetScript}</body></html>`;
 
   const zet = (metAfbeeldingen) => {
     frame.style.height = "400px";
@@ -3795,7 +4117,10 @@ async function markeerOngelezen(uid) {
 }
 
 async function verplaatsMail(uid, doel) {
-  const naam = doel === "prullenmand" ? "de prullenmand" : "het archief";
+  const naam = doel === "prullenmand" ? "de prullenmand"
+    : doel === "reclame" ? "de reclamemap"
+    : doel.startsWith("map:") ? `de map ${doel.slice(4)}`
+    : "het archief";
   const folder = state.currentFolder && state.currentFolder !== "INBOX" ? state.currentFolder : undefined;
   try {
     const res = await fetch(`/api/mails/${uid}/move`, {
@@ -3811,9 +4136,11 @@ async function verplaatsMail(uid, doel) {
     showToast(data.gemarkeerd
       ? `Gemarkeerd als verwijderd (geen aparte map op de server).`
       : `Verplaatst naar ${naam}.`);
-    state.view = folder ? "folder" : "inbox";
+    // BLIJF WAAR JE BENT. Vroeger sprong je na elke actie terug naar de inbox,
+    // ook als je op je dashboard of in een ander scherm bezig was.
+    state._mailAfdruk = null;
     renderSidebarCounts();
-    renderView();
+    renderView(true);
     loadFolders();
   } catch (e) {
     showToast(e.message);
@@ -4043,9 +4370,12 @@ function renderSuggestion(uid, m, s) {
       ${s.urgentie ? `<div class="row"><b>Urgentie</b>${escapeHtml(s.urgentie)}</div>` : ""}
       ${s.samenvatting ? `<div class="row">${escapeHtml(s.samenvatting)}</div>` : ""}
     </div>
-    <div class="draftBox">
-      <div class="label">Voorgesteld antwoord</div>
-      <textarea id="draftText">${escapeHtml(s.antwoord || "")}</textarea>
+    <div class="draftBox" id="draftBox">
+      <div class="draftKop">
+        <div class="label">Voorgesteld antwoord</div>
+        <button class="draftGroot" id="draftGroot" title="Groter schrijven">⛶ Volledig scherm</button>
+      </div>
+      <textarea id="draftText">${escapeHtml(metHandtekening(s.antwoord || ""))}</textarea>
       <div class="draftActions">
         <button class="btn btn-primary" id="draftSend">Versturen</button>
         <button class="btn btn-ghost" id="draftRewrite">★ Herschrijf professioneel</button>
@@ -4055,6 +4385,38 @@ function renderSuggestion(uid, m, s) {
   `;
   document.getElementById("draftSend").addEventListener("click", () => sendDraft(uid, m));
   document.getElementById("draftRewrite").addEventListener("click", () => rewriteDraft());
+  const groot = document.getElementById("draftGroot");
+  if (groot) groot.addEventListener("click", () => {
+    const vak = document.getElementById("draftBox");
+    const aan = vak.classList.toggle("groot");
+    groot.textContent = aan ? "⤡ Kleiner" : "⛶ Volledig scherm";
+    if (aan) document.getElementById("draftText").focus();
+  });
+  // Met Escape weer uit volledig scherm.
+  document.addEventListener("keydown", function esc(e) {
+    if (e.key !== "Escape") return;
+    const vak = document.getElementById("draftBox");
+    if (!vak) return document.removeEventListener("keydown", esc);
+    if (vak.classList.contains("groot")) {
+      vak.classList.remove("groot");
+      const g = document.getElementById("draftGroot");
+      if (g) g.textContent = "⛶ Volledig scherm";
+    }
+  });
+}
+
+// De handtekening hoort er ALTIJD onder te staan, ook als de AI ze vergeet.
+// Zo zie je meteen wat er precies verstuurd wordt, zonder dat je zelf nog iets
+// moet aanplakken.
+function metHandtekening(tekst) {
+  const schoon = platteTekst(tekst);
+  const hand = platteHandtekening();
+  if (!hand) return schoon;
+  // Staat ze er al in (de AI zet ze er meestal zelf onder), dan niet nog eens.
+  const laatste = schoon.slice(-Math.max(hand.length + 40, 120)).toLowerCase();
+  const eersteRegel = hand.split("\n")[0].trim().toLowerCase();
+  if (eersteRegel && laatste.includes(eersteRegel)) return schoon;
+  return `${schoon.replace(/\s+$/, "")}\n\n${hand}`;
 }
 
 async function rewriteDraft() {

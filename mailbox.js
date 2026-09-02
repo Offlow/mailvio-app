@@ -667,7 +667,12 @@ async function _verplaatsMail(uid, doelRol, folder) {
   const imap = client();
   await imap.connect();
   try {
-    const doel = await vindMapMetRol(imap, doelRol);
+    // Een rol ("archief", "prullenmand") wordt opgezocht; geef je een echte
+    // mapnaam mee, dan gaat de mail gewoon daarheen. Zo kan je vanuit het
+    // rechtsklikmenu naar élke map op je mailserver verplaatsen.
+    const doel = doelRol && doelRol.startsWith("map:")
+      ? doelRol.slice(4)
+      : await vindMapMetRol(imap, doelRol);
     const bron = folder || "INBOX";
     const lock = await imap.getMailboxLock(bron);
     try {
