@@ -60,4 +60,32 @@ function overzicht() {
   };
 }
 
-module.exports = { zetBezig, drukbezet, wachtOpRust, overzicht };
+// Dezelfde meting, maar zonder één woord over je mail. Mapnamen en aantallen
+// gaan eruit; wat overblijft is het SOORT werk. Zo kan dit overzicht bekeken
+// worden zonder aanmelden, om te zien waaraan een trage server ligt, zonder dat
+// er ook maar iets over je mailbox naar buiten komt.
+function soortVan(tekst) {
+  const t = String(tekst || "");
+  if (/nieuwe mails ophalen/i.test(t)) return "nieuwe mails ophalen";
+  if (/oudere mails ophalen/i.test(t)) return "oudere mails ophalen";
+  if (/gelezen\/ongelezen/i.test(t)) return "gelezen-status nakijken";
+  if (/beoordelen door de AI/i.test(t)) return "mails laten beoordelen";
+  if (/fragmenten ophalen/i.test(t)) return "fragmenten ophalen";
+  if (/inhoud inladen/i.test(t)) return "mailinhoud inladen";
+  if (/niets/i.test(t)) return "niets";
+  return "ander werk";
+}
+
+function anoniemOverzicht() {
+  const o = overzicht();
+  return {
+    vertragingNu: o.vertragingNu,
+    bezigMet: soortVan(o.bezigMet),
+    geheugenMb: o.geheugenMb,
+    geheugenTotaalMb: o.geheugenTotaalMb,
+    draaitAlSeconden: o.draaitAlSeconden,
+    ergsteBlokkades: o.ergsteBlokkades.map((b) => ({ ms: b.ms, bezigMet: soortVan(b.bezigMet), op: b.op })),
+  };
+}
+
+module.exports = { zetBezig, drukbezet, wachtOpRust, overzicht, anoniemOverzicht };

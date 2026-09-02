@@ -29,7 +29,11 @@ app.use(express.json({ limit: "25mb" }));
 // Deze routes werken zonder ingelogd te zijn. /api/agenda.ics hoort daarbij
 // omdat Google Agenda hem zelf komt ophalen; die is beveiligd met een lange
 // geheime sleutel in het adres zelf.
-const OPEN_ROUTES = new Set(["/api/auth/status", "/api/auth/login", "/api/auth/setup", "/api/agenda.ics"]);
+// /api/snelheid staat er bewust bij: dat toont enkel hoe vlot de server draait
+// (wachttijden, geheugen, en het SOORT werk dat bezig is). Geen mailgegevens,
+// geen mapnamen, geen instellingen. Zo is van buitenaf te zien waaraan het ligt
+// als de app traag is, zonder ergens toegang toe te geven.
+const OPEN_ROUTES = new Set(["/api/auth/status", "/api/auth/login", "/api/auth/setup", "/api/agenda.ics", "/api/snelheid"]);
 
 app.use((req, res, next) => {
   // Het inlogscherm en zijn eigen bestanden moeten uiteraard bereikbaar zijn.
@@ -548,6 +552,17 @@ async function getMails(forceRefresh) {
 // Waaraan ligt het als de app traag aanvoelt? Dit vertelt het, in gewone taal.
 // Geen giswerk meer: hier staat hoe lang de server stilstond en waarmee hij
 // toen bezig was.
+// Zonder aanmelden: enkel snelheid, niets over je mail.
+app.get("/api/snelheid", (req, res) => {
+  const o = belasting.anoniemOverzicht();
+  res.json({
+    ...o,
+    uitleg: o.ergsteBlokkades.length
+      ? o.ergsteBlokkades.map((b) => `${(b.ms / 1000).toFixed(1)}s stil tijdens: ${b.bezigMet}`)
+      : ["Geen enkele blokkade gemeten."],
+  });
+});
+
 app.get("/api/diagnose", (req, res) => {
   const o = belasting.overzicht();
   res.json({
