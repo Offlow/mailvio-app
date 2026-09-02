@@ -418,6 +418,7 @@ async function laadVoorafIn(accountKey, maxRondes) {
     // binnengehaald is, opent daarna meteen. We blijven porties halen tot je
     // hele mailbox binnen is.
     const rondes = maxRondes || 1;
+    let overgeslagen = 0;
     for (let i = 0; i < rondes; i++) {
       const alle = mailstore.getMails(accountKey, "INBOX");
       const teDoen = [];
@@ -433,10 +434,20 @@ async function laadVoorafIn(accountKey, maxRondes) {
       // Eerst wachten tot jij niets aan het doen bent. Een mailserver laat maar
       // een paar verbindingen toe; zonder deze pauze moest jouw klik wachten op
       // het inladen op de achtergrond.
+      // Wachten tot jij niets aan het doen bent, en tot de server weer bijbeen
+      // is. STOPPEN doen we niet meer: dat was de fout. Zodra jij ook maar iets
+      // deed, brak het inladen af — en omdat jij de app gebruikt, kwam het dus
+      // nooit verder dan een paar procent. Nu wachten we gewoon even en gaan we
+      // daarna verder waar we gebleven waren.
       await mailbox.wachtOpRust();
-      if (mailbox.gebruikerBezig()) break;
-      // En ook wachten tot de server zelf weer bijbeen is.
       await belasting.wachtOpRust();
+      if (mailbox.gebruikerBezig() || belasting.drukbezet()) {
+        await new Promise((r) => setTimeout(r, 1500));
+        i--;              // deze portie telt niet mee, we proberen ze straks
+        if (++overgeslagen > 40) break;   // blijft het maar druk, dan stoppen we
+        continue;
+      }
+      overgeslagen = 0;
 
       // In één keer over ÉÉN verbinding. Per mail apart verbinden kost een halve
       // seconde aan aanmelden alleen al — bij duizenden mails is dat uren.
@@ -1744,11 +1755,10 @@ async function achtergrondRonde() {
     // meer op de AI moet wachten als je een mail opent.
     await maakVoorstellenKlaar(accountKey0);
 
-    // PAS HIERNA de volledige inhoud van elke mail binnenhalen. Dit stond
-    // vroeger VOOR de beoordeling, en dan bleef je dashboard leeg zolang er
-    // duizenden berichten stonden in te laden. Het oordeel is wat je scherm
-    // nodig heeft; de inhoud mag daarna komen.
-    await laadVoorafIn(accountKeyVoor, 100);
+    // Het inladen van de mailinhoud gebeurt NIET meer hier. Het stond helemaal
+    // achteraan deze ronde, achter het binnenhalen van alle mappen en het
+    // beoordelen van honderden mails — en kwam daardoor amper aan de beurt.
+    // Het heeft nu zijn eigen ritme, verderop in dit bestand.
 
     // Ook de andere mappen bijhouden — Verzonden, Archief, Prullenmand en je
     // eigen mappen. Zo staat ALLES op de schijf van de server en hoeft er nooit
@@ -1788,6 +1798,32 @@ setTimeout(() => {
   achtergrondRonde();
   setInterval(achtergrondRonde, ACHTERGROND_MS);
 }, EERSTE_START_MS);
+
+// ---------------------------------------------------------------------------
+// HET INLADEN VAN DE MAILINHOUD HEEFT ZIJN EIGEN RITME
+// ---------------------------------------------------------------------------
+// Dit liep vroeger mee in de grote ronde, helemaal achteraan: eerst alle mappen
+// binnenhalen, dan honderden mails laten beoordelen, en dán pas de inhoud. In de
+// praktijk kwam het amper aan de beurt — na uren draaien stond er 6% van je
+// mails ingeladen. Nu loopt het los daarvan, in korte beurten, en het wijkt
+// vanzelf zodra jij iets doet.
+const INLAAD_INTERVAL_MS = 15000;
+const INLAAD_PORTIES = 20;
+
+async function inlaadBeurt() {
+  if (!mailbox.isConfigured()) return;
+  const accountKey = settingsStore.getConfig().imapUser || "default";
+  try {
+    await laadVoorafIn(accountKey, INLAAD_PORTIES);
+  } catch (e) {
+    console.error("Inladen op de achtergrond mislukt:", e.message);
+  }
+}
+
+setTimeout(() => {
+  inlaadBeurt();
+  setInterval(inlaadBeurt, INLAAD_INTERVAL_MS);
+}, EERSTE_START_MS + 5000);
 
 // Laatste vangnet: een onvoorziene fout mag Mailvio nooit helemaal platleggen.
 // Beter een gelogde fout en een app die blijft draaien, dan een mailbox die
