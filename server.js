@@ -235,10 +235,22 @@ async function getLightMails(forceRefresh) {
   // je scherm hangen tot de mailserver klaar was — soms tientallen seconden.
   // De achtergrondronde ververst de cache, dus binnen een paar tellen staat de
   // nieuwe post er vanzelf bij.
-  if (!forceRefresh && bewaard.length) {
+  // ZELFS BIJ "VERVERS" NIET LATEN WACHTEN. Ook als jij op de ververs-knop
+  // duwt, krijg je meteen wat er op schijf staat en gaat het ophalen op de
+  // achtergrond verder. Anders sta je bij elke ververs weer te kijken naar een
+  // scherm dat niks doet terwijl de mailserver zijn tijd neemt.
+  if (bewaard.length) {
+    // Op de achtergrond bijwerken. Bewust syncMap en NIET getLightMails, want
+    // die zou hier weer op dezelfde snelkoppeling belanden en dus nooit iets
+    // ophalen.
     if (!getLightMails._bezig) {
       getLightMails._bezig = true;
-      getLightMails(true)
+      syncMap(accountKey, "INBOX")
+        .then(() => {
+          const bij = mailstore.getMails(accountKey, "INBOX");
+          envelopeCache = { at: Date.now(), mails: bij, total: bij.length, capped: false };
+          cache.at = 0; // zodat de volgende oproep de nieuwe post meeneemt
+        })
         .catch((e) => console.error("Achtergrondsynchronisatie mislukt:", e.message))
         .finally(() => { getLightMails._bezig = false; });
     }
@@ -305,6 +317,11 @@ async function beoordeelPortie(accountKey, unclassified) {
     }));
     if (results && results.length) ai.wisFout();
     classifications.setMany(accountKey, toStore);
+    // Mails waar de AI niets over teruggaf: een poging aanrekenen, zodat ze niet
+    // eindeloos opnieuw aangeboden worden.
+    const gelukt = new Set(toStore.map((t) => String(t.uid)));
+    const mislukt = forAi.filter((m) => !gelukt.has(String(m.uid))).map((m) => m.uid);
+    if (mislukt.length) classifications.telPoging(accountKey, mislukt);
   
   // De cache verversen zodat de nieuwe beoordelingen meteen meekomen.
   cache.at = 0;
@@ -328,9 +345,18 @@ async function getMails(forceRefresh) {
   // "onbekend" telt NIET als beoordeeld. Zo worden mails die eerder door een
   // afgekapt AI-antwoord verkeerd als onbekend zijn weggeschreven, alsnog
   // opnieuw beoordeeld in plaats van voorgoed leeg te blijven.
+  // WAT IS "NOG NIET BEOORDEELD"?
+  // Een mail zonder oordeel, of een mail waar de AI "onbekend" van maakte —
+  // maar hoogstens MAX_POGINGEN keer. Zonder die grens werd dezelfde mail elke
+  // ronde opnieuw naar de AI gestuurd, eindeloos, en dat kost tegoed en tijd.
+  // Een oordeel dat er eenmaal staat, blijft staan: dat wordt NOOIT opnieuw
+  // gedaan (behalve als jij zelf op "Mailbox opnieuw beoordelen" duwt).
+  const MAX_POGINGEN = 3;
   const unclassified = light.filter((m) => {
     const c = store[m.uid];
-    return !c || c.categorie === undefined || c.categorie === "onbekend";
+    if (!c) return true;
+    if ((c.pogingen || 0) >= MAX_POGINGEN) return false;
+    return c.categorie === undefined || c.categorie === "onbekend";
   });
 
   // NIET WACHTEN OP DE AI. Vroeger werd hier eerst een portie mails door Claude
@@ -389,8 +415,11 @@ async function getMails(forceRefresh) {
       }
     }
 
-    // Een aanvraag via de website is altijd het belangrijkst.
-    if (basis.viaWebsite && regels.aanstaat(accountKey, "website_voorrang")) {
+    // Een aanvraag via zijn website of via dakwAIrker is altijd het belangrijkst.
+    // Ook als de AI het gemist heeft, herkennen we die afzenders hier zelf.
+    const aanvraagAfzender = /daklo\.be|dakwairker/i.test(`${m.fromAddress || ""} ${m.from || ""}`);
+    if (aanvraagAfzender && basis.soort === "reclame") basis.soort = "overig";
+    if ((basis.viaWebsite || aanvraagAfzender) && regels.aanstaat(accountKey, "website_voorrang")) {
       basis.belangrijk = true;
       basis.vanType = "klant";
       if (basis.categorie === "geen_actie" || basis.categorie === "onbekend") {
@@ -1411,6 +1440,29 @@ async function achtergrondRonde() {
     envelopeCache = { at: 0, mails: [], total: 0, capped: false };
     await getMails(true);
 
+    // EERST alle andere mappen binnenhalen — Verzonden, Concepten, Archief,
+    // Prullenmand, Ongewenst. Die stonden vroeger achteraan de rij, ná het
+    // beoordelen van duizenden mails, en waren daardoor uren later pas
+    // beschikbaar. Ze horen er meteen te staan.
+    try {
+      const mappen0 = folderCache.folders.length ? folderCache.folders : ((await mailbox.listFolders()).folders || []);
+      if (mappen0.length) folderCache = { at: Date.now(), folders: mappen0 };
+      for (const f of mappen0) {
+        if (!f.path || f.path.toUpperCase() === "INBOX") continue;
+        if (mapBezig.has(f.path)) continue;
+        mapBezig.add(f.path);
+        try {
+          await syncMap(accountKeyVoor, f.path, { totVolledig: true });
+        } catch (e) {
+          console.error(`Map ${f.path} binnenhalen mislukt:`, e.message);
+        } finally {
+          mapBezig.delete(f.path);
+        }
+      }
+    } catch (e) {
+      console.error("Mappen binnenhalen mislukt:", e.message);
+    }
+
     // Dan de achterstand van de AI-beoordeling wegwerken, portie per portie.
     // Dit gebeurt hier, op de achtergrond, en niet terwijl jij op je scherm wacht.
     for (let ronde = 0; ronde < 25; ronde++) {
@@ -1418,7 +1470,9 @@ async function achtergrondRonde() {
       const store = classifications.getAll(accountKey0);
       const teDoen = licht.filter((m) => {
         const c = store[m.uid];
-        return !c || c.categorie === undefined || c.categorie === "onbekend";
+        if (!c) return true;
+        if ((c.pogingen || 0) >= 3) return false;
+        return c.categorie === undefined || c.categorie === "onbekend";
       });
       if (!teDoen.length) break;
       await beoordeelPortie(accountKey0, teDoen);
@@ -1433,8 +1487,12 @@ async function achtergrondRonde() {
     // iets opnieuw ingeladen te worden als je zo'n map opent.
     const accountKey = settingsStore.getConfig().imapUser || "default";
     try {
-      const mappen = folderCache.folders.length ? folderCache.folders : (await mailbox.listFolders()).folders || [];
-      folderCache = { at: Date.now(), folders: mappen };
+      const mappen = folderCache.folders.length ? folderCache.folders : ((await mailbox.listFolders()).folders || []);
+      // ALLEEN bijwerken als we effectief mappen kregen. Zonder deze controle
+      // werd de mappenlijst met een lege lijst overschreven zodra het ophalen
+      // eens mislukte — en dan verdwenen Verzonden, Archief en Prullenmand
+      // gewoon uit je zijbalk.
+      if (mappen.length) folderCache = { at: Date.now(), folders: mappen };
       for (const f of mappen) {
         if (!f.path || f.path.toUpperCase() === "INBOX") continue;
         if (mapBezig.has(f.path)) continue;

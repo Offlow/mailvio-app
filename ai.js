@@ -124,8 +124,9 @@ Zet "belangrijk" op true bij een mail die hij echt niet mag missen: een klacht, 
 AL AFGEHANDELD:
 Antwoordt een klant duidelijk dat hij NIET verder gaat op een offerte ("we gaan hier niet verder op in", "we kiezen voor een andere partij", "niet nodig"), of bevestigt hij enkel iets zonder dat er nog actie nodig is ("in orde", "bedankt", "top"), zet dan "categorie" op "geen_actie" en "actieLabel" op "". Dan blijft zo'n zaak niet eeuwig openstaan.
 
-ABSOLUTE VOORRANG — aanvragen via zijn eigen website (daklo.be):
-Komt een mail binnen via het contact- of offerteformulier van zijn website, dan is dat een verse klantaanvraag en die is ALTIJD het belangrijkst. Herken dat aan zaken als: een afzender of onderwerp met "daklo", "contactformulier", "offerteaanvraag", "nieuw bericht via de website", "aanvraag via website", een automatische formuliermail met velden zoals naam/telefoon/adres/bericht, of een verzendend systeem (WordPress, noreply, wpforms, formulier).
+ABSOLUTE VOORRANG — aanvragen via zijn eigen website (daklo.be) en via dakwAIrker (dakwairker.be):
+Komt een mail binnen via het contact- of offerteformulier van zijn website, dan is dat een verse klantaanvraag en die is ALTIJD het belangrijkst. Hetzelfde geldt voor dakwAIrker (dakwairker.be), zijn eigen aanvraagplatform: elke mail daarvan bevat concrete klantaanvragen met naam, adres en een prijsvork, en die mensen wachten op antwoord. Behandel die dus exact zoals een aanvraag via zijn website — nooit als reclame, nooit als "geen_actie", ook niet als het een herinnering is dat er nog aanvragen wachten.
+Herken dat aan zaken als: een afzender of onderwerp met "daklo", "dakwairker", "dakwAIrker", "contactformulier", "offerteaanvraag", "nieuw bericht via de website", "aanvraag via website", "aanvragen wachten op je", een automatische formuliermail met velden zoals naam/telefoon/adres/bericht, of een verzendend systeem (WordPress, noreply, wpforms, formulier).
 Zet dan "viaWebsite" op true, "categorie" op "dringend", "vanType" op "klant" en "belangrijk" op true. Nooit "geen_actie". Anders "viaWebsite": false.
 
 RECLAME BIJ TWIJFEL:

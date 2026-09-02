@@ -49,6 +49,11 @@ function setMany(accountKey, entries) {
       reclameTwijfel: !!e.reclameTwijfel,
       snippet: e.snippet || "",
       classifiedAt: Date.now(),
+      // Hoe vaak we al geprobeerd hebben. Lukt het na een paar pogingen nog
+      // altijd niet, dan laten we die mail met rust in plaats van hem elke
+      // ronde opnieuw door de AI te sturen — dat kost tegoed en tijd zonder
+      // dat er ooit iets uitkomt.
+      pogingen: (existing.pogingen || 0) + 1,
     };
   }
   store[accountKey] = forAccount;
@@ -105,4 +110,18 @@ function wisBeoordelingen(accountKey) {
   return aantal;
 }
 
-module.exports = { getAll, setMany, setResolved, setGenegeerd, wisBeoordelingen };
+// Telt een mislukte poging voor mails waar de AI niets over teruggaf. Zonder
+// dit zouden die eeuwig opnieuw aangeboden worden.
+function telPoging(accountKey, uids) {
+  if (!accountKey || !uids.length) return;
+  const store = readStore();
+  const forAccount = store[accountKey] || {};
+  for (const uid of uids) {
+    const e = forAccount[uid] || {};
+    forAccount[uid] = { ...e, pogingen: (e.pogingen || 0) + 1 };
+  }
+  store[accountKey] = forAccount;
+  writeStore(store);
+}
+
+module.exports = { getAll, setMany, setResolved, setGenegeerd, wisBeoordelingen, telPoging };

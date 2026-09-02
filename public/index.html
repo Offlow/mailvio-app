@@ -188,7 +188,7 @@
   .zaakVan{flex:0 0 165px;min-width:0;font-size:13px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .zaakOnderwerp{flex:1 1 auto;min-width:0;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .zaakMerk{flex:0 0 auto;font-size:11px;font-weight:800;color:var(--accent-ink);background:var(--accent-soft);border-radius:99px;padding:2px 9px}
-  .zaakWacht{flex:0 0 auto;font-size:11.5px;color:var(--ink-faint);min-width:62px;text-align:right}
+  .zaakWacht{flex:0 0 auto;font-size:11.5px;color:var(--ink-faint);min-width:88px;text-align:right}
   .zaakAf{flex:0 0 auto;border:1px solid var(--border);background:var(--surface);border-radius:7px;width:26px;height:26px;cursor:pointer;color:var(--ink-faint);font-size:12px}
   .zaakAf:hover{border-color:var(--accent);background:var(--accent-soft);color:var(--accent-ink)}
   .zaakLeeg{font-size:13px;color:var(--ink-faint);padding:10px 6px}
@@ -302,6 +302,10 @@
   .twijfelKnop.ja{color:#b3261e;border-color:#f0c8c4}
   .twijfelKnop.nee{color:var(--accent-ink);border-color:var(--accent)}
   .twijfelKnop:hover{background:var(--surface-2)}
+  .twijfelKnop.bekijk{color:var(--ink-soft)}
+  .twijfelKaart .info{cursor:pointer}
+  .twijfelKaart .info:hover .onderwerp{color:var(--accent-ink)}
+  .twijfelFragment{font-size:11.5px;color:var(--ink-faint);margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
   /* Tabbladen in Nog open */
   .tabRij{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 16px}
@@ -567,6 +571,7 @@
       <span class="navHomeIcoon">⌂</span>
       <span class="navHomeTekst"><b>Dashboard</b><small>Alles op één scherm</small></span>
     </button>
+    <button class="navItem" data-nav="aanvragen">📥 Aanvragen <span class="count" id="cntAanvragen"></span></button>
     <button class="navItem" data-nav="taken" id="navTaken">✓ To-do <span class="count" id="cntTaken"></span></button>
     <button class="navItem" data-nav="agenda">📅 Agenda</button>
     <button class="navItem" data-nav="zoeken">🔍 Zoeken</button>
@@ -575,6 +580,7 @@
     <button class="navItem" data-nav="inbox" data-filter="alle">📥 Inbox <span class="count" id="cntInbox"></span></button>
     <div id="mailboxFolders"></div>
     <button class="navItem" data-nav="inbox" data-filter="reclame">📣 Reclame <span class="count" id="cntReclame"></span></button>
+    <button class="navItem" data-nav="twijfel">❓ Is dit reclame? <span class="count" id="cntTwijfel"></span></button>
     <button class="navItem" data-nav="opruimen">🧹 Mogelijk te verwijderen <span class="count" id="cntOpruimen"></span></button>
 
     <button class="navGroup klapbaar" id="mappenKop" aria-expanded="false">
@@ -1204,6 +1210,8 @@ function renderSidebarCounts() {
   zet("cntZaken", openstaand);
   zet("cntReclame", state.mails.filter((m) => m.soort === "reclame").length);
   zet("cntOpruimen", (state.opruimen && (state.opruimen.voorstellen || []).length) || "");
+  zet("cntTwijfel", twijfelLijst().length);
+  zet("cntAanvragen", aanvraagLijst().length);
   zet("cntMappen", (state.folders || []).filter((f) => f.rol !== "inbox" && !STANDAARD_ROLLEN.includes(f.rol)).length);
   zet("cntTaken", (state.taken || []).filter((t) => !t.klaar).length);
   document.querySelectorAll(".navItem[data-nav]").forEach((btn) => {
@@ -1292,6 +1300,8 @@ function renderView(gedwongen) {
   if (state.view === "taken") return renderTaken();
   if (state.view === "agenda") return renderAgenda();
   if (state.view === "regels") return renderRegels();
+  if (state.view === "twijfel") return renderTwijfel();
+  if (state.view === "aanvragen") return renderAanvragen();
   if (state.view === "opruimen") return renderOpruimen();
   if (state.view === "folder") return renderFolderView();
   if (state.view === "mail") return; // wordt al gerenderd door openMail()
@@ -2280,6 +2290,100 @@ function timeGreeting() {
   return "Goedenavond";
 }
 
+// Eén kaart voor "is dit reclame?". Je kan de mail openen om te kijken vóór je
+// beslist — dat was het lastige: je moest oordelen zonder de mail te zien.
+function twijfelKaart(m) {
+  return `
+    <div class="twijfelKaart">
+      <div class="info" data-openmail="${m.uid}" title="Open deze mail om te kijken">
+        <div class="van">${escapeHtml(m.from)} <span style="font-weight:600;color:var(--ink-faint)">${escapeHtml(m.fromAddress || "")}</span></div>
+        <div class="onderwerp">${escapeHtml(m.subject)}</div>
+        ${m.snippet ? `<div class="twijfelFragment">${escapeHtml(String(m.snippet).slice(0, 130))}</div>` : ""}
+      </div>
+      <button class="twijfelKnop bekijk" data-openmail="${m.uid}">Bekijken</button>
+      <button class="twijfelKnop ja" data-reclame="${escapeHtml(m.fromAddress || "")}">✓ Reclame</button>
+      <button class="twijfelKnop nee" data-geenreclame="${escapeHtml(m.fromAddress || "")}">✗ Echte mail</button>
+    </div>`;
+}
+
+function twijfelLijst() {
+  const gezien = new Set();
+  return (state.mails || [])
+    .filter((m) => m.reclameTwijfel && !m.afzenderBeslist && m.fromAddress)
+    .filter((m) => {
+      const a = m.fromAddress.toLowerCase();
+      if (gezien.has(a)) return false;
+      gezien.add(a);
+      return true;
+    })
+    .sort((a, b) => new Date(b.date) - new Date(a.date));
+}
+
+function renderTwijfel() {
+  const mount = document.getElementById("viewMount");
+  const lijst = twijfelLijst();
+  mount.innerHTML = `
+    <div class="regelView">
+      <h1 style="margin:0 0 4px;font-size:22px">Is dit reclame?</h1>
+      <div class="sub" style="margin-bottom:18px">Mailvio twijfelt bij deze afzenders. Open gerust de mail om te kijken. Wat je hier beslist geldt voorgoed voor dat adres — dus dit hoef je maar één keer per afzender te doen.</div>
+      ${lijst.length ? lijst.map(twijfelKaart).join("") : '<div class="empty">Niets om te beoordelen. Mailvio weet het van al je afzenders.</div>'}
+    </div>`;
+  koppelTwijfelKnoppen(mount);
+}
+
+function koppelTwijfelKnoppen(mount) {
+  mount.querySelectorAll("[data-openmail]").forEach((el) => el.addEventListener("click", (e) => {
+    e.stopPropagation();
+    openMail(Number(el.dataset.openmail));
+  }));
+  koppelTwijfelKnoppen(mount);
+  mount.querySelectorAll("[data-naarscherm]").forEach((b) => b.addEventListener("click", () => {
+    state.view = b.dataset.naarscherm; renderSidebarCounts(); renderView(true);
+  }));
+}
+
+// AANVRAGEN — nieuw werk dat binnenkomt. Alles met een offerte-, prijs- of
+// contactvraag: via je website, via dakwAIrker, of rechtstreeks van een klant.
+// Ze blijven ook gewoon bij "vandaag te beantwoorden" staan; dit is een extra
+// ingang omdat hier het geld binnenkomt.
+function aanvraagLijst() {
+  const woorden = /offerte|offert|prijsvraag|prijsaanvraag|prijs aanvra|contactformulier|contact formulier|aanvraag|aanvragen|nieuw bericht via|bestek|raming/i;
+  return (state.mails || [])
+    .filter((m) => !m.resolved && !m.genegeerd && m.soort !== "reclame" && m.soort !== "phishing" && m.vanType !== "prive")
+    .filter((m) =>
+      m.soort === "offerte" ||
+      m.viaWebsite ||
+      m.vanType === "platform" ||
+      woorden.test(`${m.subject || ""} ${m.from || ""} ${m.fromAddress || ""}`)
+    )
+    .sort((a, b) => new Date(b.date) - new Date(a.date));
+}
+
+function wachtTekst(d) {
+  return d === 0 ? "vandaag" : d === 1 ? "wacht 1 dag" : d < 31 ? `wacht ${d} dagen` : `wacht ${Math.round(d / 30)} mnd`;
+}
+
+function renderAanvragen() {
+  const mount = document.getElementById("viewMount");
+  const lijst = aanvraagLijst();
+  mount.innerHTML = `
+    <div class="regelView">
+      <h1 style="margin:0 0 4px;font-size:22px">Aanvragen</h1>
+      <div class="sub" style="margin-bottom:16px">Alles waar een offerte-, prijs- of contactvraag in zit — via je website, via dakwAIrker, of rechtstreeks van een klant. Dit is nieuw werk, dus laat hier niets liggen.</div>
+      ${lijst.length ? lijst.map((m) => `
+        <div class="zaakRij" data-open="${m.uid}">
+          <span class="stip ${m.categorie === "dringend" ? "rood" : m.categorie === "vandaag" ? "oranje" : "geel"}"></span>
+          <span class="zaakVan">${escapeHtml(m.from)}</span>
+          <span class="zaakOnderwerp">${escapeHtml(m.subject)}</span>
+          ${m.viaWebsite ? '<span class="zaakMerk">Via website</span>' : m.vanType === "platform" ? '<span class="zaakMerk">dakwAIrker</span>' : m.soort === "offerte" ? '<span class="zaakMerk">Offerte</span>' : ""}
+          <span class="zaakWacht">${wachtTekst(daysAgo(m.date))}</span>
+          <button class="zaakAf" data-resolve="${m.uid}" title="Afgehandeld">✓</button>
+        </div>`).join("") : '<div class="empty">Geen openstaande aanvragen.</div>'}
+    </div>`;
+  mount.querySelectorAll("[data-open]").forEach((b) => b.addEventListener("click", () => openMail(Number(b.dataset.open))));
+  mount.querySelectorAll("[data-resolve]").forEach((b) => b.addEventListener("click", (e) => { e.stopPropagation(); resolveMail(Number(b.dataset.resolve), true); }));
+}
+
 function renderVandaag() {
   const mount = document.getElementById("viewMount");
   const naam = (state.settings.aanspreektitel || "").trim() || (state.settings.displayName || "").split(" ")[0] || "";
@@ -2308,17 +2412,8 @@ function renderVandaag() {
 
   const openTaken = (state.taken || []).filter((t) => !t.klaar);
 
-  const gezien = new Set();
-  const twijfel = state.mails
-    .filter((m) => m.reclameTwijfel && !m.afzenderBeslist && m.fromAddress)
-    .filter((m) => {
-      const a = m.fromAddress.toLowerCase();
-      if (gezien.has(a)) return false;
-      gezien.add(a);
-      return true;
-    })
-    .sort(nieuwste)
-    .slice(0, 6);
+  const twijfel = twijfelLijst();
+  const aanvragen = aanvraagLijst();
 
   // Eén regel per mail: van wie, waarover, hoe lang het al wacht. Klik erop en
   // je zit in de mail. Geen kaartjes, geen kolommen — gewoon een lijst.
@@ -2331,7 +2426,7 @@ function renderVandaag() {
         <span class="zaakVan">${escapeHtml(m.from)}</span>
         <span class="zaakOnderwerp">${escapeHtml(m.subject)}</span>
         ${m.soort && soortMerk[m.soort] ? `<span class="zaakMerk">${soortMerk[m.soort]}</span>` : ""}
-        <span class="zaakWacht">${d === 0 ? "vandaag" : d === 1 ? "1 dag" : d + " dagen"}</span>
+        <span class="zaakWacht" title="Zo lang wacht deze mail al op een antwoord">${wachtTekst(d)}</span>
         <button class="zaakAf" data-resolve="${m.uid}" title="Afgehandeld">✓</button>
       </div>`;
   };
@@ -2364,18 +2459,19 @@ function renderVandaag() {
       <div class="zaakBlok">
         <div class="zaakKop"><h2>Is dit reclame?</h2><span class="zaakAantal">${twijfel.length}</span></div>
         <div class="zaakUitleg">Zeg het één keer, dan weet Mailvio het voorgoed voor die afzender.</div>
-        ${twijfel.map((m) => `
-          <div class="twijfelKaart">
-            <div class="info">
-              <div class="van">${escapeHtml(m.from)} <span style="font-weight:600;color:var(--ink-faint)">${escapeHtml(m.fromAddress || "")}</span></div>
-              <div class="onderwerp">${escapeHtml(m.subject)}</div>
-            </div>
-            <button class="twijfelKnop ja" data-reclame="${escapeHtml(m.fromAddress || "")}">✓ Reclame</button>
-            <button class="twijfelKnop nee" data-geenreclame="${escapeHtml(m.fromAddress || "")}">✗ Echte mail</button>
-          </div>`).join("")}
+        ${twijfel.slice(0, 3).map(twijfelKaart).join("")}
+        ${twijfel.length > 3 ? `<button class="kolomAlles" data-naarscherm="twijfel">Alle ${twijfel.length} bekijken →</button>` : ""}
       </div>` : ""}
 
       ${!state.mails.length ? '<div class="empty">Nog geen mails geladen.</div>' : `
+      ${aanvragen.length ? `
+      <div class="zaakBlok">
+        <div class="zaakKop"><h2>Aanvragen</h2><span class="zaakAantal">${aanvragen.length}</span></div>
+        <div class="zaakUitleg">Offerte- en contactvragen — nieuw werk dat binnenkomt.</div>
+        ${aanvragen.slice(0, 5).map(regel).join("")}
+        <button class="kolomAlles" data-naarscherm="aanvragen">${aanvragen.length > 5 ? `Alle ${aanvragen.length} aanvragen bekijken →` : "Open het aanvragenscherm →"}</button>
+      </div>` : ""}
+
       ${lijst("Vandaag nog te beantwoorden", "Mails die vandaag een antwoord van jou vragen.", vandaag, "dringend")}
       ${lijst("Later deze week te beantwoorden", "Mag nog een paar dagen wachten, maar niet vergeten.", week, "binnenkort")}
       ${lijst("Nog te regelen", "Offertes, afspraken en facturen die geordend moeten worden, maar niet dringend zijn.", regelen, "offertes")}
@@ -2611,6 +2707,31 @@ function filterTitel() {
 // steeds over je VOLLEDIGE mailbox; enkel het tekenen gebeurt in stukken.
 const RIJEN_PER_KEER = 60;
 
+// Zoekt buiten de inbox verder, in alles wat Mailvio bewaard heeft.
+let zoekTeller = 0;
+async function zoekBreder(term, rijen) {
+  const mijn = ++zoekTeller;
+  rijen.innerHTML = '<div class="empty">Niets in je inbox — verder zoeken in je hele mailbox...</div>';
+  let data;
+  try {
+    data = await (await fetch("/api/search?q=" + encodeURIComponent(term))).json();
+  } catch (e) {
+    rijen.innerHTML = '<div class="empty">Zoeken mislukte.</div>';
+    return;
+  }
+  // Ondertussen verder getypt? Dan is dit antwoord achterhaald.
+  if (mijn !== zoekTeller) return;
+  const mails = data.mails || [];
+  rijen.innerHTML = mails.length
+    ? `<div class="meerRijen" style="text-align:left;padding:10px 6px">${mails.length} gevonden buiten je inbox</div>` +
+      mails.slice(0, 100).map((m) => mailRowHtml({ ...m, snippet: m.snippet || "" }, true)).join("")
+    : `<div class="empty">Geen mail gevonden voor "${escapeHtml(term)}".</div>`;
+  rijen.querySelectorAll("[data-open]").forEach((el) => el.addEventListener("click", () => {
+    const m = mails.find((x) => String(x.uid) === el.dataset.open);
+    openMail(Number(el.dataset.open), m && m.folder ? m.folder : "INBOX");
+  }));
+}
+
 function tekenMailRijen(erbij) {
   const rijen = document.getElementById("mailRows");
   if (!rijen) return;
@@ -2618,6 +2739,14 @@ function tekenMailRijen(erbij) {
   if (!erbij) state.getoondeRijen = RIJEN_PER_KEER;
   const tot = Math.min(state.getoondeRijen || RIJEN_PER_KEER, list.length);
   const stuk = list.slice(0, tot);
+
+  // Niets gevonden in je inbox, maar je bent wel iets aan het zoeken? Dan
+  // zoeken we door in je HELE bewaarde mailbox — verzonden, archief, mappen —
+  // in plaats van je met een leeg scherm te laten zitten.
+  if (!stuk.length && String(state.inboxZoek || "").trim().length >= 3) {
+    zoekBreder(String(state.inboxZoek).trim(), rijen);
+    return;
+  }
 
   rijen.innerHTML = stuk.length
     ? stuk.map((m) => mailRowHtml(m)).join("") +
