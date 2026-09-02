@@ -33,6 +33,8 @@ function getConfig() {
     smtpUser: stored.smtpUser || process.env.SMTP_USER || "",
     smtpPassword: stored.smtpPassword || process.env.SMTP_PASSWORD || "",
     anthropicApiKey: stored.anthropicApiKey || process.env.ANTHROPIC_API_KEY || "",
+    aiToon: stored.aiToon || process.env.AI_TOON || "Vlaams, kort en professioneel",
+    aiHandtekening: stored.aiHandtekening || process.env.AI_HANDTEKENING || "",
   };
 }
 
@@ -49,6 +51,8 @@ function getPublicConfig() {
     smtpUser: config.smtpUser,
     hasSmtpPassword: !!config.smtpPassword,
     hasApiKey: !!config.anthropicApiKey,
+    aiToon: config.aiToon,
+    aiHandtekening: config.aiHandtekening,
   };
 }
 
@@ -72,6 +76,8 @@ function updateSettings(update) {
   if (typeof update.anthropicApiKey === "string" && update.anthropicApiKey.length > 0) {
     next.anthropicApiKey = update.anthropicApiKey;
   }
+  if (typeof update.aiToon === "string") next.aiToon = update.aiToon.trim();
+  if (typeof update.aiHandtekening === "string") next.aiHandtekening = update.aiHandtekening.trim();
 
   writeStoredSettings(next);
   return getPublicConfig();

@@ -14,15 +14,139 @@
     --orange:#c07a1f; --orange-soft:#fbf0dd;
     --yellow:#a68a1f; --yellow-soft:#faf3d9;
     --green:#2f8a4e; --green-soft:#e6f4ea;
+    --avatar-bg:#fbe0d9; --avatar-ink:#9c4a34;
   }
   *{box-sizing:border-box}
+  html,body{height:100%}
   body{margin:0;font-family:'Manrope',system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--ink)}
-  header{padding:20px 24px;display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--border);background:var(--surface)}
-  header .dot{width:10px;height:10px;border-radius:50%;background:var(--accent)}
-  header h1{font-size:18px;margin:0;font-weight:800;flex:1 1 auto}
-  .settingsBtn{border:none;background:var(--surface-2);color:var(--ink-soft);width:34px;height:34px;border-radius:9px;font-size:16px;cursor:pointer}
-  .settingsBtn:hover{background:var(--border)}
-  .banner a.bannerLink{color:#6b5a12;font-weight:700;text-decoration:underline;cursor:pointer}
+  button{font-family:inherit}
+  a{color:inherit}
+
+  .layout{display:flex;height:100vh;overflow:hidden}
+
+  /* ---- Sidebar ---- */
+  .sidebar{width:264px;flex:0 0 264px;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;padding:18px 14px;overflow-y:auto}
+  .brand{display:flex;align-items:center;gap:8px;padding:4px 8px 14px}
+  .brand .dot{width:10px;height:10px;border-radius:50%;background:var(--accent)}
+  .brand h1{font-size:17px;margin:0;font-weight:800}
+  .acctChip{background:var(--surface-2);border-radius:9px;padding:8px 10px;font-size:12.5px;color:var(--ink-soft);margin-bottom:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .navItem{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;font-size:13.5px;font-weight:700;color:var(--ink);cursor:pointer;border:none;background:none;width:100%;text-align:left}
+  .navItem:hover{background:var(--surface-2)}
+  .navItem.active{background:var(--accent-soft);color:var(--accent-ink)}
+  .navItem .count{margin-left:auto;font-weight:700;color:var(--ink-faint);font-size:12px}
+  .navItem.active .count{color:var(--accent-ink)}
+  .navItem.soon{color:var(--ink-faint);cursor:pointer;font-weight:600}
+  .navItem.soon:hover{background:none}
+  .navItem .dotmark{width:7px;height:7px;border-radius:50%;flex:0 0 7px}
+  .navGroup{font-size:10.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-faint);margin:16px 8px 4px}
+  .navGroup:first-of-type{margin-top:4px}
+  .sidebarFooter{margin-top:auto;padding-top:12px;border-top:1px solid var(--border)}
+  .userChip{display:flex;align-items:center;gap:8px;padding:8px 8px 2px;font-size:13px;font-weight:700}
+  .userChip .avatar{width:26px;height:26px;font-size:11px}
+
+  /* ---- Content shell ---- */
+  .content{flex:1 1 auto;display:flex;flex-direction:column;overflow:hidden;position:relative}
+  .banner{background:var(--yellow-soft);border-bottom:1px solid var(--yellow);color:#6b5a12;padding:10px 24px;font-size:13px;line-height:1.6;flex:0 0 auto}
+  .banner a{font-weight:700;text-decoration:underline;cursor:pointer}
+  .banner[hidden]{display:none}
+  .toast{position:fixed;bottom:22px;right:22px;background:var(--ink);color:#fff;padding:10px 16px;border-radius:9px;font-size:13px;box-shadow:0 8px 24px rgba(0,0,0,.2);z-index:100;opacity:0;transform:translateY(6px);transition:opacity .2s,transform .2s;pointer-events:none}
+  .toast.show{opacity:1;transform:translateY(0)}
+
+  .avatar{width:40px;height:40px;border-radius:50%;background:var(--avatar-bg);color:var(--avatar-ink);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;flex:0 0 auto}
+  .tag{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:99px;background:var(--accent-soft);color:var(--accent-ink);white-space:nowrap}
+  .tag.leverancier{background:var(--surface-2);color:var(--ink-soft)}
+  .tag.onbekend{display:none}
+  .pill{font-size:10.5px;font-weight:700;border-radius:99px;padding:3px 10px;white-space:nowrap}
+  .pill.dringend,.pill.wacht{background:var(--red-soft);color:var(--red)}
+  .pill.vandaag{background:var(--orange-soft);color:var(--orange)}
+  .pill.binnenkort{background:var(--yellow-soft);color:var(--yellow)}
+  .pill.geen_actie{background:var(--green-soft);color:var(--green)}
+  .pill.onbekend{background:var(--surface-2);color:var(--ink-faint)}
+
+  /* ---- Vandaag ---- */
+  .vandaagView{flex:1 1 auto;overflow-y:auto;padding:40px 40px 60px}
+  .vandaagView .inner{max-width:880px;margin:0 auto}
+  .vandaagView h1{font-size:28px;margin:0 0 4px}
+  .vandaagView .sub{color:var(--ink-soft);font-size:14px;margin-bottom:22px}
+  .promptBar{display:flex;gap:10px;align-items:center;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:10px 14px;box-shadow:0 2px 8px rgba(0,0,0,.03)}
+  .promptBar input{flex:1 1 auto;border:none;background:none;font-size:14.5px;font-family:inherit;outline:none}
+  .promptBar button{border:none;background:var(--accent);color:#fff;font-weight:700;font-size:13px;border-radius:8px;padding:9px 16px;cursor:pointer}
+  .promptBar button:disabled{opacity:.5;cursor:default}
+  .chips{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 24px}
+  .chip{border:1px solid var(--border);background:var(--surface);border-radius:99px;padding:7px 14px;font-size:12.5px;font-weight:600;cursor:pointer;color:var(--ink-soft)}
+  .chip:hover{background:var(--surface-2)}
+  .promptAnswer{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 16px;font-size:13.5px;line-height:1.6;margin-bottom:22px;white-space:pre-wrap}
+  .sectionTitle{display:flex;align-items:center;gap:8px;font-weight:800;font-size:15px;margin:0 0 12px}
+  .sectionTitle .dotmark{width:8px;height:8px;border-radius:50%;background:var(--red)}
+  .todoCard{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 16px;display:flex;align-items:center;gap:12px;margin-bottom:8px}
+  .todoCard .info{flex:1 1 auto;min-width:0}
+  .todoCard .name{font-weight:700;font-size:14px;display:flex;align-items:center;gap:8px}
+  .todoCard .reden{font-size:13px;color:var(--ink-soft);margin-top:2px}
+  .todoCard .actions{display:flex;gap:8px;flex:0 0 auto}
+  .btn{border:none;border-radius:8px;padding:8px 14px;font-size:12.5px;font-weight:700;cursor:pointer}
+  .btn-ghost{background:var(--surface-2);color:var(--ink)}
+  .btn-primary{background:var(--accent);color:#fff}
+  .btn-primary:disabled{opacity:.5;cursor:default}
+  .miniCards{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:22px}
+  .miniCard{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 16px}
+  .miniCard .title{font-weight:800;font-size:13.5px;display:flex;align-items:center;gap:7px;margin-bottom:6px}
+  .miniCard .title .dotmark{width:7px;height:7px;border-radius:50%}
+  .miniCard .body{font-size:12.5px;color:var(--ink-soft);line-height:1.6}
+  .miniCard a{font-weight:700;font-size:12.5px;color:var(--accent-ink);text-decoration:none;display:inline-block;margin-top:6px;cursor:pointer}
+  .empty{color:var(--ink-faint);font-size:13.5px;padding:16px 0}
+
+  /* ---- Inbox ---- */
+  .inboxView{flex:1 1 auto;display:flex;overflow:hidden}
+  .inboxMain{flex:1 1 auto;overflow-y:auto;padding:24px 28px}
+  .inboxHead{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+  .inboxHead h1{font-size:22px;margin:0}
+  .searchRow{display:flex;gap:10px;margin-bottom:14px}
+  .searchRow input{flex:1 1 auto;border:1px solid var(--border);background:var(--surface);border-radius:9px;padding:9px 12px;font-size:13.5px;font-family:inherit}
+  .tabs{display:flex;gap:8px}
+  .tabBtn{border:1px solid var(--border);background:var(--surface);border-radius:8px;padding:8px 13px;font-size:12.5px;font-weight:700;cursor:pointer;color:var(--ink-soft)}
+  .tabBtn.active{background:var(--accent);border-color:var(--accent);color:#fff}
+  .mailRow{display:flex;align-items:center;gap:12px;padding:13px 6px;border-bottom:1px solid var(--border);cursor:pointer}
+  .mailRow:hover{background:var(--surface-2)}
+  .mailRow .unreadDot{width:7px;height:7px;border-radius:50%;background:var(--accent);flex:0 0 7px}
+  .mailRow .unreadDot.read{background:transparent}
+  .mailRow .from{font-weight:700;font-size:13.5px;display:flex;align-items:center;gap:7px;flex:0 0 190px;min-width:0}
+  .mailRow .from span.name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .mailRow .subj{flex:1 1 auto;min-width:0;display:flex;gap:8px;align-items:baseline;overflow:hidden}
+  .mailRow .subj b{font-size:13.5px;white-space:nowrap}
+  .mailRow .subj .snip{color:var(--ink-faint);font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .mailRow .time{flex:0 0 46px;text-align:right;font-size:12px;color:var(--ink-faint)}
+  .aiPanel{width:320px;flex:0 0 320px;border-left:1px solid var(--border);background:var(--surface);padding:18px 16px;overflow-y:auto;display:flex;flex-direction:column}
+  .aiPanel .panelTitle{font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-faint);margin-bottom:10px}
+  .aiChatBox{margin-top:auto;padding-top:14px;border-top:1px solid var(--border)}
+  .aiChatBox input{width:100%;border:1px solid var(--border);border-radius:9px;padding:9px 11px;font-size:13px;font-family:inherit;margin-top:8px}
+
+  /* ---- Mail detail ---- */
+  .mailView{flex:1 1 auto;display:flex;overflow:hidden}
+  .mailMain{flex:1 1 auto;overflow-y:auto;padding:26px 32px}
+  .mailMain .backBtn{background:none;border:none;color:var(--accent-ink);font-weight:700;font-size:13px;cursor:pointer;padding:0;margin-bottom:14px}
+  .mailMeta{display:flex;gap:8px;align-items:center;margin-bottom:10px;font-size:12.5px;color:var(--ink-soft)}
+  .mailMain h1{font-size:22px;margin:0 0 14px}
+  .mailFrom{display:flex;align-items:center;gap:12px;padding-bottom:16px;margin-bottom:16px;border-bottom:1px solid var(--border)}
+  .mailFrom .who b{font-size:13.5px;display:block}
+  .mailFrom .who span{font-size:12px;color:var(--ink-faint)}
+  .mailFrom .date{margin-left:auto;font-size:12px;color:var(--ink-faint)}
+  .mailBody{white-space:pre-wrap;font-size:14px;line-height:1.7;color:var(--ink)}
+  .quickActions{display:flex;gap:8px;flex-wrap:wrap;margin-top:26px;padding-top:16px;border-top:1px solid var(--border)}
+  .quickActions button{border:1px solid var(--accent-soft);background:var(--accent-soft);color:var(--accent-ink);border-radius:99px;padding:7px 14px;font-size:12.5px;font-weight:700;cursor:pointer}
+  .quickActions button.plain{background:var(--surface-2);color:var(--ink);border-color:var(--border)}
+  .quickActions button[disabled]{opacity:.45;cursor:default}
+  .aiSuggest{font-size:13px;line-height:1.6}
+  .aiSuggest .row{margin-bottom:10px}
+  .aiSuggest .row b{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-faint);margin-bottom:2px;font-weight:800}
+  .draftBox{margin-top:14px}
+  .draftBox .label{font-size:11px;text-transform:uppercase;letter-spacing:.05em;font-weight:800;color:var(--ink-faint);margin-bottom:6px}
+  .draftBox textarea{width:100%;min-height:160px;border:1px solid var(--border);border-radius:9px;padding:10px 12px;font-size:13px;font-family:inherit;line-height:1.6;resize:vertical}
+  .draftActions{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+  .sendMsg{font-size:12.5px;margin-top:8px;line-height:1.5}
+  .sendMsg.ok{color:var(--green)}
+  .sendMsg.err{color:var(--red)}
+
+  /* ---- Modals (instellingen / opstellen) ---- */
   .overlay{position:fixed;inset:0;background:rgba(44,38,32,.45);display:flex;align-items:flex-start;justify-content:center;padding:32px 16px;overflow-y:auto;z-index:50}
   .overlay[hidden]{display:none}
   .modal{background:var(--surface);border-radius:14px;max-width:460px;width:100%;padding:22px;box-shadow:0 12px 40px rgba(0,0,0,.18)}
@@ -34,250 +158,988 @@
   .fieldRow{display:flex;align-items:center;gap:10px;padding:9px 12px;border-bottom:1px solid var(--border)}
   .fieldRow:last-child{border-bottom:none}
   .fieldRow label{flex:0 0 108px;font-size:12.5px;font-weight:700;color:var(--ink-soft)}
-  .fieldRow input{flex:1 1 auto;min-width:0;border:none;background:none;font-size:13.5px;font-family:inherit;padding:3px 0;color:var(--ink);outline:none}
-  .fieldRow.split{gap:14px}
-  .fieldRow.split .sub{flex:1 1 auto;display:flex;align-items:center;gap:8px;min-width:0}
-  .fieldRow.split .sub label{flex:0 0 auto}
-  .fieldRow.split .sub.port{flex:0 0 84px}
-  .fieldRow.split .sub.port input{width:100%}
+  .fieldRow input,.fieldRow textarea{flex:1 1 auto;min-width:0;border:none;background:none;font-size:13.5px;font-family:inherit;padding:3px 0;color:var(--ink);outline:none}
+  .fieldRow textarea{min-height:70px;resize:vertical}
   .modal-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:18px}
   .modal-actions button{border:none;border-radius:8px;padding:9px 16px;font-weight:700;font-size:13px;cursor:pointer}
   .btn-secondary{background:var(--surface-2);color:var(--ink-soft)}
-  .btn-primary{background:var(--accent);color:#fff}
-  .btn-primary:disabled{opacity:.5;cursor:default}
   .settingsMsg{font-size:12.5px;margin-top:10px;line-height:1.6}
   .settingsMsg.ok{color:var(--green)}
   .settingsMsg.err{color:var(--red)}
-  main{max-width:760px;margin:0 auto;padding:24px 16px 140px}
-  .banner{background:var(--yellow-soft);border:1px solid var(--yellow);color:#6b5a12;border-radius:10px;padding:12px 16px;font-size:13.5px;margin-bottom:18px;line-height:1.6}
-  .group{font-size:11.5px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-faint);margin:20px 0 8px}
-  .card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 16px;margin-bottom:8px}
-  .card .top{display:flex;align-items:center;gap:8px}
-  .card .from{font-weight:700;font-size:14px}
-  .card .subject{font-size:13.5px;color:var(--ink-soft);margin-top:2px}
-  .card .reden{font-size:12.5px;color:var(--ink-faint);margin-top:6px;font-style:italic}
-  .pill{font-size:10.5px;font-weight:700;border-radius:99px;padding:2px 9px;margin-left:auto}
-  .pill.dringend{background:var(--red-soft);color:var(--red)}
-  .pill.vandaag{background:var(--orange-soft);color:var(--orange)}
-  .pill.binnenkort{background:var(--yellow-soft);color:var(--yellow)}
-  .pill.geen_actie{background:var(--green-soft);color:var(--green)}
-  .pill.onbekend{background:var(--surface-2);color:var(--ink-faint)}
-  .empty{color:var(--ink-faint);font-size:13.5px;padding:20px 0}
-  .refresh{font-size:12.5px;font-weight:700;color:var(--accent-ink);background:none;border:none;cursor:pointer;padding:0}
-  .chatbar{position:fixed;left:0;right:0;bottom:0;background:var(--surface);border-top:1px solid var(--border);padding:14px 16px;display:flex;flex-direction:column;gap:10px;max-height:46vh}
-  .chatlog{max-width:760px;margin:0 auto;width:100%;overflow-y:auto;display:flex;flex-direction:column;gap:8px;flex:1 1 auto}
-  .msg{max-width:85%;padding:9px 13px;border-radius:12px;font-size:13.5px;line-height:1.6;white-space:pre-wrap}
-  .msg.user{align-self:flex-end;background:var(--accent);color:#fff;border-bottom-right-radius:3px}
-  .msg.bot{align-self:flex-start;background:var(--surface-2);border-bottom-left-radius:3px}
-  .inputrow{max-width:760px;margin:0 auto;width:100%;display:flex;gap:8px;align-items:center;background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:8px 10px}
-  .inputrow input{flex:1 1 auto;border:none;background:none;font-size:14px;font-family:inherit;outline:none}
-  .inputrow button{border:none;background:var(--accent);color:#fff;font-weight:700;font-size:13px;border-radius:8px;padding:8px 14px;cursor:pointer}
-  .inputrow button:disabled{opacity:.5;cursor:default}
+
+  /* ---- Mobiel (smartphone-breedte) ---- */
+  @media (max-width: 860px){
+    .layout{flex-direction:column;height:100vh}
+    .sidebar{width:100%;flex:0 0 auto;flex-direction:row;align-items:center;gap:4px;overflow-x:auto;overflow-y:hidden;padding:10px 10px;border-right:none;border-bottom:1px solid var(--border);white-space:nowrap}
+    .sidebar .brand{padding:0 8px 0 2px;flex:0 0 auto}
+    .sidebar .brand h1{display:none}
+    .sidebar .acctChip{display:none}
+    .sidebar .navGroup{display:none}
+    .navItem{width:auto;flex:0 0 auto;padding:8px 10px;white-space:nowrap}
+    .navItem .count{margin-left:4px}
+    .sidebarFooter{margin-top:0;padding-top:0;border-top:none;display:flex;align-items:center;flex:0 0 auto;margin-left:auto}
+    .sidebarFooter .navItem{padding:8px 8px}
+    .userChip{padding:6px 6px}
+    .userChip span:not(.avatar){display:none}
+
+    .vandaagView{padding:20px 16px 40px}
+    .miniCards{grid-template-columns:1fr}
+    .todoCard{flex-wrap:wrap}
+    .todoCard .actions{width:100%;justify-content:flex-end;margin-top:8px}
+
+    .inboxView,.mailView{flex-direction:column;overflow-y:auto}
+    .inboxMain,.mailMain{padding:18px 16px}
+    .searchRow{flex-direction:column;align-items:stretch}
+    .aiPanel{width:100%;flex:0 0 auto;border-left:none;border-top:1px solid var(--border)}
+    .mailRow{flex-wrap:wrap;row-gap:4px}
+    .mailRow .from{flex:0 0 auto;max-width:55%}
+    .mailRow .subj{flex:1 1 100%;order:3}
+    .mailRow .time{margin-left:auto}
+  }
 </style>
 </head>
 <body>
-<header>
-<span class="dot"></span>
-<h1>Mailvio</h1>
-<button class="settingsBtn" id="settingsBtn" title="Instellingen" aria-label="Instellingen">&#9881;</button>
-</header>
-<main>
-<div id="banner"></div>
-<div style="display:flex;align-items:center;justify-content:space-between">
-<div style="font-size:13px;color:var(--ink-soft)" id="lastUpdated"></div>
-<button class="refresh" id="refreshBtn">Ververs</button>
+<div class="layout">
+  <nav class="sidebar">
+    <div class="brand"><span class="dot"></span><h1>Mailvio</h1></div>
+    <div class="acctChip" id="acctChip">niet gekoppeld</div>
+
+    <button class="navItem" data-nav="vandaag">☆ Vandaag</button>
+    <button class="navItem" data-nav="zoeken">🔍 Zoeken</button>
+
+    <div class="navGroup">Mailbox</div>
+    <button class="navItem" data-nav="inbox" data-filter="alle">Inbox <span class="count" id="cntInbox"></span></button>
+    <button class="navItem soon" data-soon="1">Verzonden</button>
+    <button class="navItem soon" data-soon="1">Concepten</button>
+    <button class="navItem soon" data-soon="1">Gearchiveerd</button>
+    <button class="navItem soon" data-soon="1">Prullenmand</button>
+
+    <div class="navGroup">Slim</div>
+    <button class="navItem" data-nav="zaken"><span class="dotmark" style="background:var(--red)"></span> Openstaande Zaken <span class="count" id="cntZaken"></span></button>
+    <button class="navItem" data-nav="inbox" data-filter="dringend"><span class="dotmark" style="background:var(--red)"></span> Actie nodig <span class="count" id="cntDringend"></span></button>
+    <button class="navItem" data-nav="inbox" data-filter="binnenkort"><span class="dotmark" style="background:var(--orange)"></span> Opvolgen <span class="count" id="cntBinnenkort"></span></button>
+    <button class="navItem" data-nav="opvolgingen"><span class="dotmark" style="background:var(--yellow)"></span> Wachten op antwoord</button>
+    <button class="navItem soon" data-soon="1"><span class="dotmark" style="background:var(--accent)"></span> Afspraken</button>
+    <button class="navItem soon" data-soon="1"><span class="dotmark" style="background:var(--yellow)"></span> Offertes</button>
+    <button class="navItem soon" data-soon="1"><span class="dotmark" style="background:var(--ink-faint)"></span> Belangrijk</button>
+
+    <div class="navGroup">Mappen</div>
+    <button class="navItem soon" data-soon="1">Klanten</button>
+    <button class="navItem soon" data-soon="1">Leveranciers</button>
+    <button class="navItem soon" data-soon="1">Reclame</button>
+    <button class="navItem soon" data-soon="1">Archief</button>
+
+    <div class="sidebarFooter">
+      <button class="navItem" id="settingsBtn">⚙ Instellingen</button>
+      <div class="userChip"><span class="avatar" id="userAvatar">?</span><span id="userName">Account</span></div>
+    </div>
+  </nav>
+
+  <div class="content">
+    <div class="banner" id="banner" hidden></div>
+    <div id="viewMount" style="flex:1 1 auto;display:flex;overflow:hidden;margin-top:0"></div>
+  </div>
 </div>
-<div id="lists"></div>
-</main>
-<div class="chatbar">
-<div class="chatlog" id="chatlog"></div>
-<div class="inputrow">
-<input id="chatInput" type="text" placeholder="Stel een vraag of geef een opdracht...">
-<button id="sendBtn">Stuur</button>
-</div>
-</div>
+
+<div class="toast" id="toast"></div>
+
+<!-- Instellingen modal -->
 <div class="overlay" id="settingsOverlay" hidden>
-<div class="modal">
-<h2>Account instellen</h2>
-<p class="hint">Vul je mailaccount in zoals je dat ook in Outlook of Apple Mail zou doen. Wordt bewaard op de server (niet zichtbaar voor anderen). Bij een nieuwe deploy van de app moet je dit mogelijk opnieuw invullen.</p>
+  <div class="modal">
+    <h2>Account instellen</h2>
+    <p class="hint">Vul je mailaccount in zoals je dat ook in Outlook of Apple Mail zou doen. Wordt bewaard op de server. Bij een nieuwe deploy van de app moet je dit mogelijk opnieuw invullen.</p>
 
-<div class="sectionLabel">Account</div>
-<div class="fieldList">
-  <div class="fieldRow">
-    <label for="setName">Naam</label>
-    <input id="setName" type="text" placeholder="Dakwerken Daklo" autocomplete="off">
-  </div>
-  <div class="fieldRow">
-    <label for="setEmail">E-mailadres</label>
-    <input id="setEmail" type="text" placeholder="info@daklo.be" autocomplete="off">
-  </div>
-</div>
+    <div class="sectionLabel">Account</div>
+    <div class="fieldList">
+      <div class="fieldRow"><label for="setName">Naam</label><input id="setName" type="text" placeholder="Dakwerken Daklo" autocomplete="off"></div>
+      <div class="fieldRow"><label for="setEmail">E-mailadres</label><input id="setEmail" type="text" placeholder="info@daklo.be" autocomplete="off"></div>
+    </div>
 
-<div class="sectionLabel">Inkomende server (IMAP)</div>
-<div class="fieldList">
-  <div class="fieldRow">
-    <label for="setHost">Server</label>
-    <input id="setHost" type="text" placeholder="imap.mailprotect.be" autocomplete="off">
-  </div>
-  <div class="fieldRow">
-    <label for="setPort">Poort</label>
-    <input id="setPort" type="text" placeholder="993" autocomplete="off">
-  </div>
-  <div class="fieldRow">
-    <label for="setPassword">Wachtwoord</label>
-    <input id="setPassword" type="password" placeholder="" autocomplete="off">
-  </div>
-</div>
+    <div class="sectionLabel">Inkomende server (IMAP)</div>
+    <div class="fieldList">
+      <div class="fieldRow"><label for="setHost">Server</label><input id="setHost" type="text" placeholder="imap.mailprotect.be" autocomplete="off"></div>
+      <div class="fieldRow"><label for="setPort">Poort</label><input id="setPort" type="text" placeholder="993" autocomplete="off"></div>
+      <div class="fieldRow"><label for="setPassword">Wachtwoord</label><input id="setPassword" type="password" placeholder="" autocomplete="off"></div>
+    </div>
 
-<div class="sectionLabel">Uitgaande server (SMTP)</div>
-<div class="fieldList">
-  <div class="fieldRow">
-    <label for="setSmtpHost">Server</label>
-    <input id="setSmtpHost" type="text" placeholder="smtp-auth.mailprotect.be" autocomplete="off">
-  </div>
-  <div class="fieldRow">
-    <label for="setSmtpPort">Poort</label>
-    <input id="setSmtpPort" type="text" placeholder="587" autocomplete="off">
-  </div>
-  <div class="fieldRow">
-    <label for="setSmtpPassword">Wachtwoord</label>
-    <input id="setSmtpPassword" type="password" placeholder="" autocomplete="off">
+    <div class="sectionLabel">Uitgaande server (SMTP)</div>
+    <div class="fieldList">
+      <div class="fieldRow"><label for="setSmtpHost">Server</label><input id="setSmtpHost" type="text" placeholder="smtp-auth.mailprotect.be" autocomplete="off"></div>
+      <div class="fieldRow"><label for="setSmtpPort">Poort</label><input id="setSmtpPort" type="text" placeholder="587" autocomplete="off"></div>
+      <div class="fieldRow"><label for="setSmtpPassword">Wachtwoord</label><input id="setSmtpPassword" type="password" placeholder="" autocomplete="off"></div>
+    </div>
+
+    <div class="sectionLabel">Claude AI</div>
+    <div class="fieldList">
+      <div class="fieldRow"><label for="setApiKey">API-sleutel</label><input id="setApiKey" type="password" placeholder="sk-ant-..." autocomplete="off"></div>
+    </div>
+
+    <div class="sectionLabel">AI-instellingen</div>
+    <p class="hint" style="margin:-2px 0 8px">Bepaalt hoe Mailvio AI je antwoorden opstelt en herschrijft.</p>
+    <div class="fieldList">
+      <div class="fieldRow"><label for="setAiToon">Schrijfstijl</label><input id="setAiToon" type="text" placeholder="Vlaams, kort en professioneel" autocomplete="off"></div>
+      <div class="fieldRow"><label for="setAiSign">Handtekening</label><input id="setAiSign" type="text" placeholder="Silvio" autocomplete="off"></div>
+    </div>
+
+    <div id="settingsMsg" class="settingsMsg"></div>
+    <div class="modal-actions">
+      <button class="btn-secondary" id="settingsCancel">Sluiten</button>
+      <button class="btn-primary" id="settingsSave">Opslaan</button>
+    </div>
   </div>
 </div>
 
-<div class="sectionLabel">Claude AI</div>
-<div class="fieldList">
-  <div class="fieldRow">
-    <label for="setApiKey">API-sleutel</label>
-    <input id="setApiKey" type="password" placeholder="sk-ant-..." autocomplete="off">
+<!-- Nieuwe mail modal -->
+<div class="overlay" id="composeOverlay" hidden>
+  <div class="modal">
+    <h2>Nieuwe mail</h2>
+    <div class="fieldList">
+      <div class="fieldRow"><label for="cmpTo">Aan</label><input id="cmpTo" type="text" placeholder="naam@voorbeeld.be" autocomplete="off"></div>
+      <div class="fieldRow"><label for="cmpSubject">Onderwerp</label><input id="cmpSubject" type="text" autocomplete="off"></div>
+      <div class="fieldRow"><label for="cmpBody">Bericht</label><textarea id="cmpBody"></textarea></div>
+    </div>
+    <div id="composeMsg" class="settingsMsg"></div>
+    <div class="modal-actions">
+      <button class="btn-secondary" id="composeCancel">Sluiten</button>
+      <button class="btn-primary" id="composeSend">Versturen</button>
+    </div>
   </div>
 </div>
 
-<div id="settingsMsg"></div>
-<div class="modal-actions">
-  <button class="btn-secondary" id="settingsCancel">Sluiten</button>
-  <button class="btn-primary" id="settingsSave">Opslaan</button>
-</div>
-</div>
-</div>
 <script>
-const CATS = [
-  { key: "dringend", label: "Dringend" },
-  { key: "vandaag", label: "Vandaag" },
-  { key: "binnenkort", label: "Binnenkort" },
-  { key: "geen_actie", label: "Geen actie" },
-  { key: "onbekend", label: "Nog niet beoordeeld" },
-];
-
-async function loadMails(forceRefresh) {
-  const listsEl = document.getElementById("lists");
-  const bannerEl = document.getElementById("banner");
-  listsEl.innerHTML = '<div class="empty">Bezig met ophalen...</div>';
-  const res = await fetch("/api/mails" + (forceRefresh ? "?refresh=1" : ""));
-  const data = await res.json();
-
-  bannerEl.innerHTML = "";
-  if (!data.imapConfigured) {
-    bannerEl.innerHTML = '<div class="banner">De mailbox is nog niet gekoppeld. <a class="bannerLink" id="bannerSettingsLink">Vul je mailgegevens in</a>.</div>';
-  } else if (!data.smtpConfigured) {
-    bannerEl.innerHTML = '<div class="banner">De uitgaande server (SMTP) is nog niet ingesteld. <a class="bannerLink" id="bannerSettingsLink">Vul die in</a>.</div>';
-  } else if (!data.aiConfigured) {
-    bannerEl.innerHTML = '<div class="banner">De AI is nog niet ingesteld. <a class="bannerLink" id="bannerSettingsLink">Vul je Claude API-sleutel in</a>.</div>';
-  }
-  const bannerLink = document.getElementById("bannerSettingsLink");
-  if (bannerLink) bannerLink.addEventListener("click", openSettings);
-
-  document.getElementById("lastUpdated").textContent = data.mails.length
-    ? `${data.mails.length} mails geladen`
-    : "";
-
-  listsEl.innerHTML = "";
-  if (!data.mails.length) {
-    listsEl.innerHTML = '<div class="empty">Nog geen mails om te tonen.</div>';
-    return;
-  }
-
-  for (const cat of CATS) {
-    const items = data.mails.filter((m) => m.categorie === cat.key);
-    if (!items.length) continue;
-    const groupEl = document.createElement("div");
-    groupEl.className = "group";
-    groupEl.textContent = `${cat.label} — ${items.length}`;
-    listsEl.appendChild(groupEl);
-    for (const m of items) {
-      const card = document.createElement("div");
-      card.className = "card";
-      const redenHtml = m.reden ? ('<div class="reden">' + escapeHtml(m.reden) + '</div>') : "";
-      card.innerHTML = `
-        <div class="top">
-          <span class="from">${escapeHtml(m.from)}</span>
-          <span class="pill ${m.categorie}">${cat.label}</span>
-        </div>
-        <div class="subject">${escapeHtml(m.subject)}</div>
-        ${redenHtml}
-      `;
-      listsEl.appendChild(card);
-    }
-  }
-}
+// ---------------------------------------------------------------------------
+// State
+// ---------------------------------------------------------------------------
+const state = {
+  view: "vandaag",
+  filter: "alle",
+  mails: [],
+  mailsTotal: 0,
+  mailsCapped: false,
+  mailsScanned: 0,
+  mailsScanning: false,
+  status: { imapConfigured: false, smtpConfigured: false, aiConfigured: false },
+  settings: {},
+  mailDetail: {},   // uid -> volledige mail
+  suggestion: {},   // uid -> AI-voorstel
+  chatLog: {},      // uid -> [{who,text}] mini-log per mail (AI-panel)
+};
 
 function escapeHtml(str) {
   return String(str || "").replace(/[&<>"']/g, (c) => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
   }[c]));
 }
-
-function addMsg(text, who) {
-  const log = document.getElementById("chatlog");
-  const el = document.createElement("div");
-  el.className = "msg " + who;
-  el.textContent = text;
-  log.appendChild(el);
-  log.scrollTop = log.scrollHeight;
+function initials(name) {
+  const parts = String(name || "?").trim().split(/\s+/);
+  return ((parts[0]?.[0] || "") + (parts[1]?.[0] || "")).toUpperCase() || "?";
+}
+function daysAgo(iso) {
+  if (!iso) return 0;
+  return Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 86400000));
+}
+function showToast(text) {
+  const t = document.getElementById("toast");
+  t.textContent = text;
+  t.classList.add("show");
+  clearTimeout(showToast._t);
+  showToast._t = setTimeout(() => t.classList.remove("show"), 2200);
 }
 
-async function sendChat() {
-  const input = document.getElementById("chatInput");
-  const btn = document.getElementById("sendBtn");
-  const text = input.value.trim();
-  if (!text) return;
-  addMsg(text, "user");
-  input.value = "";
-  btn.disabled = true;
-  addMsg("...", "bot");
-  const log = document.getElementById("chatlog");
+// ---------------------------------------------------------------------------
+// Data laden
+// ---------------------------------------------------------------------------
+async function loadSettings() {
   try {
-    const res = await fetch("/api/chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: text }),
-    });
+    state.settings = await (await fetch("/api/settings")).json();
+  } catch (e) { /* stil negeren */ }
+  renderIdentity();
+}
+
+function renderIdentity() {
+  const s = state.settings || {};
+  const label = s.imapUser || "niet gekoppeld";
+  document.getElementById("acctChip").textContent = label;
+  const name = s.displayName || s.imapUser || "Account";
+  document.getElementById("userName").textContent = s.displayName || "Account";
+  document.getElementById("userAvatar").textContent = initials(name);
+}
+
+async function loadMails(forceRefresh) {
+  const res = await fetch("/api/mails" + (forceRefresh ? "?refresh=1" : ""));
+  const data = await res.json();
+  state.status.imapConfigured = data.imapConfigured;
+  state.status.aiConfigured = data.aiConfigured;
+  state.status.smtpConfigured = data.smtpConfigured;
+  state.mails = data.mails || [];
+  state.mailsTotal = data.total || state.mails.length;
+  state.mailsCapped = !!data.capped;
+  state.envelopeCap = data.envelopeCap;
+  state.mailsScanned = data.scanned || 0;
+  state.mailsScanning = !!data.scanning;
+  renderBanner();
+  renderSidebarCounts();
+  renderView();
+
+  // Nog niet alle mails beoordeeld? Blijf op de achtergrond automatisch
+  // volgende porties opvragen tot alles gescand is — zonder dat de gebruiker
+  // zelf hoeft te blijven verversen.
+  clearTimeout(loadMails._scanTimer);
+  if (state.mailsScanning) {
+    loadMails._scanTimer = setTimeout(() => loadMails(false), 3000);
+  }
+}
+
+async function loadStatus() {
+  try {
+    const data = await (await fetch("/api/status")).json();
+    Object.assign(state.status, data);
+  } catch (e) { /* stil negeren */ }
+  renderBanner();
+}
+
+function renderBanner() {
+  const el = document.getElementById("banner");
+  const s = state.status;
+  let html = "";
+  if (!s.imapConfigured) {
+    html = 'De mailbox is nog niet gekoppeld. <a id="bnrLink">Vul je mailgegevens in</a>.';
+  } else if (!s.smtpConfigured) {
+    html = 'De uitgaande server (SMTP) is nog niet ingesteld. <a id="bnrLink">Vul die in</a>.';
+  } else if (!s.aiConfigured) {
+    html = 'De AI is nog niet ingesteld. <a id="bnrLink">Vul je Claude API-sleutel in</a>.';
+  }
+  if (html) {
+    el.innerHTML = html;
+    el.hidden = false;
+    document.getElementById("bnrLink").addEventListener("click", openSettings);
+  } else {
+    el.hidden = true;
+  }
+}
+
+function renderSidebarCounts() {
+  const open = state.mails.filter((m) => !m.resolved);
+  const dringend = open.filter((m) => m.categorie === "dringend").length;
+  const binnenkort = open.filter((m) => m.categorie === "binnenkort").length;
+  const openstaand = open.filter((m) => m.categorie === "dringend" || m.categorie === "vandaag" || m.categorie === "binnenkort").length;
+  document.getElementById("cntInbox").textContent = state.mails.length || "";
+  document.getElementById("cntDringend").textContent = dringend || "";
+  document.getElementById("cntBinnenkort").textContent = binnenkort || "";
+  document.getElementById("cntZaken").textContent = openstaand || "";
+  document.querySelectorAll(".navItem[data-nav]").forEach((btn) => {
+    const isActive = btn.dataset.nav === state.view && (btn.dataset.nav !== "inbox" || btn.dataset.filter === state.filter);
+    btn.classList.toggle("active", isActive);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Navigatie
+// ---------------------------------------------------------------------------
+document.querySelectorAll(".navItem[data-nav]").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    state.view = btn.dataset.nav;
+    if (btn.dataset.filter) state.filter = btn.dataset.filter;
+    renderSidebarCounts();
+    renderView();
+  });
+});
+document.querySelectorAll(".navItem[data-soon]").forEach((btn) => {
+  btn.addEventListener("click", () => showToast("Deze functie komt in een latere versie van Mailvio."));
+});
+
+function renderView() {
+  if (state.view === "vandaag") return renderVandaag();
+  if (state.view === "inbox") return renderInbox();
+  if (state.view === "zoeken") return renderZoeken();
+  if (state.view === "zaken") return renderOpenstaandeZaken();
+  if (state.view === "opvolgingen") return renderOpvolgingen();
+  if (state.view === "mail") return; // wordt al gerenderd door openMail()
+  if (state.view === "klant") return; // wordt al gerenderd door openKlantContext()
+}
+
+// ---------------------------------------------------------------------------
+// Vandaag
+// ---------------------------------------------------------------------------
+function timeGreeting() {
+  const h = new Date().getHours();
+  if (h < 12) return "Goedemorgen";
+  if (h < 18) return "Goedemiddag";
+  return "Goedenavond";
+}
+
+function renderVandaag() {
+  const mount = document.getElementById("viewMount");
+  const naam = (state.settings.displayName || "").split(" ")[0] || "";
+  // Afgehandelde mails tellen niet meer mee als "nog te doen" — maar ze
+  // verdwijnen ENKEL hierdoor (expliciet afgevinkt of effectief beantwoord),
+  // nooit vanzelf door tijd of een herscan.
+  const open = state.mails.filter((m) => !m.resolved);
+  const todo = open
+    .filter((m) => m.categorie === "dringend" || m.categorie === "vandaag")
+    .sort((a, b) => (a.categorie === b.categorie ? new Date(a.date) - new Date(b.date) : a.categorie === "dringend" ? -1 : 1))
+    .slice(0, 4);
+  const openCount = open.filter((m) => m.categorie !== "geen_actie" && m.categorie !== "onbekend").length;
+  const dCount = open.filter((m) => m.categorie === "dringend").length;
+  const vCount = open.filter((m) => m.categorie === "vandaag").length;
+  const bCount = open.filter((m) => m.categorie === "binnenkort").length;
+  const watchList = open
+    .filter((m) => m.categorie === "dringend" || m.categorie === "binnenkort")
+    .sort((a, b) => new Date(a.date) - new Date(b.date))
+    .slice(0, 3);
+
+  mount.innerHTML = `
+    <div class="vandaagView"><div class="inner">
+      <h1>${timeGreeting()}${naam ? ", " + escapeHtml(naam) : ""}</h1>
+      <div class="sub">${new Date().toLocaleDateString("nl-BE", { weekday: "long", day: "numeric", month: "long" })} — hier is wat er vandaag telt.</div>
+
+      <div class="promptBar">
+        <input id="vandaagPrompt" type="text" placeholder="Stel een vraag of geef een opdracht...">
+        <button id="vandaagAsk">Stuur</button>
+      </div>
+      <div class="chips">
+        <button class="chip" data-q="Wat staat er nog open?">Wat staat er nog open?</button>
+        <button class="chip" data-q="Wat zijn mijn belangrijkste mails?">Wat zijn mijn belangrijkste mails?</button>
+        <button class="chip" data-q="Welke offertes moet ik opvolgen?">Welke offertes moet ik opvolgen?</button>
+      </div>
+      <div class="promptAnswer" id="vandaagAnswer" hidden></div>
+
+      ${!state.mails.length ? '<div class="empty">Nog geen mails geladen.</div>' : `
+      <div class="sectionTitle"><span class="dotmark"></span> ${todo.length} ding${todo.length === 1 ? "" : "en"} moet${todo.length === 1 ? "" : "en"} vandaag gebeuren</div>
+      ${todo.length ? todo.map((m) => `
+        <div class="todoCard">
+          <span class="avatar">${initials(m.from)}</span>
+          <div class="info">
+            <div class="name">${escapeHtml(m.from)} ${m.vanType && m.vanType !== "onbekend" ? `<span class="tag ${m.vanType}">${m.vanType === "klant" ? "Klant" : "Leverancier"}</span>` : ""}</div>
+            <div class="reden">${escapeHtml(m.reden || m.subject)}</div>
+          </div>
+          <div class="actions">
+            <button class="btn btn-ghost" data-open="${m.uid}">Open mail</button>
+            <button class="btn btn-primary" data-open="${m.uid}">${escapeHtml(m.actieLabel || "Bekijken")}</button>
+            <button class="btn btn-ghost" data-resolve="${m.uid}" title="Markeer als afgehandeld">✓</button>
+          </div>
+        </div>
+      `).join("") : '<div class="empty">Niets dringends — goed bezig.</div>'}
+
+      <div class="miniCards">
+        <div class="miniCard">
+          <div class="title"><span class="dotmark" style="background:var(--orange)"></span> Nog open — ${openCount} zaken</div>
+          <div class="body">${dCount} dringend · ${vCount} vandaag · ${bCount} binnenkort</div>
+          <a data-goto-inbox="alle">Bekijk alles →</a>
+        </div>
+        <div class="miniCard">
+          <div class="title"><span class="dotmark" style="background:var(--yellow)"></span> In de gaten houden</div>
+          <div class="body">${watchList.length ? watchList.map((m) => `${escapeHtml(m.subject)} — ${daysAgo(m.date)}d geleden`).join("<br>") : "Niets dat wacht."}</div>
+          ${watchList.length ? `<a data-open="${watchList[0].uid}">Bekijk →</a>` : ""}
+        </div>
+      </div>
+      `}
+    </div></div>
+  `;
+
+  mount.querySelectorAll("[data-open]").forEach((b) => b.addEventListener("click", () => openMail(Number(b.dataset.open))));
+  mount.querySelectorAll("[data-resolve]").forEach((b) => b.addEventListener("click", (e) => { e.stopPropagation(); resolveMail(Number(b.dataset.resolve), true); }));
+  mount.querySelectorAll("[data-goto-inbox]").forEach((b) => b.addEventListener("click", () => {
+    state.view = "inbox"; state.filter = b.dataset.gotoInbox; renderSidebarCounts(); renderView();
+  }));
+  mount.querySelectorAll(".chip").forEach((c) => c.addEventListener("click", () => askVandaag(c.dataset.q)));
+  document.getElementById("vandaagAsk").addEventListener("click", () => askVandaag(document.getElementById("vandaagPrompt").value));
+  document.getElementById("vandaagPrompt").addEventListener("keydown", (e) => { if (e.key === "Enter") askVandaag(e.target.value); });
+}
+
+async function askVandaag(question) {
+  const q = (question || "").trim();
+  if (!q) return;
+  const btn = document.getElementById("vandaagAsk");
+  const answerEl = document.getElementById("vandaagAnswer");
+  btn.disabled = true;
+  answerEl.hidden = false;
+  answerEl.textContent = "Bezig met nadenken...";
+  try {
+    const res = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: q }) });
     const data = await res.json();
-    log.lastChild.remove();
-    addMsg(data.answer || data.error || "Geen antwoord ontvangen.", "bot");
+    answerEl.textContent = data.answer || data.error || "Geen antwoord ontvangen.";
   } catch (e) {
-    log.lastChild.remove();
-    addMsg("Er ging iets mis: " + e.message, "bot");
+    answerEl.textContent = "Er ging iets mis: " + e.message;
   } finally {
     btn.disabled = false;
   }
 }
 
-document.getElementById("sendBtn").addEventListener("click", sendChat);
-document.getElementById("chatInput").addEventListener("keydown", (e) => {
-  if (e.key === "Enter") sendChat();
-});
-document.getElementById("refreshBtn").addEventListener("click", () => loadMails(true));
+// ---------------------------------------------------------------------------
+// Inbox
+// ---------------------------------------------------------------------------
+function statusPill(m) {
+  if (m.resolved) return { text: "Afgehandeld", cls: "geen_actie" };
+  if (!m.categorie || m.categorie === "geen_actie" || m.categorie === "onbekend") return null;
+  const d = daysAgo(m.date);
+  if (m.unread && d >= 1) return { text: `Wacht ${d}d`, cls: "wacht" };
+  if (m.actieLabel) return { text: m.actieLabel, cls: m.categorie };
+  return { text: m.categorie, cls: m.categorie };
+}
 
+// Markeert een mail als (niet-)afgehandeld — de ENIGE manier waarop iets uit
+// Vandaag/Openstaande Zaken verdwijnt. Werkt de lokale state bij én de
+// server, zodat het overleeft tot de gebruiker het zelf weer terugzet.
+async function resolveMail(uid, resolved) {
+  try {
+    await fetch(`/api/mails/${uid}/resolve`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ resolved }),
+    });
+  } catch (e) {
+    showToast("Kon niet bijwerken: " + e.message);
+    return;
+  }
+  markResolvedLocally(uid, resolved);
+  showToast(resolved ? "Gemarkeerd als afgehandeld." : "Terug geopend.");
+}
+
+function markResolvedLocally(uid, resolved) {
+  const m = state.mails.find((x) => x.uid === uid);
+  if (m) m.resolved = resolved;
+  if (state.mailDetail[uid]) state.mailDetail[uid].resolved = resolved;
+  renderSidebarCounts();
+  if (state.view === "vandaag") renderVandaag();
+  else if (state.view === "inbox") renderInbox();
+  else if (state.view === "zaken") renderOpenstaandeZaken();
+  else if (state.view === "mail" && state.currentUid === uid) {
+    const box = document.getElementById("mailBody");
+    if (box) {
+      const btn = box.querySelector("[data-act='resolve']");
+      if (btn) {
+        btn.textContent = resolved ? "↺ Heropenen" : "✓ Afgehandeld";
+        btn.dataset.resolved = resolved ? "1" : "0";
+      }
+    }
+  }
+}
+
+function mailRowHtml(m) {
+  return `
+    <div class="mailRow" data-open="${m.uid}">
+      <span class="unreadDot ${m.unread ? "" : "read"}"></span>
+      <span class="avatar" style="width:32px;height:32px;font-size:11px">${initials(m.from)}</span>
+      <div class="from"><span class="name">${escapeHtml(m.from)}</span>${m.vanType && m.vanType !== "onbekend" ? `<span class="tag ${m.vanType}">${m.vanType === "klant" ? "Klant" : "Lever."}</span>` : ""}</div>
+      <div class="subj"><b>${escapeHtml(m.subject)}</b><span class="snip">— ${escapeHtml(m.snippet || "")}</span></div>
+      ${(() => { const p = statusPill(m); return p ? `<span class="pill ${p.cls}">${escapeHtml(p.text)}</span>` : ""; })()}
+      <div class="time">${m.date ? new Date(m.date).toLocaleDateString("nl-BE", { day: "2-digit", month: "2-digit" }) : ""}</div>
+    </div>
+  `;
+}
+
+function filteredMails() {
+  let list = state.mails;
+  if (state.filter === "ongelezen") list = list.filter((m) => m.unread);
+  else if (state.filter === "ai") list = list.filter((m) => m.categorie === "dringend" || m.categorie === "vandaag");
+  else if (state.filter === "dringend") list = list.filter((m) => m.categorie === "dringend");
+  else if (state.filter === "binnenkort") list = list.filter((m) => m.categorie === "binnenkort");
+  const q = (document.getElementById("inboxSearch")?.value || "").toLowerCase().trim();
+  if (q) list = list.filter((m) => (m.from + " " + m.subject + " " + m.snippet).toLowerCase().includes(q));
+  return list;
+}
+
+function renderInbox() {
+  const mount = document.getElementById("viewMount");
+  const list = filteredMails();
+  const dCount = state.mails.filter((m) => m.categorie === "dringend").length;
+  const openCount = state.mails.filter((m) => m.categorie !== "geen_actie" && m.categorie !== "onbekend").length;
+
+  mount.innerHTML = `
+    <div class="inboxView">
+      <div class="inboxMain">
+        <div class="inboxHead"><h1>Inbox</h1><button class="btn btn-primary" id="newMailBtn">+ Nieuwe mail</button></div>
+        <div style="font-size:12px;color:var(--ink-faint);margin:-8px 0 12px">
+          ${state.mails.length} mail${state.mails.length === 1 ? "" : "s"} geladen${state.mailsTotal > state.mails.length ? " van " + state.mailsTotal : ""}${state.mailsCapped ? " (veiligheidsgrens van " + (state.envelopeCap || "") + " bereikt — laat het weten als dit te weinig is)" : ""}.
+          ${state.mailsScanning
+            ? ` Bezig met scannen door de AI: ${state.mailsScanned} van ${state.mails.length} beoordeeld — dit werkt vanzelf verder op de achtergrond.`
+            : ` Alle ${state.mailsScanned} geladen mails zijn door de AI beoordeeld.`}
+        </div>
+        <div class="searchRow">
+          <input id="inboxSearch" type="text" placeholder="Zoek in mailbox...">
+          <div class="tabs">
+            <button class="tabBtn ${state.filter === "alle" ? "active" : ""}" data-f="alle">Alles</button>
+            <button class="tabBtn ${state.filter === "ongelezen" ? "active" : ""}" data-f="ongelezen">Ongelezen</button>
+            <button class="tabBtn ${state.filter === "ai" ? "active" : ""}" data-f="ai">★ AI-filter</button>
+          </div>
+        </div>
+        <div id="mailRows">
+          ${list.length ? list.map(mailRowHtml).join("") : '<div class="empty">Geen mails in dit overzicht.</div>'}
+        </div>
+      </div>
+      <aside class="aiPanel">
+        <div class="panelTitle">Mailvio AI</div>
+        <div class="miniCard" style="margin-bottom:10px">
+          <div class="title"><span class="dotmark" style="background:var(--red)"></span> Vandaag — ${dCount} acties</div>
+          <div class="body">${dCount ? dCount + " mail(s) met hoge urgentie" : "Niets dringend vandaag"}</div>
+        </div>
+        <div class="miniCard">
+          <div class="title"><span class="dotmark" style="background:var(--orange)"></span> Nog open — ${openCount}</div>
+          <div class="body">Klik op ★ AI-filter om enkel actie-mails te zien.</div>
+        </div>
+        <div class="aiChatBox">
+          <div style="font-size:12.5px;color:var(--ink-soft)">Stel gerust een vraag over je inbox.</div>
+          <input id="inboxAsk" type="text" placeholder="Vraag iets over je mailbox...">
+        </div>
+      </aside>
+    </div>
+  `;
+
+  document.getElementById("newMailBtn").addEventListener("click", () => openCompose());
+  mount.querySelectorAll("[data-open]").forEach((el) => el.addEventListener("click", () => openMail(Number(el.dataset.open))));
+  mount.querySelectorAll(".tabBtn").forEach((b) => b.addEventListener("click", () => { state.filter = b.dataset.f; renderSidebarCounts(); renderInbox(); }));
+  document.getElementById("inboxSearch").addEventListener("input", () => renderInbox());
+  document.getElementById("inboxAsk").addEventListener("keydown", async (e) => {
+    if (e.key !== "Enter") return;
+    const q = e.target.value.trim();
+    if (!q) return;
+    e.target.value = "Bezig...";
+    e.target.disabled = true;
+    try {
+      const res = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: q }) });
+      const data = await res.json();
+      showToast((data.answer || data.error || "Geen antwoord.").slice(0, 180));
+    } finally {
+      e.target.value = "";
+      e.target.disabled = false;
+    }
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Zoeken
+// ---------------------------------------------------------------------------
+function renderZoeken() {
+  const mount = document.getElementById("viewMount");
+  mount.innerHTML = `
+    <div class="inboxView">
+      <div class="inboxMain">
+        <div class="inboxHead"><h1>Zoeken</h1></div>
+        <div class="searchRow">
+          <input id="zoekInput" type="text" placeholder="Zoek op onderwerp, afzender of inhoud...">
+        </div>
+        <div id="zoekResults"><div class="empty">Typ iets en druk op Enter om te zoeken.</div></div>
+      </div>
+    </div>
+  `;
+  const input = document.getElementById("zoekInput");
+  input.focus();
+  input.addEventListener("keydown", async (e) => {
+    if (e.key !== "Enter") return;
+    const q = input.value.trim();
+    const resultsEl = document.getElementById("zoekResults");
+    if (!q) {
+      resultsEl.innerHTML = '<div class="empty">Typ iets en druk op Enter om te zoeken.</div>';
+      return;
+    }
+    if (!state.status.imapConfigured) {
+      resultsEl.innerHTML = '<div class="empty">De mailbox is nog niet gekoppeld.</div>';
+      return;
+    }
+    resultsEl.innerHTML = '<div class="empty">Bezig met zoeken...</div>';
+    try {
+      const res = await fetch("/api/search?q=" + encodeURIComponent(q));
+      const data = await res.json();
+      const byUid = Object.fromEntries(state.mails.map((m) => [m.uid, m]));
+      const mails = (data.mails || []).map((m) => ({ ...m, ...(byUid[m.uid] || {}) }));
+      resultsEl.innerHTML = mails.length
+        ? mails.map(mailRowHtml).join("")
+        : `<div class="empty">Geen mails gevonden voor "${escapeHtml(q)}".</div>`;
+      resultsEl.querySelectorAll("[data-open]").forEach((el) => el.addEventListener("click", () => openMail(Number(el.dataset.open))));
+    } catch (e) {
+      resultsEl.innerHTML = '<div class="empty">Zoeken mislukt.</div>';
+    }
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Openstaande Zaken
+// ---------------------------------------------------------------------------
+function renderOpenstaandeZaken() {
+  const mount = document.getElementById("viewMount");
+  const groups = [
+    { key: "dringend", label: "Dringend", dot: "var(--red)" },
+    { key: "vandaag", label: "Vandaag", dot: "var(--orange)" },
+    { key: "binnenkort", label: "Binnenkort", dot: "var(--yellow)" },
+  ];
+  const todoCardHtml = (m) => `
+    <div class="todoCard">
+      <span class="avatar">${initials(m.from)}</span>
+      <div class="info">
+        <div class="name">${escapeHtml(m.from)} ${m.vanType && m.vanType !== "onbekend" ? `<span class="tag ${m.vanType}">${m.vanType === "klant" ? "Klant" : "Leverancier"}</span>` : ""}</div>
+        <div class="reden">${escapeHtml(m.reden || m.subject)}</div>
+      </div>
+      <div class="actions">
+        <button class="btn btn-ghost" data-open="${m.uid}">Open mail</button>
+        <button class="btn btn-primary" data-open="${m.uid}">${escapeHtml(m.actieLabel || "Bekijken")}</button>
+        <button class="btn btn-ghost" data-resolve="${m.uid}" title="Markeer als afgehandeld">✓</button>
+      </div>
+    </div>
+  `;
+  // "resolved" mails verdwijnen hier enkel omdat ze expliciet afgevinkt zijn
+  // of effectief beantwoord — nooit door tijdsverloop of een herscan.
+  const sections = groups.map((g) => {
+    const list = state.mails.filter((m) => m.categorie === g.key && !m.resolved).sort((a, b) => new Date(a.date) - new Date(b.date));
+    return `
+      <div class="sectionTitle"><span class="dotmark" style="background:${g.dot}"></span> ${g.label} — ${list.length}</div>
+      ${list.length ? list.map(todoCardHtml).join("") : '<div class="empty">Niets in deze groep.</div>'}
+    `;
+  }).join("");
+
+  mount.innerHTML = `
+    <div class="vandaagView"><div class="inner">
+      <h1>Openstaande Zaken</h1>
+      <div class="sub">Alles wat nog een reactie of opvolging nodig heeft, gegroepeerd per urgentie. Een zaak verdwijnt hier enkel als je ze afvinkt of er via Mailvio effectief op antwoordt.</div>
+      ${state.mails.length ? sections : '<div class="empty">Nog geen mails geladen.</div>'}
+    </div></div>
+  `;
+  mount.querySelectorAll("[data-open]").forEach((b) => b.addEventListener("click", () => openMail(Number(b.dataset.open))));
+  mount.querySelectorAll("[data-resolve]").forEach((b) => b.addEventListener("click", (e) => { e.stopPropagation(); resolveMail(Number(b.dataset.resolve), true); }));
+}
+
+// ---------------------------------------------------------------------------
+// Opvolgingen — verzonden mails zonder antwoord
+// ---------------------------------------------------------------------------
+async function renderOpvolgingen() {
+  const mount = document.getElementById("viewMount");
+  mount.innerHTML = `
+    <div class="vandaagView"><div class="inner">
+      <h1>Wachten op antwoord</h1>
+      <div class="sub">Mails die je verstuurd hebt en waar (voor zover we kunnen zien) nog geen reactie op kwam, laatste 30 dagen.</div>
+      <div id="opvolgList"><div class="empty">Bezig met ophalen...</div></div>
+    </div></div>
+  `;
+  const listEl = document.getElementById("opvolgList");
+  if (!state.status.imapConfigured) {
+    listEl.innerHTML = '<div class="empty">De mailbox is nog niet gekoppeld.</div>';
+    return;
+  }
+  try {
+    const res = await fetch("/api/followups");
+    const data = await res.json();
+    if (!data.configured) {
+      listEl.innerHTML = '<div class="empty">De mailbox is nog niet gekoppeld.</div>';
+    } else if (!data.supported) {
+      listEl.innerHTML = '<div class="empty">Kon je Verzonden-map niet automatisch terugvinden bij je mailprovider — deze functie werkt hier daardoor nog niet.</div>';
+    } else if (!data.items || !data.items.length) {
+      listEl.innerHTML = '<div class="empty">Alles beantwoord — niets dat wacht.</div>';
+    } else {
+      listEl.innerHTML = data.items.map((m) => `
+        <div class="todoCard">
+          <span class="avatar">${initials(m.to)}</span>
+          <div class="info">
+            <div class="name">${escapeHtml(m.to)}</div>
+            <div class="reden">${escapeHtml(m.subject)} — verstuurd ${daysAgo(m.date)}d geleden</div>
+          </div>
+          <div class="actions">
+            <button class="btn btn-ghost" data-compose-to="${escapeHtml(m.toAddress)}" data-compose-subject="${escapeHtml(m.subject)}">Opnieuw contacteren</button>
+          </div>
+        </div>
+      `).join("");
+      listEl.querySelectorAll("[data-compose-to]").forEach((b) => b.addEventListener("click", () => {
+        const subj = b.dataset.composeSubject || "";
+        openCompose({ to: b.dataset.composeTo, subject: /^re:/i.test(subj) ? subj : "Re: " + subj });
+      }));
+    }
+  } catch (e) {
+    listEl.innerHTML = '<div class="empty">Kon de opvolgingen niet ophalen.</div>';
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Klantcontext
+// ---------------------------------------------------------------------------
+async function openKlantContext(address, name) {
+  state.view = "klant";
+  state.currentKlant = address;
+  renderSidebarCounts();
+  const mount = document.getElementById("viewMount");
+  mount.innerHTML = `
+    <div class="mailView">
+      <div class="mailMain">
+        <button class="backBtn" id="backBtnKlant">← Terug naar mail</button>
+        <h1>${escapeHtml(name || address)}</h1>
+        <div class="mailMeta"><span>${escapeHtml(address || "")}</span></div>
+        <div id="klantList"><div class="empty">Bezig met ophalen van mailhistoriek...</div></div>
+      </div>
+    </div>
+  `;
+  document.getElementById("backBtnKlant").addEventListener("click", () => {
+    state.view = "mail";
+    renderSidebarCounts();
+    openMail(state.currentUid);
+  });
+  const listEl = document.getElementById("klantList");
+  if (!address) {
+    listEl.innerHTML = '<div class="empty">Geen e-mailadres gekend voor deze afzender.</div>';
+    return;
+  }
+  try {
+    const res = await fetch(`/api/klant/${encodeURIComponent(address)}`);
+    const data = await res.json();
+    const mails = data.mails || [];
+    if (!data.configured) {
+      listEl.innerHTML = '<div class="empty">De mailbox is nog niet gekoppeld.</div>';
+    } else if (!mails.length) {
+      listEl.innerHTML = '<div class="empty">Geen eerdere mails gevonden van dit adres.</div>';
+    } else {
+      listEl.innerHTML = `<div class="sectionTitle">${mails.length} mail${mails.length === 1 ? "" : "s"} gevonden</div>` + mails.map(mailRowHtml).join("");
+      listEl.querySelectorAll("[data-open]").forEach((el) => el.addEventListener("click", () => openMail(Number(el.dataset.open))));
+    }
+  } catch (e) {
+    listEl.innerHTML = '<div class="empty">Kon de klantgeschiedenis niet ophalen.</div>';
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Mail detail
+// ---------------------------------------------------------------------------
+async function openMail(uid) {
+  state.view = "mail";
+  state.currentUid = uid;
+  renderSidebarCounts();
+  const mount = document.getElementById("viewMount");
+  const meta = state.mails.find((m) => m.uid === uid) || {};
+
+  mount.innerHTML = `
+    <div class="mailView">
+      <div class="mailMain">
+        <button class="backBtn" id="backBtn">← Terug naar inbox</button>
+        <div id="mailBody">Bezig met laden...</div>
+      </div>
+      <aside class="aiPanel" id="mailAiPanel">
+        <div class="panelTitle">Mailvio AI · over deze mail</div>
+        <div id="aiSuggestBox">Bezig met analyseren...</div>
+      </aside>
+    </div>
+  `;
+  document.getElementById("backBtn").addEventListener("click", () => { state.view = "inbox"; renderSidebarCounts(); renderView(); });
+
+  let detail = state.mailDetail[uid];
+  if (!detail) {
+    try {
+      detail = await (await fetch(`/api/mails/${uid}`)).json();
+      state.mailDetail[uid] = detail;
+    } catch (e) {
+      detail = { ...meta, text: "Kon de inhoud niet ophalen." };
+    }
+  }
+  renderMailBody(uid, { ...meta, ...detail });
+  loadSuggestion(uid, { ...meta, ...detail });
+}
+
+function renderMailBody(uid, m) {
+  const box = document.getElementById("mailBody");
+  if (!box) return;
+  const pill = statusPill(m);
+  box.innerHTML = `
+    <div class="mailMeta">
+      ${pill ? `<span class="pill ${pill.cls}">${escapeHtml(pill.text)}</span>` : ""}
+      <span>${m.vanType === "klant" ? "Klantvraag" : m.vanType === "leverancier" ? "Leverancier" : "Mail"}${m.reden ? " · " + escapeHtml(m.reden) : ""}</span>
+    </div>
+    <h1>${escapeHtml(m.subject)}</h1>
+    <div class="mailFrom">
+      <span class="avatar">${initials(m.from)}</span>
+      <div class="who"><b>${escapeHtml(m.from)}</b><span>${escapeHtml(m.fromAddress || "")}</span></div>
+      <div class="date">${m.date ? new Date(m.date).toLocaleString("nl-BE") : ""}</div>
+    </div>
+    <div class="mailBody">${escapeHtml(m.text || m.snippet || "(geen inhoud)")}</div>
+    <div class="quickActions">
+      <button data-act="vraagai">★ Vraag AI</button>
+      <button data-act="opnieuw">★ Maak nieuw antwoord</button>
+      <button data-act="samenvat">★ Vat samen</button>
+      <button class="plain" disabled title="Komt in een latere versie">Zet in agenda</button>
+      <button class="plain" id="forwardBtn">Doorsturen</button>
+      <button class="plain" id="klantBtn">Klantcontext</button>
+      <button class="plain" data-act="resolve" data-resolved="${m.resolved ? "1" : "0"}">${m.resolved ? "↺ Heropenen" : "✓ Afgehandeld"}</button>
+      <button class="plain" disabled title="Komt in een latere versie">Archiveren</button>
+      <button class="plain" disabled title="Komt in een latere versie">Verwijderen</button>
+    </div>
+  `;
+  box.querySelector('[data-act="vraagai"]').addEventListener("click", () => {
+    const q = prompt("Wat wil je aan Mailvio AI vragen over deze mail?");
+    if (q) askAboutMail(uid, m, q);
+  });
+  box.querySelector('[data-act="opnieuw"]').addEventListener("click", () => loadSuggestion(uid, m, true));
+  box.querySelector('[data-act="samenvat"]').addEventListener("click", () => askAboutMail(uid, m, "Vat deze mail samen in 2 zinnen."));
+  box.querySelector("#forwardBtn").addEventListener("click", () => openCompose({ subject: "Fwd: " + (m.subject || ""), body: "\n\n---------- Doorgestuurd bericht ----------\nVan: " + m.from + " <" + (m.fromAddress || "") + ">\n\n" + (m.text || "") }));
+  box.querySelector("#klantBtn").addEventListener("click", () => openKlantContext(m.fromAddress, m.from));
+  box.querySelector('[data-act="resolve"]').addEventListener("click", (e) => {
+    const nowResolved = e.target.dataset.resolved !== "1";
+    resolveMail(uid, nowResolved);
+  });
+}
+
+async function askAboutMail(uid, m, question) {
+  const panel = document.getElementById("aiSuggestBox");
+  if (!panel) return;
+  const prevHtml = panel.innerHTML;
+  panel.innerHTML = `<div class="empty">Bezig met nadenken...</div>` + prevHtml;
+  try {
+    const res = await fetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: `Over de mail van ${m.from} met onderwerp "${m.subject}": ${question}` }),
+    });
+    const data = await res.json();
+    panel.innerHTML = `<div class="aiSuggest"><div class="row"><b>Antwoord</b>${escapeHtml(data.answer || data.error || "Geen antwoord.")}</div></div>` + prevHtml;
+  } catch (e) {
+    panel.innerHTML = prevHtml;
+  }
+}
+
+async function loadSuggestion(uid, m, force) {
+  const panel = document.getElementById("aiSuggestBox");
+  if (!panel) return;
+  if (!state.status.aiConfigured) {
+    panel.innerHTML = `<div class="empty">Vul je Claude API-sleutel in bij Instellingen om AI-voorstellen te krijgen.</div>`;
+    return;
+  }
+  if (!force && state.suggestion[uid]) {
+    return renderSuggestion(uid, m, state.suggestion[uid]);
+  }
+  panel.innerHTML = `<div class="empty">Bezig met analyseren...</div>`;
+  try {
+    const url = `/api/mails/${uid}/suggestion` + (force ? "?force=1" : "");
+    const res = await fetch(url, force ? { method: "GET", headers: { "x-force": "1" } } : {});
+    const data = await res.json();
+    state.suggestion[uid] = data;
+    renderSuggestion(uid, m, data);
+  } catch (e) {
+    panel.innerHTML = `<div class="empty">Kon geen voorstel opstellen.</div>`;
+  }
+}
+
+function renderSuggestion(uid, m, s) {
+  const panel = document.getElementById("aiSuggestBox");
+  if (!panel) return;
+  panel.innerHTML = `
+    <div class="aiSuggest">
+      ${s.type ? `<div class="row"><b>Type</b>${escapeHtml(s.type)}</div>` : ""}
+      ${s.actie ? `<div class="row"><b>Actie</b>${escapeHtml(s.actie)}</div>` : ""}
+      ${s.urgentie ? `<div class="row"><b>Urgentie</b>${escapeHtml(s.urgentie)}</div>` : ""}
+      ${s.samenvatting ? `<div class="row">${escapeHtml(s.samenvatting)}</div>` : ""}
+    </div>
+    <div class="draftBox">
+      <div class="label">Voorgesteld antwoord</div>
+      <textarea id="draftText">${escapeHtml(s.antwoord || "")}</textarea>
+      <div class="draftActions">
+        <button class="btn btn-primary" id="draftSend">Versturen</button>
+        <button class="btn btn-ghost" id="draftRewrite">★ Herschrijf professioneel</button>
+      </div>
+      <div class="sendMsg" id="draftMsg"></div>
+    </div>
+  `;
+  document.getElementById("draftSend").addEventListener("click", () => sendDraft(uid, m));
+  document.getElementById("draftRewrite").addEventListener("click", () => rewriteDraft());
+}
+
+async function rewriteDraft() {
+  const ta = document.getElementById("draftText");
+  const btn = document.getElementById("draftRewrite");
+  if (!ta || !ta.value.trim()) return;
+  btn.disabled = true;
+  const original = ta.value;
+  ta.value = "Bezig met herschrijven...";
+  try {
+    const res = await fetch("/api/rewrite", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: original }) });
+    const data = await res.json();
+    ta.value = data.text || original;
+  } catch (e) {
+    ta.value = original;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function sendDraft(uid, m) {
+  const ta = document.getElementById("draftText");
+  const btn = document.getElementById("draftSend");
+  const msgEl = document.getElementById("draftMsg");
+  const text = ta.value.trim();
+  if (!text) return;
+  if (!state.status.smtpConfigured) {
+    msgEl.textContent = "De uitgaande server (SMTP) is nog niet ingesteld bij Instellingen.";
+    msgEl.className = "sendMsg err";
+    return;
+  }
+  btn.disabled = true;
+  msgEl.textContent = "Bezig met versturen...";
+  msgEl.className = "sendMsg";
+  try {
+    const subject = /^re:/i.test(m.subject || "") ? m.subject : "Re: " + (m.subject || "");
+    const res = await fetch("/api/send", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ to: m.fromAddress, subject, text, resolveUid: uid }),
+    });
+    if (!res.ok) throw new Error((await res.json()).error || "Versturen mislukt");
+    markResolvedLocally(uid, true);
+    msgEl.textContent = "Verstuurd! Deze mail is gemarkeerd als afgehandeld.";
+    msgEl.className = "sendMsg ok";
+  } catch (e) {
+    msgEl.textContent = "Er ging iets mis: " + e.message;
+    msgEl.className = "sendMsg err";
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Compose
+// ---------------------------------------------------------------------------
+function openCompose(prefill) {
+  document.getElementById("cmpTo").value = (prefill && prefill.to) || "";
+  document.getElementById("cmpSubject").value = (prefill && prefill.subject) || "";
+  document.getElementById("cmpBody").value = (prefill && prefill.body) || "";
+  document.getElementById("composeMsg").textContent = "";
+  document.getElementById("composeOverlay").hidden = false;
+}
+document.getElementById("composeCancel").addEventListener("click", () => { document.getElementById("composeOverlay").hidden = true; });
+document.getElementById("composeSend").addEventListener("click", async () => {
+  const to = document.getElementById("cmpTo").value.trim();
+  const subject = document.getElementById("cmpSubject").value.trim();
+  const text = document.getElementById("cmpBody").value.trim();
+  const msgEl = document.getElementById("composeMsg");
+  if (!to || !subject || !text) {
+    msgEl.textContent = "Vul ontvanger, onderwerp en bericht in.";
+    msgEl.className = "settingsMsg err";
+    return;
+  }
+  if (!state.status.smtpConfigured) {
+    msgEl.textContent = "De uitgaande server (SMTP) is nog niet ingesteld bij Instellingen.";
+    msgEl.className = "settingsMsg err";
+    return;
+  }
+  const btn = document.getElementById("composeSend");
+  btn.disabled = true;
+  msgEl.textContent = "Bezig met versturen...";
+  msgEl.className = "settingsMsg";
+  try {
+    const res = await fetch("/api/send", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ to, subject, text }) });
+    if (!res.ok) throw new Error((await res.json()).error || "Versturen mislukt");
+    msgEl.textContent = "Verstuurd!";
+    msgEl.className = "settingsMsg ok";
+    setTimeout(() => { document.getElementById("composeOverlay").hidden = true; }, 900);
+  } catch (e) {
+    msgEl.textContent = "Er ging iets mis: " + e.message;
+    msgEl.className = "settingsMsg err";
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Instellingen
+// ---------------------------------------------------------------------------
 async function openSettings() {
-  const overlay = document.getElementById("settingsOverlay");
   const msgEl = document.getElementById("settingsMsg");
   msgEl.textContent = "";
   msgEl.className = "settingsMsg";
-  overlay.hidden = false;
+  document.getElementById("settingsOverlay").hidden = false;
   try {
-    const res = await fetch("/api/settings");
-    const data = await res.json();
+    const data = await (await fetch("/api/settings")).json();
     document.getElementById("setName").value = data.displayName || "";
     document.getElementById("setEmail").value = data.imapUser || "";
     document.getElementById("setHost").value = data.imapHost || "";
@@ -290,15 +1152,14 @@ async function openSettings() {
     document.getElementById("setPassword").value = "";
     document.getElementById("setSmtpPassword").value = "";
     document.getElementById("setApiKey").value = "";
+    document.getElementById("setAiToon").value = data.aiToon || "";
+    document.getElementById("setAiSign").value = data.aiHandtekening || "";
   } catch (e) {
     msgEl.textContent = "Kon de huidige instellingen niet ophalen.";
     msgEl.className = "settingsMsg err";
   }
 }
-
-function closeSettings() {
-  document.getElementById("settingsOverlay").hidden = true;
-}
+function closeSettings() { document.getElementById("settingsOverlay").hidden = true; }
 
 async function saveSettings() {
   const saveBtn = document.getElementById("settingsSave");
@@ -315,19 +1176,20 @@ async function saveSettings() {
     smtpPort: document.getElementById("setSmtpPort").value,
     smtpPassword: document.getElementById("setSmtpPassword").value,
     anthropicApiKey: document.getElementById("setApiKey").value,
+    aiToon: document.getElementById("setAiToon").value,
+    aiHandtekening: document.getElementById("setAiSign").value,
   };
   saveBtn.disabled = true;
   msgEl.textContent = "Bezig met opslaan...";
   msgEl.className = "settingsMsg";
   try {
-    const res = await fetch("/api/settings", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
+    const res = await fetch("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
     if (!res.ok) throw new Error("Opslaan mislukt");
+    state.settings = await res.json();
+    renderIdentity();
     msgEl.textContent = "Opgeslagen! Mails worden opnieuw geladen...";
     msgEl.className = "settingsMsg ok";
+    await loadStatus();
     await loadMails(true);
     setTimeout(closeSettings, 900);
   } catch (e) {
@@ -341,11 +1203,16 @@ async function saveSettings() {
 document.getElementById("settingsBtn").addEventListener("click", openSettings);
 document.getElementById("settingsCancel").addEventListener("click", closeSettings);
 document.getElementById("settingsSave").addEventListener("click", saveSettings);
-document.getElementById("settingsOverlay").addEventListener("click", (e) => {
-  if (e.target.id === "settingsOverlay") closeSettings();
-});
 
-loadMails(false);
+// ---------------------------------------------------------------------------
+// Start
+// ---------------------------------------------------------------------------
+(async function init() {
+  renderVandaag();
+  await loadSettings();
+  await loadStatus();
+  await loadMails(false);
+})();
 </script>
 </body>
 </html>
