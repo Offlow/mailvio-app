@@ -552,9 +552,30 @@ async function getMails(forceRefresh) {
 // Waaraan ligt het als de app traag aanvoelt? Dit vertelt het, in gewone taal.
 // Geen giswerk meer: hier staat hoe lang de server stilstond en waarmee hij
 // toen bezig was.
+// "Zijn mijn oude mails nu al ingeladen?" — in één percentage. Het natellen
+// kost even, dus het antwoord blijft een minuut geldig.
+let voortgangCache = { op: 0, klaar: 0, totaal: 0, beoordeeld: 0 };
+function inlaadVoortgang() {
+  if (Date.now() - voortgangCache.op < 60000) return voortgangCache;
+  const accountKey = settingsStore.getConfig().imapUser || "default";
+  let v = { totaal: 0, klaar: 0 };
+  try { v = mailstore.inhoudVoortgang(accountKey, "INBOX"); } catch (e) { /* nog niets */ }
+  let beoordeeld = 0;
+  try {
+    const store = classifications.getAll(accountKey);
+    beoordeeld = Object.values(store).filter((c) => c.categorie && c.categorie !== "onbekend").length;
+  } catch (e) { /* nog niets */ }
+  voortgangCache = { op: Date.now(), klaar: v.klaar, totaal: v.totaal, beoordeeld };
+  return voortgangCache;
+}
+
 // Zonder aanmelden: enkel snelheid, niets over je mail.
 app.get("/api/snelheid", (req, res) => {
   const o = belasting.anoniemOverzicht();
+  const v = inlaadVoortgang();
+  const pct = (n) => (v.totaal ? Math.round((n / v.totaal) * 100) : 0);
+  o.inhoudIngeladenPercent = pct(v.klaar);
+  o.beoordeeldPercent = pct(v.beoordeeld);
   res.json({
     ...o,
     uitleg: o.ergsteBlokkades.length
@@ -565,6 +586,7 @@ app.get("/api/snelheid", (req, res) => {
 
 app.get("/api/diagnose", (req, res) => {
   const o = belasting.overzicht();
+  o.inlaadVoortgang = inlaadVoortgang();
   res.json({
     ...o,
     uitleg: o.ergsteBlokkades.length
@@ -1689,6 +1711,20 @@ process.on("uncaughtException", (err) => {
 process.on("unhandledRejection", (reden) => {
   console.error("Onafgehandelde belofte (app blijft draaien):", reden);
 });
+
+// DE MAILS ALVAST INLEZEN VOOR WE OPENGAAN.
+// De eerste keer dat er iets uit de bewaarde mailbox nodig is, moet dat bestand
+// van schijf gelezen worden — bij duizenden mails duurt dat ruim een seconde.
+// Gebeurde dat tijdens jouw eerste klik, dan wachtte jij daarop. Nu gebeurt het
+// hier, terwijl de server toch nog aan het opstarten is.
+try {
+  const startAccount = settingsStore.getConfig().imapUser || "default";
+  const t0 = Date.now();
+  const aantal = mailstore.getMails(startAccount, "INBOX").length;
+  if (aantal) console.log(`${aantal} bewaarde mails ingelezen in ${Date.now() - t0}ms.`);
+} catch (e) {
+  console.error("Bewaarde mails vooraf inlezen mislukt:", e.message);
+}
 
 app.listen(PORT, () => {
   console.log(`Mailvio draait op poort ${PORT}`);

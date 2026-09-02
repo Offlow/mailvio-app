@@ -351,6 +351,17 @@ function statistiek(accountKey, folder) {
   };
 }
 
+// Hoeveel mails van een map hebben hun INHOUD al op schijf staan? Dat is de
+// vraag "zijn mijn oude mails al ingeladen?" — het antwoord in cijfers.
+function inhoudVoortgang(accountKey, folder) {
+  const uids = Object.keys(lees(accountKey, folder).mails || {});
+  let klaar = 0;
+  for (const uid of uids) {
+    if (fs.existsSync(inhoudBestand(accountKey, folder, uid))) klaar++;
+  }
+  return { totaal: uids.length, klaar };
+}
+
 // Alle mappen waarvan we mails bewaard hebben. Nodig om over de hele bewaarde
 // mailbox te kunnen zoeken zonder de mailserver lastig te vallen.
 function getMappen(accountKey) {
@@ -366,6 +377,7 @@ function getMappen(accountKey) {
 
 module.exports = {
   flush,
+  inhoudVoortgang,
   getMappen,
   getMails,
   getUidValidity,
