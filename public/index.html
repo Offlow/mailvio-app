@@ -120,6 +120,20 @@
   /* Grote dashboardknop in de zijbalk */
   /* Een nieuwe mail schrijven moet altijd binnen handbereik zijn, niet enkel
      vanuit de inbox. */
+  /* Opruimen */
+  .opruimView{flex:1 1 auto;overflow-y:auto;padding:26px 34px 60px}
+  .opruimBalk{position:sticky;top:0;z-index:5;background:var(--bg);display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:12px 0 14px;border-bottom:1px solid var(--border);margin-bottom:6px}
+  .opruimBalk .tel{font-size:13px;font-weight:800;margin-right:auto}
+  .opruimRij{display:flex;align-items:center;gap:12px;padding:11px 8px;border-bottom:1px solid var(--border);cursor:pointer}
+  .opruimRij:hover{background:var(--surface)}
+  .opruimRij.aan{background:var(--accent-soft)}
+  .opruimRij input{width:17px;height:17px;flex:0 0 auto;cursor:pointer}
+  .opruimRij .van{flex:0 0 175px;min-width:0;font-size:12.5px;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .opruimRij .midden{flex:1 1 auto;min-width:0}
+  .opruimRij .onderwerp{font-size:13px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .opruimRij .reden{font-size:11.5px;color:var(--ink-faint);margin-top:1px}
+  .opruimRij .wanneer{flex:0 0 auto;font-size:11.5px;color:var(--ink-faint)}
+  .opruimGroep{font-size:11px;text-transform:uppercase;letter-spacing:.05em;font-weight:800;color:var(--ink-faint);margin:22px 0 4px}
   .zoekTreffers{display:flex;flex-direction:column;gap:7px;margin-bottom:16px}
   .zoekTreffer{display:flex;align-items:center;gap:12px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 13px}
   .zoekTreffer .info{flex:1 1 auto;min-width:0}
@@ -517,6 +531,7 @@
     <button class="navItem" data-nav="inbox" data-filter="alle">📥 Inbox <span class="count" id="cntInbox"></span></button>
     <div id="mailboxFolders"></div>
     <button class="navItem" data-nav="inbox" data-filter="reclame">📣 Reclame <span class="count" id="cntReclame"></span></button>
+    <button class="navItem" data-nav="opruimen">🧹 Mogelijk te verwijderen <span class="count" id="cntOpruimen"></span></button>
 
     <button class="navGroup klapbaar" id="mappenKop" aria-expanded="false">
       <span class="pijl">▸</span> Mappen <span class="count" id="cntMappen"></span>
@@ -606,6 +621,17 @@
       <div class="fieldRow"><label for="setAiToon">Schrijfstijl</label><input id="setAiToon" type="text" placeholder="Vlaams, kort en professioneel" autocomplete="off"></div>
     </div>
 
+    <div class="sectionLabel">Welk AI-model</div>
+    <p class="hint" style="margin:-2px 0 8px">Mailvio gebruikt er twee. Het <b>snelle</b> model beoordeelt élke mail die binnenkomt — dat is eenvoudig werk dat heel vaak gebeurt, dus daar past een klein en goedkoop model. Het <b>slimme</b> model schrijft je antwoorden, beantwoordt je vragen en vat bijlagen samen. Twijfel je? Laat staan wat er staat.</p>
+    <div class="fieldList">
+      <div class="fieldRow"><label for="setModelSnel">Voor beoordelen</label><input id="setModelSnel" type="text" placeholder="claude-haiku-4-5" autocomplete="off" spellcheck="false"></div>
+      <div class="fieldRow"><label for="setModelSlim">Voor schrijven</label><input id="setModelSlim" type="text" placeholder="claude-sonnet-5" autocomplete="off" spellcheck="false"></div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap">
+      <button class="btn btn-ghost" id="testModellen">Modellen uitproberen</button>
+      <span class="hint" id="modelTestUitslag"></span>
+    </div>
+
     <div class="sectionLabel">Beveiliging</div>
     <p class="hint" style="margin:-2px 0 8px">Mailvio staat op het internet, dus je mailbox zit achter een wachtwoord. Hier kan je het wijzigen.</p>
     <div class="fieldList">
@@ -674,6 +700,8 @@ const state = {
   chatLog: {},      // uid -> [{who,text}] mini-log per mail (AI-panel)
   taken: [],        // je eigen to-dolijst
   inboxZoek: "",    // wat je in de inbox zoekt
+  opruimen: null,   // mails die weg mogen
+  opruimGekozen: null,
   mappenOpen: false, // mappenlijst van de mailserver open of dicht
   afspraken: [],    // je agenda
   regels: null,     // automatiseringsregels
@@ -1010,7 +1038,7 @@ async function loadMails(forceRefresh) {
   renderSidebarCounts();
   // Schermen die niets met de mailijst te maken hebben, hoeven niet opnieuw
   // getekend te worden. En renderView() zelf stelt uit zolang je typt.
-  if (!["taken", "agenda", "mail", "klant", "regels"].includes(state.view)) {
+  if (!["taken", "agenda", "mail", "klant", "regels", "opruimen"].includes(state.view)) {
     renderView();
   }
 
@@ -1061,6 +1089,7 @@ function renderSidebarCounts() {
   zet("cntInbox", state.mails.length);
   zet("cntZaken", openstaand);
   zet("cntReclame", state.mails.filter((m) => m.soort === "reclame").length);
+  zet("cntOpruimen", (state.opruimen && (state.opruimen.voorstellen || []).length) || "");
   zet("cntMappen", (state.folders || []).filter((f) => f.rol !== "inbox" && !STANDAARD_ROLLEN.includes(f.rol)).length);
   zet("cntTaken", (state.taken || []).filter((t) => !t.klaar).length);
   document.querySelectorAll(".navItem[data-nav]").forEach((btn) => {
@@ -1149,6 +1178,7 @@ function renderView(gedwongen) {
   if (state.view === "taken") return renderTaken();
   if (state.view === "agenda") return renderAgenda();
   if (state.view === "regels") return renderRegels();
+  if (state.view === "opruimen") return renderOpruimen();
   if (state.view === "folder") return renderFolderView();
   if (state.view === "mail") return; // wordt al gerenderd door openMail()
   if (state.view === "klant") return; // wordt al gerenderd door openKlantContext()
@@ -1223,6 +1253,128 @@ function openCtxMenu(e, uid, folder) {
 document.addEventListener("click", sluitCtx);
 document.addEventListener("scroll", sluitCtx, true);
 window.addEventListener("resize", sluitCtx);
+
+// ---------------------------------------------------------------------------
+// Mogelijk te verwijderen
+// ---------------------------------------------------------------------------
+// Mailvio zet hier enkel wat DUIDELIJK weg mag: oude reclame waar je nooit iets
+// mee gedaan hebt, en mails van meer dan vier jaar oud die gelezen en
+// afgehandeld zijn. Bij twijfel komt een mail hier niet in terecht. Niets
+// verdwijnt vanzelf — je vinkt aan en drukt op de knop, en dan gaan ze naar de
+// prullenmand, waar je ze desnoods nog kan terughalen.
+async function laadOpruimen(stil) {
+  try {
+    state.opruimen = await (await fetch("/api/opruimen")).json();
+  } catch (e) {
+    state.opruimen = state.opruimen || { voorstellen: [] };
+  }
+  renderSidebarCounts();
+  if (!stil && state.view === "opruimen") renderOpruimen();
+}
+
+function renderOpruimen() {
+  const mount = document.getElementById("viewMount");
+  if (!state.opruimen) {
+    mount.innerHTML = '<div class="opruimView"><div class="empty">Bezig met nakijken wat er weg mag...</div></div>';
+    laadOpruimen();
+    return;
+  }
+  const lijst = state.opruimen.voorstellen || [];
+  state.opruimGekozen = state.opruimGekozen || new Set();
+  // Aanvinkingen van mails die er niet meer zijn, opruimen.
+  const bestaande = new Set(lijst.map((m) => m.uid));
+  for (const uid of [...state.opruimGekozen]) if (!bestaande.has(uid)) state.opruimGekozen.delete(uid);
+
+  const rij = (m) => `
+    <div class="opruimRij ${state.opruimGekozen.has(m.uid) ? "aan" : ""}" data-kies="${m.uid}">
+      <input type="checkbox" ${state.opruimGekozen.has(m.uid) ? "checked" : ""} data-vinkje="${m.uid}">
+      <span class="van">${escapeHtml(m.from)}</span>
+      <div class="midden">
+        <div class="onderwerp">${escapeHtml(m.subject)}</div>
+        <div class="reden">${escapeHtml(m.reden || "")}</div>
+      </div>
+      <span class="wanneer">${tijdOfDatum(m.date)}</span>
+    </div>`;
+
+  const reclame = lijst.filter((m) => m.groep === "reclame");
+  const oud = lijst.filter((m) => m.groep === "oud");
+
+  mount.innerHTML = `
+    <div class="opruimView">
+      <h1 style="margin:0 0 4px;font-size:22px">Mogelijk te verwijderen</h1>
+      <div class="sub" style="margin-bottom:8px">Enkel wat duidelijk weg mag: oude reclame waar je nooit iets mee deed, en mails van meer dan vier jaar oud die al afgehandeld zijn. Bij twijfel staat een mail hier niet bij. Ze gaan naar je prullenmand, dus je kan ze altijd nog terughalen.</div>
+
+      ${lijst.length ? `
+      <div class="opruimBalk">
+        <span class="tel" id="opruimTel">${state.opruimGekozen.size} van ${lijst.length} aangevinkt</span>
+        <button class="btn btn-ghost" id="kiesAlles">Alles aanvinken</button>
+        <button class="btn btn-ghost" id="kiesReclame">Enkel de reclame (${reclame.length})</button>
+        <button class="btn btn-ghost" id="kiesNiets">Niets</button>
+        <button class="btn btn-primary" id="opruimStart">🗑 Verwijder aangevinkte</button>
+      </div>
+
+      ${reclame.length ? `<div class="opruimGroep">Oude reclame — ${reclame.length}</div>${reclame.map(rij).join("")}` : ""}
+      ${oud.length ? `<div class="opruimGroep">Ouder dan vier jaar — ${oud.length}</div>${oud.map(rij).join("")}` : ""}
+      ` : '<div class="empty">Er staat niets klaar om op te ruimen. Je mailbox is netjes.</div>'}
+    </div>`;
+
+  if (!lijst.length) return;
+
+  const werkTelBij = () => {
+    document.getElementById("opruimTel").textContent = `${state.opruimGekozen.size} van ${lijst.length} aangevinkt`;
+  };
+  const wissel = (uid, aan) => {
+    if (aan) state.opruimGekozen.add(uid); else state.opruimGekozen.delete(uid);
+    const rijEl = mount.querySelector(`[data-kies="${uid}"]`);
+    if (rijEl) {
+      rijEl.classList.toggle("aan", aan);
+      rijEl.querySelector("input").checked = aan;
+    }
+    werkTelBij();
+  };
+
+  mount.querySelectorAll("[data-kies]").forEach((el) => el.addEventListener("click", (e) => {
+    const uid = Number(el.dataset.kies);
+    // Klik je precies op het vinkje, dan heeft de browser het al omgezet.
+    const aan = e.target.matches("[data-vinkje]") ? e.target.checked : !state.opruimGekozen.has(uid);
+    wissel(uid, aan);
+  }));
+  document.getElementById("kiesAlles").addEventListener("click", () => {
+    lijst.forEach((m) => wissel(m.uid, true));
+  });
+  document.getElementById("kiesReclame").addEventListener("click", () => {
+    lijst.forEach((m) => wissel(m.uid, m.groep === "reclame"));
+  });
+  document.getElementById("kiesNiets").addEventListener("click", () => {
+    lijst.forEach((m) => wissel(m.uid, false));
+  });
+
+  document.getElementById("opruimStart").addEventListener("click", async () => {
+    const uids = [...state.opruimGekozen];
+    if (!uids.length) return showToast("Vink eerst aan wat weg mag.");
+    if (!confirm(`${uids.length} mail${uids.length === 1 ? "" : "s"} naar de prullenmand verplaatsen?\n\nJe kan ze daar nog terughalen tot je de prullenmand leegt.`)) return;
+    const knop = document.getElementById("opruimStart");
+    knop.disabled = true;
+    knop.textContent = "Bezig met opruimen...";
+    try {
+      const r = await (await fetch("/api/mails/verwijder-meerdere", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ uids }),
+      })).json();
+      showToast(`${r.gelukt} mail${r.gelukt === 1 ? "" : "s"} naar de prullenmand.${(r.mislukt || []).length ? ` ${r.mislukt.length} lukte niet.` : ""}`);
+      state.opruimGekozen = new Set();
+      await loadMails(true);
+      await laadOpruimen();
+      loadFolders();
+    } catch (e) {
+      showToast("Opruimen mislukte: " + e.message);
+    } finally {
+      knop.disabled = false;
+      knop.textContent = "🗑 Verwijder aangevinkte";
+    }
+  });
+}
 
 // ---------------------------------------------------------------------------
 // Automatisering
@@ -3784,6 +3936,8 @@ async function openSettings() {
     document.getElementById("setSignature").value = data.handtekening || "";
     document.getElementById("setAfbeeldingen").checked = !!data.toonAfbeeldingen;
     document.getElementById("setAanspreek").value = data.aanspreektitel || "";
+    document.getElementById("setModelSnel").value = data.aiModelSnel || "";
+    document.getElementById("setModelSlim").value = data.aiModelSlim || "";
     toonHandtekeningVoorbeeld();
   } catch (e) {
     msgEl.textContent = "Kon de huidige instellingen niet ophalen.";
@@ -3868,6 +4022,8 @@ async function saveSettings() {
     handtekening: document.getElementById("setSignature").value,
     toonAfbeeldingen: document.getElementById("setAfbeeldingen").checked,
     aanspreektitel: document.getElementById("setAanspreek").value,
+    aiModelSnel: document.getElementById("setModelSnel").value,
+    aiModelSlim: document.getElementById("setModelSlim").value,
   };
   saveBtn.disabled = true;
   msgEl.textContent = "Bezig met opslaan...";
@@ -3969,6 +4125,32 @@ document.getElementById("settingsBtn").addEventListener("click", openSettings);
 document.getElementById("settingsCancel").addEventListener("click", closeSettings);
 document.getElementById("settingsSave").addEventListener("click", saveSettings);
 
+// De ingevulde modellen echt uitproberen met jouw sleutel, zodat je niet pas
+// merkt dat er iets fout staat wanneer je een mail wil laten beoordelen.
+document.getElementById("testModellen").addEventListener("click", async () => {
+  const uitslag = document.getElementById("modelTestUitslag");
+  const knop = document.getElementById("testModellen");
+  knop.disabled = true;
+  uitslag.textContent = "Bezig met uitproberen...";
+  const proef = async (naam) => {
+    if (!naam.trim()) return "niets ingevuld";
+    try {
+      const r = await (await fetch("/api/ai/testmodel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model: naam }),
+      })).json();
+      return r.ok ? "werkt" : r.uitleg;
+    } catch (e) {
+      return "kon niet uitproberen";
+    }
+  };
+  const snel = await proef(document.getElementById("setModelSnel").value);
+  const slim = await proef(document.getElementById("setModelSlim").value);
+  uitslag.textContent = `Beoordelen: ${snel} · Schrijven: ${slim}`;
+  knop.disabled = false;
+});
+
 // ---------------------------------------------------------------------------
 // Start
 // ---------------------------------------------------------------------------
@@ -3984,6 +4166,7 @@ document.getElementById("settingsSave").addEventListener("click", saveSettings);
   laadTaken();
   laadAgenda(true);
   laadRegels(true);
+  laadOpruimen(true);
 })();
 </script>
 </body>

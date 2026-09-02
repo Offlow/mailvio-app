@@ -11,6 +11,45 @@ function client() {
   return new Anthropic({ apiKey: settings.getConfig().anthropicApiKey });
 }
 
+// Twee modellen, elk voor hun werk.
+//  - SNEL: het beoordelen van mails. Dat gebeurt voor élke mail, dus daar telt
+//    snelheid en prijs. Een klein model volstaat ruim om te zien of iets een
+//    offerte, een factuur of reclame is.
+//  - SLIM: antwoorden schrijven, je vragen beantwoorden, bijlagen en klanten
+//    samenvatten. Daar wil je wel het betere model.
+function modelSnel() {
+  return settings.getConfig().aiModelSnel || "claude-haiku-4-5";
+}
+function modelSlim() {
+  return settings.getConfig().aiModelSlim || "claude-sonnet-5";
+}
+
+// Werkt dit model met jouw sleutel? Geeft een duidelijke uitleg terug in plaats
+// van een technische foutmelding.
+async function testModel(naam) {
+  if (!isConfigured()) return { ok: false, uitleg: "Vul eerst je API-sleutel in." };
+  try {
+    await client().messages.create({
+      model: String(naam || "").trim(),
+      max_tokens: 8,
+      messages: [{ role: "user", content: "ok" }],
+    });
+    return { ok: true, uitleg: "Werkt." };
+  } catch (e) {
+    const bericht = String(e && e.message ? e.message : e);
+    if (/model/i.test(bericht) && /not_found|does not exist|invalid/i.test(bericht)) {
+      return { ok: false, uitleg: "Dit model bestaat niet of is niet beschikbaar met jouw sleutel." };
+    }
+    if (/authentication|api.?key|401/i.test(bericht)) {
+      return { ok: false, uitleg: "Je API-sleutel wordt niet aanvaard." };
+    }
+    if (/credit|billing|quota|402|429/i.test(bericht)) {
+      return { ok: false, uitleg: "Je API-tegoed is op of je zit aan een limiet." };
+    }
+    return { ok: false, uitleg: bericht.slice(0, 200) };
+  }
+}
+
 function extractJson(text, fallback) {
   try {
     const match = text.match(/[[{][\s\S]*[\]}]/);
@@ -63,7 +102,7 @@ async function classifyMails(mails) {
   }));
 
   const resp = await anthropic.messages.create({
-    model: "claude-sonnet-5",
+    model: modelSnel(),
     max_tokens: 1536,
     system: CLASSIFY_SYSTEM,
     messages: [{ role: "user", content: JSON.stringify(input) }],
@@ -96,7 +135,7 @@ async function suggestReply(mail) {
   const handtekening = config.aiHandtekening || config.displayName?.split(" ")[0] || "Silvio";
   const anthropic = client();
   const resp = await anthropic.messages.create({
-    model: "claude-sonnet-5",
+    model: modelSlim(),
     max_tokens: 1024,
     system: suggestSystem(toon, handtekening),
     messages: [
@@ -138,7 +177,7 @@ async function extractAfspraak(mail) {
   const anthropic = client();
   const vandaag = new Date().toLocaleDateString("nl-BE", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
   const resp = await anthropic.messages.create({
-    model: "claude-sonnet-5",
+    model: modelSlim(),
     max_tokens: 512,
     system: AFSPRAAK_SYSTEM.replace("{VANDAAG}", vandaag),
     messages: [
@@ -198,7 +237,7 @@ async function vatBijlageSamen(bijlage) {
   }
 
   const resp = await client().messages.create({
-    model: "claude-sonnet-5",
+    model: modelSlim(),
     max_tokens: 300,
     system: BIJLAGE_SYSTEM,
     messages: [
@@ -240,7 +279,7 @@ async function vatKlantSamen(adres, mails) {
     .map((m) => `- ${m.date ? new Date(m.date).toLocaleDateString("nl-BE") : "?"} — ${m.subject || "(geen onderwerp)"}${m.snippet ? ": " + String(m.snippet).slice(0, 600) : ""}`)
     .join("\n");
   const resp = await client().messages.create({
-    model: "claude-sonnet-5",
+    model: modelSlim(),
     max_tokens: 900,
     system: KLANT_SYSTEM,
     messages: [{ role: "user", content: `Contactpersoon: ${adres}\n\nMailgeschiedenis (nieuwste eerst):\n${regels}` }],
@@ -288,7 +327,7 @@ Kan je er geen zinnige regel van maken, antwoord dan:
 async function stelRegelVoor(beschrijving) {
   if (!isConfigured()) throw new Error("De AI is nog niet ingesteld.");
   const resp = await client().messages.create({
-    model: "claude-sonnet-5",
+    model: modelSlim(),
     max_tokens: 500,
     system: REGEL_SYSTEM,
     messages: [{ role: "user", content: String(beschrijving || "").slice(0, 1000) }],
@@ -305,7 +344,7 @@ async function rewriteProfessional(text) {
   const toon = config.aiToon || "Vlaams, kort en professioneel";
   const anthropic = client();
   const resp = await anthropic.messages.create({
-    model: "claude-sonnet-5",
+    model: modelSlim(),
     max_tokens: 1024,
     system: `Je herschrijft mailteksten korter en in deze schrijfstijl/toon: "${toon}", zonder de betekenis te veranderen. Antwoord alleen met de herschreven tekst, geen andere uitleg.`,
     messages: [{ role: "user", content: text }],
@@ -421,7 +460,7 @@ async function chat(message, mails) {
     let resp;
     try {
       resp = await anthropic.messages.create({
-        model: "claude-sonnet-5",
+        model: modelSlim(),
         max_tokens: 1024,
         system: CHAT_SYSTEM,
         tools: [SEARCH_TOOL],
@@ -448,4 +487,4 @@ async function chat(message, mails) {
   return "Geen antwoord ontvangen.";
 }
 
-module.exports = { classifyMails, suggestReply, rewriteProfessional, chat, isConfigured, extractAfspraak, vatBijlageSamen, vatKlantSamen, stelRegelVoor };
+module.exports = { classifyMails, suggestReply, rewriteProfessional, chat, isConfigured, extractAfspraak, vatBijlageSamen, vatKlantSamen, stelRegelVoor, testModel };

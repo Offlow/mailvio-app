@@ -851,6 +851,93 @@ app.post("/api/mails/:uid/move", async (req, res) => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// Opruimen: mails die weg mogen
+// ---------------------------------------------------------------------------
+// Alleen wat DUIDELIJK weg mag komt hier terecht. Bij twijfel niet: dan blijft
+// de mail gewoon staan. Wat wel in aanmerking komt:
+//   - reclame en nieuwsbrieven ouder dan twee maanden waar je nooit iets mee
+//     gedaan hebt (niet beantwoord, niet als taak gezet, niet belangrijk)
+//   - alles ouder dan vier jaar dat gelezen is, niet belangrijk, en waar geen
+//     openstaande zaak aan hangt
+// Niets wordt automatisch verwijderd: jij vinkt aan en drukt op de knop.
+const OPRUIM_RECLAME_DAGEN = 60;
+const OPRUIM_OUD_JAREN = 4;
+
+function opruimVoorstellen(mails, accountKey) {
+  const nu = Date.now();
+  const dag = 86400000;
+  const taakUids = new Set();
+  for (const t of taken.getAlle(accountKey)) {
+    for (const m of t.mails || []) taakUids.add(String(m.uid));
+  }
+
+  const voorstellen = [];
+  for (const m of mails) {
+    if (!m.date) continue;
+    if (m.belangrijk || m.viaWebsite) continue;        // nooit iets belangrijks
+    if (taakUids.has(String(m.uid))) continue;         // hangt aan een taak
+    if (m.reclameTwijfel && !m.afzenderBeslist) continue; // twijfel: niet aanraken
+    const ouderdom = (nu - new Date(m.date).getTime()) / dag;
+    const openZaak = !m.resolved && !m.genegeerd && m.categorie &&
+      m.categorie !== "geen_actie" && m.categorie !== "onbekend";
+
+    if (m.soort === "reclame" && ouderdom > OPRUIM_RECLAME_DAGEN && !openZaak) {
+      voorstellen.push({ ...m, reden: `Reclame van ${Math.round(ouderdom)} dagen oud, nooit iets mee gedaan.`, groep: "reclame" });
+      continue;
+    }
+    if (ouderdom > OPRUIM_OUD_JAREN * 365 && !m.unread && !openZaak) {
+      voorstellen.push({ ...m, reden: `Ouder dan ${OPRUIM_OUD_JAREN} jaar, gelezen en afgehandeld.`, groep: "oud" });
+    }
+  }
+  voorstellen.sort((a, b) => new Date(a.date) - new Date(b.date));
+  return voorstellen;
+}
+
+// Uitproberen of een model werkt met jouw sleutel, vóór je het instelt.
+app.post("/api/ai/testmodel", async (req, res) => {
+  const resultaat = await ai.testModel((req.body || {}).model);
+  res.json(resultaat);
+});
+
+app.get("/api/opruimen", async (req, res) => {
+  try {
+    const data = await getMails(false);
+    const accountKey = settingsStore.getConfig().imapUser || "default";
+    const lijst = opruimVoorstellen(data.mails || [], accountKey);
+    res.json({
+      configured: data.configured !== false,
+      voorstellen: lijst,
+      reclame: lijst.filter((m) => m.groep === "reclame").length,
+      oud: lijst.filter((m) => m.groep === "oud").length,
+    });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Kon de opruimlijst niet maken.", detail: e.message, voorstellen: [] });
+  }
+});
+
+// Meerdere mails tegelijk naar de prullenmand. Ze zijn daar niet weg: je kan ze
+// altijd nog terughalen tot je de prullenmand zelf leegt.
+app.post("/api/mails/verwijder-meerdere", async (req, res) => {
+  const uids = Array.isArray((req.body || {}).uids) ? req.body.uids.map(Number).filter(Boolean) : [];
+  if (!uids.length) return res.status(400).json({ error: "Geen mails aangeduid." });
+  let gelukt = 0;
+  const mislukt = [];
+  for (const uid of uids) {
+    try {
+      await mailbox.verplaatsMail(uid, "prullenmand", req.body.folder);
+      gelukt++;
+      cache.mails = (cache.mails || []).filter((m) => m.uid !== uid);
+      envelopeCache.mails = (envelopeCache.mails || []).filter((m) => m.uid !== uid);
+    } catch (e) {
+      mislukt.push({ uid, reden: e.message });
+    }
+  }
+  folderCache = { at: 0, folders: [] };
+  res.json({ ok: true, gelukt, mislukt });
+});
+
 // Jouw beslissing over een afzender bewaren: is dit reclame of niet? Vanaf nu
 // gaat alle post van dat adres automatisch de juiste kant op.
 app.post("/api/afzender/oordeel", (req, res) => {

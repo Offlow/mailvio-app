@@ -116,6 +116,12 @@ function getConfig() {
     // Hoe Mailvio JOU aanspreekt. Los van de mailboxnaam: die kan
     // "info@daklo.be" of "boekhouding" zijn, maar jij blijft dezelfde persoon.
     aanspreektitel: stored.aanspreektitel || "",
+    // Welk AI-model waarvoor. Beoordelen is simpel werk dat heel vaak gebeurt —
+    // daar past een klein, snel en goedkoop model bij. Antwoorden schrijven en
+    // vragen beantwoorden vraagt meer, dus daar staat standaard een sterker
+    // model. Je kan beide zelf kiezen.
+    aiModelSnel: stored.aiModelSnel || process.env.AI_MODEL_SNEL || "claude-haiku-4-5",
+    aiModelSlim: stored.aiModelSlim || process.env.AI_MODEL_SLIM || "claude-sonnet-5",
   };
 }
 
@@ -201,6 +207,8 @@ function getPublicConfig() {
     aiHandtekening: config.aiHandtekening,
     toonAfbeeldingen: config.toonAfbeeldingen,
     aanspreektitel: config.aanspreektitel,
+    aiModelSnel: config.aiModelSnel,
+    aiModelSlim: config.aiModelSlim,
     handtekening: config.handtekening,
     accounts: getAccounts(),
     actief: getActiveIndex(),
@@ -250,6 +258,8 @@ function updateSettings(update) {
   if (typeof update.aiHandtekening === "string") stored.aiHandtekening = update.aiHandtekening.trim();
   if (typeof update.toonAfbeeldingen === "boolean") stored.toonAfbeeldingen = update.toonAfbeeldingen;
   if (typeof update.aanspreektitel === "string") stored.aanspreektitel = update.aanspreektitel.trim();
+  if (typeof update.aiModelSnel === "string" && update.aiModelSnel.trim()) stored.aiModelSnel = update.aiModelSnel.trim();
+  if (typeof update.aiModelSlim === "string" && update.aiModelSlim.trim()) stored.aiModelSlim = update.aiModelSlim.trim();
 
   writeStoredSettings(stored);
   return getPublicConfig();
