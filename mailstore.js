@@ -165,7 +165,21 @@ function statistiek(accountKey, folder) {
   };
 }
 
+// Alle mappen waarvan we mails bewaard hebben. Nodig om over de hele bewaarde
+// mailbox te kunnen zoeken zonder de mailserver lastig te vallen.
+function getMappen(accountKey) {
+  try {
+    const voorvoegsel = veiligeNaam(accountKey) + "__";
+    return fs.readdirSync(CACHE_DIR)
+      .filter((naam) => naam.startsWith(voorvoegsel) && naam.endsWith(".json"))
+      .map((naam) => naam.slice(voorvoegsel.length, -5));
+  } catch (e) {
+    return [];
+  }
+}
+
 module.exports = {
+  getMappen,
   getMails,
   getUidValidity,
   getHoogsteUid,

@@ -13,6 +13,7 @@ const bijlagen = require("./bijlagen");
 const taken = require("./taken");
 const agenda = require("./agenda");
 const regels = require("./regels");
+const klanten = require("./klanten");
 
 const app = express();
 // Ruimer dan standaard: bijlagen (offerte-pdf, dakfoto's) worden als tekst
@@ -24,7 +25,10 @@ app.use(express.json({ limit: "25mb" }));
 // ---------------------------------------------------------------------------
 // Alles zit achter een slot, behalve het inlogscherm zelf en de paar routes
 // die het nodig heeft. Zo kan niemand die het webadres kent zomaar meelezen.
-const OPEN_ROUTES = new Set(["/api/auth/status", "/api/auth/login", "/api/auth/setup"]);
+// Deze routes werken zonder ingelogd te zijn. /api/agenda.ics hoort daarbij
+// omdat Google Agenda hem zelf komt ophalen; die is beveiligd met een lange
+// geheime sleutel in het adres zelf.
+const OPEN_ROUTES = new Set(["/api/auth/status", "/api/auth/login", "/api/auth/setup", "/api/agenda.ics"]);
 
 app.use((req, res, next) => {
   // Het inlogscherm en zijn eigen bestanden moeten uiteraard bereikbaar zijn.
@@ -42,7 +46,17 @@ app.use((req, res, next) => {
   return res.redirect("/login.html");
 });
 
-app.use(express.static(path.join(__dirname, "public")));
+// De pagina zelf nooit uit de cache serveren: anders blijft je browser na een
+// nieuwe versie de oude Mailvio tonen, en lijken opgeloste fouten er nog te
+// zitten. Afbeeldingen en dergelijke mogen wel gewoon gecachet worden.
+app.use(express.static(path.join(__dirname, "public"), {
+  etag: true,
+  setHeaders(res, bestandspad) {
+    if (/\.(html)$/i.test(bestandspad)) {
+      res.setHeader("Cache-Control", "no-cache, must-revalidate");
+    }
+  },
+}));
 
 // --- Inloggen ---------------------------------------------------------------
 app.get("/api/auth/status", (req, res) => {
@@ -96,6 +110,14 @@ app.post("/api/auth/login", (req, res) => {
   const s = auth.nieuweSessie();
   auth.zetCookie(res, s.token, s.verlooptOp, req);
   res.json({ ok: true });
+});
+
+// Het automatiseringsscherm vraagt je wachtwoord opnieuw. Niet omdat het
+// gevoeliger is dan je mailbox, maar als drempel: hier verander je hoe de app
+// zich gedraagt, en dat wil je niet per ongeluk doen.
+app.post("/api/auth/controleer", (req, res) => {
+  const ok = auth.klopt((req.body || {}).wachtwoord);
+  res.json({ ok });
 });
 
 app.post("/api/auth/logout", (req, res) => {
@@ -858,11 +880,38 @@ app.post("/api/afzender/vergeet", (req, res) => {
   res.json({ ok: true });
 });
 
+// Zoeken gebeurt EERST in wat Mailvio al bewaard heeft. Alle opgehaalde mails
+// staan met hun fragment en hun AI-beoordeling op schijf, dus daar zoeken kost
+// geen mailserver-verbinding en gaat vrijwel meteen. Levert dat niets op, dan
+// pas vragen we het aan de mailserver — voor iets dat nog niet ingeladen was.
 app.get("/api/search", async (req, res) => {
   try {
-    const q = String(req.query.q || "");
+    const q = String(req.query.q || "").trim();
+    if (!q) return res.json({ configured: mailbox.isConfigured(), mails: [] });
+
+    const accountKey = settingsStore.getConfig().imapUser || "default";
+    const termen = q.toLowerCase().split(/\s+/).filter(Boolean);
+    const labels = classifications.getAll(accountKey);
+
+    const bewaard = [];
+    for (const map of mailstore.getMappen(accountKey)) {
+      for (const m of mailstore.getMails(accountKey, map)) {
+        const c = labels[m.uid] || {};
+        const hooi = `${m.from || ""} ${m.fromAddress || ""} ${m.subject || ""} ${c.snippet || m.snippet || ""}`.toLowerCase();
+        if (termen.every((t) => hooi.includes(t))) {
+          bewaard.push({ ...m, snippet: c.snippet || m.snippet || "", categorie: c.categorie, soort: c.soort, folder: map });
+        }
+      }
+    }
+    bewaard.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+    if (bewaard.length) {
+      return res.json({ configured: true, mails: bewaard.slice(0, 80), bron: "bewaard" });
+    }
+
+    // Niets in het geheugen? Dan toch even bij de mailserver kijken.
     const data = await mailbox.searchMails(q);
-    res.json(data);
+    res.json({ ...data, bron: "mailserver" });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "Zoeken mislukt.", detail: e.message, mails: [] });
@@ -885,6 +934,41 @@ app.get("/api/klant/:address", async (req, res) => {
 // ---------------------------------------------------------------------------
 // Afspraken worden hier bewaard zodat je in Mailvio zelf een weekoverzicht hebt.
 // Het .ics-bestand blijft bestaan om ze ook in Apple/Google Agenda te zetten.
+// De agenda als abonneerbaar .ics-adres. Google Agenda, Apple Agenda en Outlook
+// kunnen dit adres "volgen": alles wat je in Mailvio vastlegt, verschijnt dan
+// vanzelf in je gewone agenda, en blijft mee wijzigen.
+app.get("/api/agenda.ics", (req, res) => {
+  try {
+    const sleutel = String(req.query.sleutel || "");
+    const juiste = agenda.abonnementsSleutel();
+    // Vergelijken op een manier die niets verraadt via de tijd die het duurt.
+    const a = Buffer.from(sleutel.padEnd(juiste.length).slice(0, juiste.length));
+    const b = Buffer.from(juiste);
+    if (!sleutel || !require("crypto").timingSafeEqual(a, b)) {
+      return res.status(404).send("Niet gevonden.");
+    }
+    res.setHeader("Content-Type", "text/calendar; charset=utf-8");
+    res.setHeader("Content-Disposition", 'inline; filename="mailvio.ics"');
+    res.setHeader("Cache-Control", "no-cache");
+    res.send(agenda.alsIcs(settingsStore.getConfig().imapUser || "default"));
+  } catch (e) {
+    console.error("Agenda-abonnement mislukt:", e.message);
+    res.status(500).send("Kon de agenda niet opbouwen.");
+  }
+});
+
+// Het adres om in Google Agenda te plakken, en de mogelijkheid om het te
+// vernieuwen als je het per ongeluk gedeeld hebt.
+app.get("/api/agenda/abonnement", (req, res) => {
+  const basis = `${req.protocol}://${req.get("host")}`;
+  res.json({ url: `${basis}/api/agenda.ics?sleutel=${agenda.abonnementsSleutel()}` });
+});
+
+app.post("/api/agenda/abonnement/nieuw", (req, res) => {
+  const basis = `${req.protocol}://${req.get("host")}`;
+  res.json({ url: `${basis}/api/agenda.ics?sleutel=${agenda.nieuweSleutel()}` });
+});
+
 app.get("/api/agenda", (req, res) => {
   const accountKey = taakAccount();
   const { van, tot } = req.query;
@@ -929,14 +1013,39 @@ app.get("/api/klant/:address/fiche", async (req, res) => {
       .getAlle(accountKey)
       .filter((t) => !t.klaar && (t.mails || []).some((m) => String(m.fromAddress || "").toLowerCase() === address.toLowerCase()));
 
-    let samenvatting = "";
-    if (ai.isConfigured() && mails.length) {
+    // Wat je zelf noteerde blijft altijd staan; de gegevens uit de mails worden
+    // bewaard zodat de fiche meteen gevuld is bij een volgend bezoek.
+    const bewaard = klanten.get(accountKey, address) || {};
+
+    // Telefoonnummers, adressen en websites die LETTERLIJK in de mails staan.
+    // Dit gebeurt met vaste patronen, dus zonder AI en zonder gokwerk.
+    const uitTekst = klanten.haalUitTekst(mails.slice(0, 40).map((m) => `${m.subject || ""}\n${m.snippet || ""}`));
+
+    let vanAi = bewaard.gegevens || null;
+    // De AI enkel opnieuw laten lezen als we nog niets hebben, of als er sinds
+    // de vorige keer nieuwe mails bijgekomen zijn.
+    const nieuwsteMail = mails.length ? new Date(mails[0].date || 0).getTime() : 0;
+    const verouderd = !vanAi || (bewaard.gegevensOp || 0) < nieuwsteMail;
+    if (ai.isConfigured() && mails.length && verouderd && !req.query.snel) {
       try {
-        samenvatting = await ai.vatKlantSamen(address, mails.slice(0, 15));
+        vanAi = await ai.vatKlantSamen(address, mails.slice(0, 15));
+        klanten.zetGegevens(accountKey, address, vanAi);
       } catch (e) {
         console.error("Klantsamenvatting mislukt:", e.message);
       }
     }
+
+    // De twee bronnen samenvoegen, zonder dubbels. Wat letterlijk in een mail
+    // staat komt eerst — dat is het zekerst.
+    const uniek = (lijst) => {
+      const gezien = new Set();
+      return lijst.filter((x) => {
+        const sleutel = String(x || "").replace(/[^\d\w]/g, "").toLowerCase();
+        if (!sleutel || gezien.has(sleutel)) return false;
+        gezien.add(sleutel);
+        return true;
+      });
+    };
 
     res.json({
       configured: data.configured,
@@ -945,7 +1054,14 @@ app.get("/api/klant/:address/fiche", async (req, res) => {
       openstaand,
       volgendeAfspraak: volgende,
       taken: taakLijst,
-      samenvatting,
+      samenvatting: (vanAi && vanAi.samenvatting) || "",
+      bedrijf: (vanAi && vanAi.bedrijf) || "",
+      contactpersonen: (vanAi && vanAi.contactpersonen) || [],
+      aandachtspunten: (vanAi && vanAi.aandachtspunten) || [],
+      telefoons: uniek([...uitTekst.telefoons, ...((vanAi && vanAi.telefoons) || [])]).slice(0, 5),
+      adressen: uniek([...uitTekst.adressen, ...((vanAi && vanAi.adressen) || [])]).slice(0, 4),
+      websites: uitTekst.websites,
+      notitie: bewaard.notitie || "",
     });
   } catch (e) {
     console.error(e);
@@ -968,6 +1084,19 @@ app.post("/api/regels/ingebouwd", (req, res) => {
   res.json(resultaat);
 });
 
+// Uit een zin in gewone taal een regelvoorstel maken. Er wordt niets bewaard:
+// je krijgt een voorstel te zien en beslist zelf of je het toevoegt.
+app.post("/api/regels/voorstel", async (req, res) => {
+  try {
+    if (!ai.isConfigured()) return res.json({ gelukt: false, uitleg: "De AI is nog niet ingesteld." });
+    const voorstel = await ai.stelRegelVoor((req.body || {}).beschrijving);
+    res.json(voorstel);
+  } catch (e) {
+    console.error("Regelvoorstel mislukt:", e.message);
+    res.status(500).json({ gelukt: false, uitleg: "Kon er geen regel van maken: " + e.message });
+  }
+});
+
 app.post("/api/regels", (req, res) => {
   const regel = regels.voegToe(taakAccount(), req.body || {});
   if (!regel) return res.status(400).json({ error: "Vul een waarde in en kies minstens één actie." });
@@ -986,6 +1115,18 @@ app.delete("/api/regels/:id", (req, res) => {
   regels.verwijderEigen(taakAccount(), req.params.id);
   cache.at = 0;
   res.json(regels.overzicht(taakAccount()));
+});
+
+// Je eigen notitie bij een klant ("belt liefst na 17u", "poort links achteraan").
+app.post("/api/klant/:address/notitie", (req, res) => {
+  try {
+    const address = decodeURIComponent(req.params.address);
+    const resultaat = klanten.zetNotitie(taakAccount(), address, (req.body || {}).notitie);
+    res.json({ ok: true, notitie: resultaat ? resultaat.notitie : "" });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Kon de notitie niet bewaren.", detail: e.message });
+  }
 });
 
 app.get("/api/followups", async (req, res) => {
@@ -1050,6 +1191,43 @@ app.post("/api/chat", async (req, res) => {
 });
 
 const PORT = process.env.PORT || 10000;
+// ---------------------------------------------------------------------------
+// Op de achtergrond blijven bijwerken
+// ---------------------------------------------------------------------------
+// Mailvio wacht niet tot jij de app opent. De server haalt zelf om de paar
+// minuten nieuwe mails op en laat de AI ze meteen beoordelen. Open je daarna de
+// app, dan staat alles er al — geen wachtbalk meer.
+const ACHTERGROND_MS = 3 * 60 * 1000;   // elke drie minuten kijken of er nieuwe post is
+const EERSTE_START_MS = 15 * 1000;      // kort na het opstarten al beginnen
+let achtergrondBezig = false;
+
+async function achtergrondRonde() {
+  if (achtergrondBezig) return;
+  if (!mailbox.isConfigured()) return;
+  achtergrondBezig = true;
+  try {
+    // Nieuwe mails ophalen en beoordelen. Zolang er nog niet-beoordeelde mails
+    // zijn, doen we meteen een volgende portie — zo is de mailbox binnen een
+    // paar rondes volledig doorgenomen in plaats van pas terwijl jij zit te
+    // wachten.
+    let data = await getMails(true);
+    let rondes = 0;
+    while (data.scanning && rondes < 8) {
+      data = await getMails(true);
+      rondes++;
+    }
+  } catch (e) {
+    console.error("Achtergrondronde mislukt (wordt straks opnieuw geprobeerd):", e.message);
+  } finally {
+    achtergrondBezig = false;
+  }
+}
+
+setTimeout(() => {
+  achtergrondRonde();
+  setInterval(achtergrondRonde, ACHTERGROND_MS);
+}, EERSTE_START_MS);
+
 // Laatste vangnet: een onvoorziene fout mag Mailvio nooit helemaal platleggen.
 // Beter een gelogde fout en een app die blijft draaien, dan een mailbox die
 // plots onbereikbaar is.

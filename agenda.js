@@ -91,4 +91,86 @@ function verwijder(accountKey, id) {
   bewaarLijst(accountKey, ruwe(accountKey).filter((x) => x.id !== id));
 }
 
-module.exports = { getAlle, getTussen, volgendeVoor, voegToe, wijzig, verwijder };
+// ---------------------------------------------------------------------------
+// Abonnementssleutel voor Google Agenda
+// ---------------------------------------------------------------------------
+// Google Agenda kan een agenda "volgen" via een webadres. Dat adres moet Google
+// zonder wachtwoord kunnen ophalen, dus beveiligen we het met een lange,
+// geheime sleutel in de link zelf. Wie de link niet heeft, ziet niets.
+const SLEUTELBESTAND = path.join(__dirname, "data", "agenda-sleutel.txt");
+
+function abonnementsSleutel() {
+  try {
+    const bestaand = fs.readFileSync(SLEUTELBESTAND, "utf8").trim();
+    if (bestaand.length >= 20) return bestaand;
+  } catch (e) { /* nog geen sleutel */ }
+  const nieuw = crypto.randomBytes(24).toString("hex");
+  const dir = path.dirname(SLEUTELBESTAND);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(SLEUTELBESTAND, nieuw, { encoding: "utf8", mode: 0o600 });
+  return nieuw;
+}
+
+function nieuweSleutel() {
+  try { fs.unlinkSync(SLEUTELBESTAND); } catch (e) { /* bestond niet */ }
+  return abonnementsSleutel();
+}
+
+// ---------------------------------------------------------------------------
+// De volledige agenda als .ics-bestand
+// ---------------------------------------------------------------------------
+// Dit is het formaat dat Google Agenda, Apple Agenda en Outlook begrijpen.
+// Tijden worden bewust ZONDER "Z" geschreven: dat betekent lokale tijd, zodat
+// 14u30 in Mailvio ook 14u30 in je agenda is en niet 16u30 wordt.
+function ontsnap(tekst) {
+  return String(tekst || "")
+    .replace(/\\/g, "\\\\")
+    .replace(/;/g, "\\;")
+    .replace(/,/g, "\\,")
+    .replace(/\r?\n/g, "\\n");
+}
+
+function plus(datum, begin, minuten) {
+  const [j, m, d] = String(datum).split("-").map(Number);
+  const [u, min] = String(begin || "09:00").split(":").map(Number);
+  const dt = new Date(j, (m || 1) - 1, d || 1, u || 0, min || 0);
+  dt.setMinutes(dt.getMinutes() + (Number(minuten) || 60));
+  const p = (n) => String(n).padStart(2, "0");
+  return `${dt.getFullYear()}${p(dt.getMonth() + 1)}${p(dt.getDate())}T${p(dt.getHours())}${p(dt.getMinutes())}00`;
+}
+
+function alsIcs(accountKey) {
+  const nu = new Date().toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
+  const regels = [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "PRODID:-//Mailvio//Agenda//NL",
+    "CALSCALE:GREGORIAN",
+    "METHOD:PUBLISH",
+    "X-WR-CALNAME:Mailvio",
+    "X-WR-TIMEZONE:Europe/Brussels",
+    // Hoe vaak Google mag komen kijken of er iets veranderd is.
+    "REFRESH-INTERVAL;VALUE=DURATION:PT1H",
+    "X-PUBLISHED-TTL:PT1H",
+  ];
+  for (const a of getAlle(accountKey)) {
+    const start = `${String(a.datum).replace(/-/g, "")}T${String(a.begin || "09:00").replace(":", "")}00`;
+    regels.push(
+      "BEGIN:VEVENT",
+      `UID:${a.id}@mailvio`,
+      `DTSTAMP:${nu}`,
+      `DTSTART:${start}`,
+      `DTEND:${plus(a.datum, a.begin, a.duur)}`,
+      `SUMMARY:${ontsnap(a.titel)}`
+    );
+    if (a.plaats) regels.push(`LOCATION:${ontsnap(a.plaats)}`);
+    const omschrijving = [a.notitie, a.klant ? `Klant: ${a.klant}` : "", a.klantAdres].filter(Boolean).join("\n");
+    if (omschrijving) regels.push(`DESCRIPTION:${ontsnap(omschrijving)}`);
+    regels.push("END:VEVENT");
+  }
+  regels.push("END:VCALENDAR");
+  // Volgens de norm eindigt elke regel op CRLF.
+  return regels.join("\r\n") + "\r\n";
+}
+
+module.exports = { getAlle, getTussen, volgendeVoor, voegToe, wijzig, verwijder, abonnementsSleutel, nieuweSleutel, alsIcs };

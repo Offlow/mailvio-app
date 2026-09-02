@@ -215,26 +215,86 @@ async function vatBijlageSamen(bijlage) {
 // Een korte klantsamenvatting voor de klantenfiche: wie is dit, wat loopt er,
 // waar moet je op letten. Enkel op basis van de mails die er effectief zijn.
 const KLANT_SYSTEM = `Je bent de assistent van een zelfstandige dakwerker in Vlaanderen.
-Je krijgt de onderwerpen en fragmenten van de mailgeschiedenis met één contactpersoon.
-Schrijf in maximaal 3 korte zinnen, in het Nederlands (Vlaams, zakelijk):
-1. Wie dit is en wat voor werk het betreft.
-2. Wat er tot nu gebeurd is (offerte, bezoek, factuur, klacht, ...).
-3. Waar de dakwerker nu op moet letten of wat de volgende stap is.
-Verzin NOOIT iets dat niet in de mails staat. Weet je iets niet, laat het weg.
-Geen opsomming, geen kopjes, enkel de zinnen.`;
+Je krijgt de mailgeschiedenis met één contactpersoon. Haal daar de klantgegevens uit.
+
+Antwoord met ENKEL geldige JSON, in deze vorm:
+{
+  "samenvatting": "max 3 korte zinnen: wie dit is en wat voor werk het betreft, wat er tot nu gebeurd is, en waar hij nu op moet letten",
+  "bedrijf": "de bedrijfsnaam als het over een bedrijf gaat, anders \"\"",
+  "contactpersonen": [{"naam": "...", "rol": "bv. zaakvoerder, boekhouding, werfleider", "telefoon": "", "email": ""}],
+  "telefoons": ["telefoonnummers die in de mails staan"],
+  "adressen": ["werf- of factuuradressen die in de mails staan"],
+  "aandachtspunten": ["korte punten om te onthouden, bv. 'wil enkel na 17u gebeld worden', 'poort links achteraan'"]
+}
+
+Regels:
+- Verzin NOOIT gegevens. Staat iets niet in de mails, laat het weg of gebruik een lege lijst.
+- Neem GEEN gegevens over van de dakwerker zelf (Daklo, info@daklo.be) — enkel van de contactpersoon.
+- Haal contactpersonen uit ondertekeningen en aanspreektitels ("Beste Jan", "Met vriendelijke groeten, Peter Van Damme").
+- Hoogstens 4 contactpersonen, 4 telefoons, 3 adressen en 4 aandachtspunten.
+- Schrijf in het Nederlands (Vlaams, zakelijk).`;
 
 async function vatKlantSamen(adres, mails) {
   if (!isConfigured()) throw new Error("De AI is nog niet ingesteld.");
   const regels = mails
-    .map((m) => `- ${m.date ? new Date(m.date).toLocaleDateString("nl-BE") : "?"} — ${m.subject || "(geen onderwerp)"}${m.snippet ? ": " + String(m.snippet).slice(0, 200) : ""}`)
+    .map((m) => `- ${m.date ? new Date(m.date).toLocaleDateString("nl-BE") : "?"} — ${m.subject || "(geen onderwerp)"}${m.snippet ? ": " + String(m.snippet).slice(0, 600) : ""}`)
     .join("\n");
   const resp = await client().messages.create({
     model: "claude-sonnet-5",
-    max_tokens: 350,
+    max_tokens: 900,
     system: KLANT_SYSTEM,
     messages: [{ role: "user", content: `Contactpersoon: ${adres}\n\nMailgeschiedenis (nieuwste eerst):\n${regels}` }],
   });
-  return resp.content.map((b) => (b.type === "text" ? b.text : "")).join("").trim();
+  const tekst = resp.content.map((b) => (b.type === "text" ? b.text : "")).join("");
+  const data = extractJson(tekst, {});
+  return {
+    samenvatting: String(data.samenvatting || "").trim(),
+    bedrijf: String(data.bedrijf || "").trim(),
+    contactpersonen: Array.isArray(data.contactpersonen) ? data.contactpersonen.slice(0, 4) : [],
+    telefoons: Array.isArray(data.telefoons) ? data.telefoons.slice(0, 4).map(String) : [],
+    adressen: Array.isArray(data.adressen) ? data.adressen.slice(0, 3).map(String) : [],
+    aandachtspunten: Array.isArray(data.aandachtspunten) ? data.aandachtspunten.slice(0, 4).map(String) : [],
+  };
+}
+
+// Uit een zin in gewone taal een automatiseringsregel maken.
+// "alles van bpost mag naar reclame" wordt: als afzender bevat "bpost" → reclame.
+const REGEL_SYSTEM = `Je zet een wens van een zelfstandige dakwerker om in één automatiseringsregel voor zijn mailapp.
+
+Antwoord met ENKEL geldige JSON:
+{
+  "gelukt": true,
+  "naam": "korte omschrijving in het Nederlands, bv. 'Nieuwsbrieven van bpost naar Reclame'",
+  "veld": "afzender" | "onderwerp" | "inhoud" | "soort",
+  "test": "bevat" | "is" | "begint_met",
+  "waarde": "waar de regel op reageert",
+  "acties": ["reclame" | "belangrijk" | "dringend" | "geen_actie" | "taak" | "niet_opvolgen"],
+  "uitleg": "één zin die aan de gebruiker uitlegt wat deze regel zal doen"
+}
+
+Wat de acties betekenen:
+- "reclame": de mail gaat naar de map Reclame en telt niet meer mee als post
+- "belangrijk": de mail wordt als belangrijk gemarkeerd
+- "dringend": de mail komt bij "Actie nodig"
+- "geen_actie": er hoeft niet op geantwoord te worden
+- "taak": er wordt automatisch een to-do van gemaakt
+- "niet_opvolgen": de mail telt niet meer mee als openstaande zaak
+
+Voor "veld" is "soort" enkel bruikbaar met waarde "offerte", "afspraak", "factuur", "reclame" of "overig".
+
+Kan je er geen zinnige regel van maken, antwoord dan:
+{"gelukt": false, "uitleg": "vraag in één zin wat je nog nodig hebt"}`;
+
+async function stelRegelVoor(beschrijving) {
+  if (!isConfigured()) throw new Error("De AI is nog niet ingesteld.");
+  const resp = await client().messages.create({
+    model: "claude-sonnet-5",
+    max_tokens: 500,
+    system: REGEL_SYSTEM,
+    messages: [{ role: "user", content: String(beschrijving || "").slice(0, 1000) }],
+  });
+  const tekst = resp.content.map((b) => (b.type === "text" ? b.text : "")).join("");
+  return extractJson(tekst, { gelukt: false, uitleg: "Ik kon er geen regel van maken. Probeer het wat concreter te omschrijven." });
 }
 
 async function rewriteProfessional(text) {
@@ -254,7 +314,11 @@ async function rewriteProfessional(text) {
 }
 
 const CHAT_SYSTEM = `Je bent de AI-assistent in Mailvio, een persoonlijke mailapp voor een zelfstandige dakwerker in Vlaanderen.
-Je krijgt de recentste mails uit zijn HUIDIGE mailbox als context, maar hij heeft mogelijk MEERDERE mailboxen (bv. een algemene en een boekhoudingmailbox). Het gereedschap "zoek_mailbox" doorzoekt ze ALLEMAAL tegelijk. Zegt een resultaat uit welke mailbox het komt, vermeld dat dan in je antwoord. Gebruik het gereedschap "zoek_mailbox" telkens de vraag mogelijk over een mail gaat die niet in die recente lijst staat — bv. een naam, bedrijf, oud onderwerp, "wanneer heb ik met X gemaild", of gewoon wanneer je het niet zeker weet. Zoek liever één keer te veel dan een verkeerd of onvolledig antwoord te geven.
+Je krijgt zijn mailbox mee ZOALS MAILVIO ZE AL BEOORDEELD HEEFT: per mail staat er wie de afzender is, het onderwerp, hoe oud ze is, hoe dringend, welk soort (offerte, afspraak, factuur) en of ze belangrijk is.
+
+BEANTWOORD DE VRAAG UIT DIE LIJST. Dat is bijna altijd genoeg, en het gaat meteen. Gebruik "zoek_mailbox" ENKEL als de vraag over iets gaat dat er zeker niet in staat — bv. een mail van vorig jaar of een naam die nergens in de lijst voorkomt. Zoeken duurt lang, dus doe het niet "voor de zekerheid".
+
+Antwoord concreet en met namen erbij. Vraagt hij welke offertes openstaan, som dan de afzenders en onderwerpen op met hoe lang ze al wachten, en zeg wat er zou moeten gebeuren. Geen algemeenheden. Gebruik het gereedschap "zoek_mailbox" telkens de vraag mogelijk over een mail gaat die niet in die recente lijst staat — bv. een naam, bedrijf, oud onderwerp, "wanneer heb ik met X gemaild", of gewoon wanneer je het niet zeker weet. Zoek liever één keer te veel dan een verkeerd of onvolledig antwoord te geven.
 Beantwoord de vraag kort, direct en vriendelijk in het Vlaams — geen lange uitleg, geen jargon.
 Als je een mail voorstelt te herschrijven of te beantwoorden, schrijf die dan meteen kort en professioneel uit.`;
 
@@ -295,20 +359,64 @@ async function chat(message, mails) {
     return "De AI is nog niet ingesteld — vul je Claude API-sleutel in bij de instellingen.";
   }
   const anthropic = client();
-  const CHAT_CONTEXT_LIMIT = 60;
-  const recentMails = [...mails].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, CHAT_CONTEXT_LIMIT);
-  const mailContext = recentMails
-    .map((m) => `- (uid ${m.uid}) Van: ${m.from} | Onderwerp: ${m.subject} | ${m.unread ? "ongelezen" : "gelezen"} | ${m.snippet}`)
-    .join("\n");
+
+  // Alles wat Mailvio al beoordeeld heeft, gaat MEE als context. Zo hoeft er
+  // voor een gewone vraag ("welke offertes moet ik opvolgen?") niet eerst in de
+  // mailbox gezocht te worden — dat duurde seconden. Nu staat het antwoord er
+  // vrijwel meteen, omdat de beoordeling al op de achtergrond gebeurd is.
+  const OPEN_LIMIET = 220;   // openstaande zaken: die zijn het belangrijkst
+  const RECENT_LIMIET = 80;  // plus de recentste van de rest, voor context
+
+  const nieuwste = (a, b) => new Date(b.date) - new Date(a.date);
+  const alles = [...mails].sort(nieuwste);
+
+  const isOpen = (m) =>
+    !m.resolved && !m.genegeerd && m.soort !== "reclame" &&
+    m.categorie && m.categorie !== "geen_actie" && m.categorie !== "onbekend";
+
+  const open = alles.filter(isOpen).slice(0, OPEN_LIMIET);
+  const openUids = new Set(open.map((m) => m.uid));
+  const rest = alles.filter((m) => !openUids.has(m.uid) && m.soort !== "reclame").slice(0, RECENT_LIMIET);
+
+  const regel = (m) => {
+    const dagen = m.date ? Math.floor((Date.now() - new Date(m.date)) / 86400000) : null;
+    const stukken = [
+      `uid ${m.uid}`,
+      m.from,
+      m.subject || "(geen onderwerp)",
+      m.date ? new Date(m.date).toLocaleDateString("nl-BE") : "?",
+      dagen !== null ? `${dagen}d geleden` : "",
+      m.categorie && m.categorie !== "onbekend" ? m.categorie : "",
+      m.soort && m.soort !== "overig" ? m.soort : "",
+      m.vanType && m.vanType !== "onbekend" ? m.vanType : "",
+      m.belangrijk ? "belangrijk" : "",
+      m.viaWebsite ? "via daklo.be" : "",
+      m.unread ? "ongelezen" : "",
+    ].filter(Boolean);
+    return `- ${stukken.join(" | ")}${m.snippet ? ` :: ${String(m.snippet).slice(0, 160)}` : ""}`;
+  };
+
+  const context = [
+    `OPENSTAANDE ZAKEN (${open.length} van ${alles.filter(isOpen).length}) — hier gaat het meestal over:`,
+    open.map(regel).join("\n") || "(niets openstaand)",
+    "",
+    `RECENTE AFGEHANDELDE OF NIET-DRINGENDE MAILS (${rest.length}):`,
+    rest.map(regel).join("\n") || "(geen)",
+  ].join("\n");
+
+  const vandaag = new Date().toLocaleDateString("nl-BE", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
 
   const messages = [
     {
       role: "user",
-      content: `${mails.length > recentMails.length ? `(Dit zijn de ${CHAT_CONTEXT_LIMIT} recentste van in totaal ${mails.length} geladen mails — gebruik "zoek_mailbox" om verder terug te zoeken.)\n` : ""}Recente mails:\n${mailContext || "(geen mails gevonden)"}\n\nVraag van de dakwerker: ${message}`,
+      content: `Vandaag is het ${vandaag}. Hieronder staat de mailbox zoals Mailvio ze al beoordeeld heeft (${alles.length} mails geladen).\n\n${context}\n\nVraag van de dakwerker: ${message}`,
     },
   ];
 
-  const MAX_TOOL_ROUNDS = 3;
+  // Eén zoekronde blijft mogelijk voor iets dat écht niet in de lijst staat
+  // (bv. "wanneer heb ik vorig jaar met die klant gemaild"), maar de gewone
+  // vraag wordt meteen uit de context beantwoord.
+  const MAX_TOOL_ROUNDS = 1;
   for (let round = 0; round <= MAX_TOOL_ROUNDS; round++) {
     let resp;
     try {
@@ -340,4 +448,4 @@ async function chat(message, mails) {
   return "Geen antwoord ontvangen.";
 }
 
-module.exports = { classifyMails, suggestReply, rewriteProfessional, chat, isConfigured, extractAfspraak, vatBijlageSamen, vatKlantSamen };
+module.exports = { classifyMails, suggestReply, rewriteProfessional, chat, isConfigured, extractAfspraak, vatBijlageSamen, vatKlantSamen, stelRegelVoor };
