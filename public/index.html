@@ -4940,10 +4940,15 @@ function toonTegoed() {
   const per = Object.entries(v.perSoort || {})
     .map(([wat, r]) => `${wat}: $${(r.dollar || 0).toFixed(2)}`)
     .join(" · ");
-  el.innerHTML = `Vandaag <b>$${(v.dollar || 0).toFixed(2)}</b> in ${v.oproepen || 0} oproepen. ` +
-    `Het klaarzetten op de achtergrond stopt vanzelf bij $${v.grens} per dag; wat je zelf aanklikt gaat altijd door.` +
+  const rem = v.gestoptDoor === "week"
+    ? '<br><b style="color:#b3261e">De weekgrens is bereikt — de achtergrond ligt stil tot er weer ruimte is.</b>'
+    : v.gestoptDoor === "dag"
+      ? '<br><b style="color:#b3261e">De daggrens is bereikt — de achtergrond ligt stil tot morgen.</b>'
+      : "";
+  el.innerHTML = `Vandaag <b>$${(v.dollar || 0).toFixed(2)}</b> in ${v.oproepen || 0} oproepen · deze week <b>$${(v.week || 0).toFixed(2)}</b>. ` +
+    `Het werk op de achtergrond stopt vanzelf bij $${v.grens} per dag of $${v.weekGrens} per week; wat je zelf aanklikt gaat altijd door.` +
     (per ? `<br><span style="opacity:.8">${escapeHtml(per)}</span>` : "") +
-    (v.magNog ? "" : '<br><b style="color:#b3261e">De daggrens is bereikt — de achtergrond ligt stil tot morgen.</b>');
+    rem;
 }
 
 document.getElementById("zijbalkNieuweMail").addEventListener("click", () => openCompose());

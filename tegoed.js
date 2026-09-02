@@ -19,9 +19,12 @@ const PRIJS = {
   slim: { in: 3.0, uit: 15.0 },  // het slimme model, voor schrijven
 };
 
-// Hoeveel de ACHTERGROND per dag mag uitgeven. Wat jij zelf aanklikt telt mee
-// in de teller, maar wordt nooit geweigerd.
+// Hoeveel de ACHTERGROND mag uitgeven. Wat jij zelf aanklikt telt mee in de
+// teller, maar wordt nooit geweigerd.
+// Twee remmen: eentje per dag, zodat één rare dag niet ontspoort, en eentje per
+// week, zodat zeven drukke dagen na elkaar ook niet ontsporen.
 const DAGGRENS_DOLLAR = 1.0;
+const WEEKGRENS_DOLLAR = 4.0;
 
 let _store = null;
 let _timer = null;
@@ -83,9 +86,28 @@ function boek(soort, waarvoor, verbruik) {
   return regel;
 }
 
-// Mag de achtergrond nog werk doen vandaag?
+// Wat is er de laatste zeven dagen opgegaan?
+function weekTotaal() {
+  const store = lees();
+  const grens = new Date(Date.now() - 6 * 86400000).toISOString().slice(0, 10);
+  let som = 0;
+  for (const [dag, r] of Object.entries(store)) {
+    if (dag >= grens) som += r.dollar || 0;
+  }
+  return Math.round(som * 10000) / 10000;
+}
+
+// Mag de achtergrond nog werk doen? Alleen als BEIDE remmen ruimte laten.
 function magNog() {
-  return dagRegel().dollar < DAGGRENS_DOLLAR;
+  dagRegel(); // zorgt dat de dag van vandaag bestaat en oude dagen weg zijn
+  return dagRegel().dollar < DAGGRENS_DOLLAR && weekTotaal() < WEEKGRENS_DOLLAR;
+}
+
+// Welke rem staat er op dit moment in de weg? Voor de uitleg op je scherm.
+function waaromGestopt() {
+  if (dagRegel().dollar >= DAGGRENS_DOLLAR) return "dag";
+  if (weekTotaal() >= WEEKGRENS_DOLLAR) return "week";
+  return "";
 }
 
 function vandaagVerbruik() {
@@ -94,8 +116,11 @@ function vandaagVerbruik() {
     dollar: Math.round(regel.dollar * 100) / 100,
     oproepen: regel.oproepen,
     grens: DAGGRENS_DOLLAR,
+    week: Math.round(weekTotaal() * 100) / 100,
+    weekGrens: WEEKGRENS_DOLLAR,
     perSoort: regel.perSoort,
     magNog: magNog(),
+    gestoptDoor: waaromGestopt(),
   };
 }
 
@@ -107,4 +132,4 @@ function overzicht() {
     .map(([dag, r]) => ({ dag, dollar: Math.round(r.dollar * 100) / 100, oproepen: r.oproepen, perSoort: r.perSoort }));
 }
 
-module.exports = { boek, magNog, vandaagVerbruik, overzicht, DAGGRENS_DOLLAR };
+module.exports = { boek, magNog, weekTotaal, waaromGestopt, vandaagVerbruik, overzicht, DAGGRENS_DOLLAR, WEEKGRENS_DOLLAR };

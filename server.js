@@ -167,7 +167,10 @@ const SCAN_BATCH_SIZE = 30;
 // van 30 mails. Voor 11.000 mails is dat een tientje. Je recentste post is wat
 // telt; een mail van drie jaar geleden staat niet op je dashboard en vraagt
 // geen antwoord meer.
-const BEOORDEEL_MAX_MAILS = 2500;
+// VIJFHONDERD, op vraag van Silvio. Dat is ongeveer 17 porties, dus onder de
+// halve euro om je hele actuele mailbox beoordeeld te krijgen. Nieuwe post die
+// binnenkomt wordt daarna gewoon meegenomen.
+const BEOORDEEL_MAX_MAILS = 500;
 const BEOORDEEL_MAX_OUD_MS = 550 * 86400000; // ongeveer anderhalf jaar
 // Hoeveel mails we per portie volledig inladen. Ze gaan over één verbinding, en
 // de achtergrondronde blijft porties halen tot je HELE mailbox binnen is.
