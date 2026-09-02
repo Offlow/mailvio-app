@@ -941,8 +941,8 @@ app.post("/api/mails/:uid/move", async (req, res) => {
 // de mail gewoon staan. Wat wel in aanmerking komt:
 //   - reclame en nieuwsbrieven ouder dan twee maanden waar je nooit iets mee
 //     gedaan hebt (niet beantwoord, niet als taak gezet, niet belangrijk)
-//   - alles ouder dan vier jaar dat gelezen is, niet belangrijk, en waar geen
-//     openstaande zaak aan hangt
+// Gewone mails komen hier NOOIT in, hoe oud ook — die kan je later nog nodig
+// hebben. Enkel reclame.
 // Niets wordt automatisch verwijderd: jij vinkt aan en drukt op de knop.
 const OPRUIM_RECLAME_DAGEN = 60;
 const OPRUIM_OUD_JAREN = 4;
@@ -969,9 +969,9 @@ function opruimVoorstellen(mails, accountKey) {
       voorstellen.push({ ...m, reden: `Reclame van ${Math.round(ouderdom)} dagen oud, nooit iets mee gedaan.`, groep: "reclame" });
       continue;
     }
-    if (ouderdom > OPRUIM_OUD_JAREN * 365 && !m.unread && !openZaak) {
-      voorstellen.push({ ...m, reden: `Ouder dan ${OPRUIM_OUD_JAREN} jaar, gelezen en afgehandeld.`, groep: "oud" });
-    }
+    // Bewust GEEN oude gewone mails meer voorstellen. Een mail van vier jaar
+    // geleden kan nog altijd een offerte of een garantie zijn die je nodig hebt.
+    // Enkel reclame mag hier in.
   }
   voorstellen.sort((a, b) => new Date(a.date) - new Date(b.date));
   return voorstellen;

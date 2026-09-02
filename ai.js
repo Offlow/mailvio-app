@@ -101,7 +101,14 @@ Gebruik exact een van deze categorieën:
 - "binnenkort": kan nog een paar dagen wachten (bv. een leverancier zonder directe vraag)
 - "geen_actie": geen antwoord nodig (bv. reclame, nieuwsbrief, bevestiging, bedankmail)
 
-Gebruik voor "vanType" exact een van: "klant", "leverancier", "onbekend".
+Gebruik voor "vanType" exact een van: "klant", "leverancier", "boekhouding", "overheid", "bank", "platform", "prive", "onbekend".
+- "klant": een particulier of bedrijf dat werk bij HEM wil laten uitvoeren, of waar hij werk voor doet.
+- "leverancier": een handelaar, groothandel of onderaannemer die aan HEM levert.
+- "boekhouding": het boekhoudkantoor of een boekhoudprogramma dat facturen, btw of loonbrieven doorstuurt (bv. Lucy, SD Worx, een accountant, een sociaal secretariaat). Ook al gaat de factuur over een leverancier: als de BOODSCHAPPER de boekhouding is, staat hier "boekhouding".
+- "overheid": een gemeente, provincie, FOD, RSZ, politie, of een andere overheidsdienst.
+- "bank": een bank, verzekeraar of verzekeringsmakelaar.
+- "platform": een leadplatform of tussenpartij die aanvragen doorstuurt (bv. dakwAIrker, Bobex, Solvari). De AANVRAGEN daarin zijn belangrijk, dus nooit "geen_actie" als er wachtende aanvragen in staan.
+- "prive": persoonlijke post die niets met het dakwerkersbedrijf te maken heeft (school of crèche van de kinderen, tickets voor een festival, een autokeuring van de gezinswagen, een privé-bestelling).
 Geef in "actieLabel" een kort werkwoord van max 2 woorden in het Vlaams voor de actieknop (bv. "Beantwoorden", "Opstellen", "Bevestigen", "Voorstel doen", "Opvolgen") — enkel als een actie nodig is, anders "".
 
 Bepaal ook waarover de mail gaat, met "soort" — exact een van:
@@ -109,9 +116,13 @@ Bepaal ook waarover de mail gaat, met "soort" — exact een van:
 - "afspraak": een datum, plaatsbezoek, planning of afspraak die vastgelegd of bevestigd moet worden
 - "factuur": een factuur, betaling, herinnering of boekhouding
 - "reclame": nieuwsbrief, promotie of ongevraagde reclame
+- "phishing": een mail die zich VOORDOET als een bekend bedrijf of dienst om geld of gegevens los te krijgen. Let op klassiekers: een pakket dat niet geleverd kon worden en waar nog een klein bedrag "douanerechten" of "verzendkosten" voor betaald moet worden (bpost, DHL, PostNL), een geblokkeerde rekening, een vervallen wachtwoord, een onverwachte terugbetaling. Kenmerken: een klein bedrag, hoogdringendheid, een link die niet naar het echte domein van het bedrijf gaat, of een afzender die het echte adres nabootst. Bij twijfel: liever phishing dan niet, en zet dan "belangrijk" op true met actieLabel "" — er mag NOOIT op betalen aangespoord worden.
 - "overig": al de rest
 
-Zet "belangrijk" op true bij een mail die hij echt niet mag missen: een klacht, een schadegeval, een deadline, een betwisting of een klant die dreigt af te haken. Anders false.
+Zet "belangrijk" op true bij een mail die hij echt niet mag missen: een klacht, een schadegeval, een deadline, een betwisting, een klant die dreigt af te haken, of een vermoedelijke phishingmail. Anders false.
+
+AL AFGEHANDELD:
+Antwoordt een klant duidelijk dat hij NIET verder gaat op een offerte ("we gaan hier niet verder op in", "we kiezen voor een andere partij", "niet nodig"), of bevestigt hij enkel iets zonder dat er nog actie nodig is ("in orde", "bedankt", "top"), zet dan "categorie" op "geen_actie" en "actieLabel" op "". Dan blijft zo'n zaak niet eeuwig openstaan.
 
 ABSOLUTE VOORRANG — aanvragen via zijn eigen website (daklo.be):
 Komt een mail binnen via het contact- of offerteformulier van zijn website, dan is dat een verse klantaanvraag en die is ALTIJD het belangrijkst. Herken dat aan zaken als: een afzender of onderwerp met "daklo", "contactformulier", "offerteaanvraag", "nieuw bericht via de website", "aanvraag via website", een automatische formuliermail met velden zoals naam/telefoon/adres/bericht, of een verzendend systeem (WordPress, noreply, wpforms, formulier).

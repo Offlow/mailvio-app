@@ -83,6 +83,12 @@
   .avatar{width:40px;height:40px;border-radius:50%;background:var(--avatar-bg);color:var(--avatar-ink);display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;flex:0 0 auto}
   .tag{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:99px;background:var(--accent-soft);color:var(--accent-ink);white-space:nowrap}
   .tag.leverancier{background:var(--surface-2);color:var(--ink-soft)}
+  .tag.boekhouding{background:#efe7fb;color:#5b34a6}
+  .tag.overheid{background:#e7f0fb;color:#1a4d8f}
+  .tag.bank{background:#e6f4ee;color:#14663f}
+  .phishing{background:#fdecea;color:#b3261e;font-size:10.5px;font-weight:800;padding:2px 8px;border-radius:99px;margin-right:7px;white-space:nowrap}
+  .tag.platform{background:#fdf0e0;color:#8a5200}
+  .tag.prive{background:var(--surface-2);color:var(--ink-faint)}
   .tag.onbekend{display:none}
   .pill{font-size:10.5px;font-weight:700;border-radius:99px;padding:3px 10px;white-space:nowrap}
   .pill.dringend,.pill.wacht{background:var(--red-soft);color:var(--red)}
@@ -2248,7 +2254,10 @@ function timeGreeting() {
 function renderVandaag() {
   const mount = document.getElementById("viewMount");
   const naam = (state.settings.aanspreektitel || "").trim() || (state.settings.displayName || "").split(" ")[0] || "";
-  const open = state.mails.filter((m) => !m.resolved && !m.genegeerd && m.soort !== "reclame");
+  // Privé-post en vermoedelijke oplichting horen niet tussen je zakelijke
+  // openstaande zaken.
+  const open = state.mails.filter((m) => !m.resolved && !m.genegeerd &&
+    m.soort !== "reclame" && m.soort !== "phishing" && m.vanType !== "prive");
   const nieuwste = (a, b) => new Date(b.date) - new Date(a.date);
 
   // Twee eenvoudige lijsten: wat vandaag moet, en wat deze week nog moet.
@@ -2467,13 +2476,19 @@ function markResolvedLocally(uid, resolved) {
 
 // plain = rij uit een gewone map (Verzonden, Archief, ...): daar hoort geen
 // AI-beoordeling bij, dus geen tags of urgentie-pillen.
+// Nooit afkorten: "Leverancier" staat er voluit, niet "Lever.".
+const VANTYPE_LABEL = { klant: "Klant", leverancier: "Leverancier", boekhouding: "Boekhouding", overheid: "Overheid", bank: "Bank", platform: "Aanvragen", prive: "Privé" };
+function vanTypeLabel(t) {
+  return VANTYPE_LABEL[t] || t.charAt(0).toUpperCase() + t.slice(1);
+}
+
 function mailRowHtml(m, plain) {
   return `
     <div class="mailRow" draggable="true" data-open="${m.uid}" data-sleep="${m.uid}">
       <span class="unreadDot ${m.unread ? "" : "read"}"></span>
       <span class="avatar" style="width:32px;height:32px;font-size:11px">${initials(m.from)}</span>
-      <div class="from"><span class="name">${escapeHtml(m.from)}</span>${!plain && m.vanType && m.vanType !== "onbekend" ? `<span class="tag ${m.vanType}">${m.vanType === "klant" ? "Klant" : "Lever."}</span>` : ""}</div>
-      <div class="subj"><b>${escapeHtml(m.subject)}</b>${m.heeftBijlage ? `<span class="clip" title="Heeft een bijlage">📎</span>` : ""}<span class="snip">— ${escapeHtml(m.snippet || "")}</span></div>
+      <div class="from"><span class="name">${escapeHtml(m.from)}</span>${!plain && m.vanType && m.vanType !== "onbekend" ? `<span class="tag ${m.vanType}">${vanTypeLabel(m.vanType)}</span>` : ""}</div>
+      <div class="subj">${m.soort === "phishing" ? '<span class="phishing" title="Dit lijkt oplichting — niet op klikken, niets betalen">⚠ Oplichting?</span>' : ""}<b>${escapeHtml(m.subject)}</b>${m.heeftBijlage ? `<span class="clip" title="Heeft een bijlage">📎</span>` : ""}<span class="snip">— ${escapeHtml(m.snippet || "")}</span></div>
       ${plain ? "" : (() => { const p = statusPill(m); return p ? `<span class="pill ${p.cls}">${escapeHtml(p.text)}</span>` : ""; })()}
       <div class="time">${tijdOfDatum(m.date)}</div>
     </div>
@@ -2792,7 +2807,7 @@ function renderOpenstaandeZaken() {
     <div class="todoCard">
       <span class="avatar">${initials(m.from)}</span>
       <div class="info">
-        <div class="name">${escapeHtml(m.from)} ${m.vanType && m.vanType !== "onbekend" ? `<span class="tag ${m.vanType}">${m.vanType === "klant" ? "Klant" : "Leverancier"}</span>` : ""}${m.categorie ? `<span class="pill ${m.categorie}">${escapeHtml(m.categorie)}</span>` : ""}</div>
+        <div class="name">${escapeHtml(m.from)} ${m.vanType && m.vanType !== "onbekend" ? `<span class="tag ${m.vanType}">${vanTypeLabel(m.vanType)}</span>` : ""}${m.categorie ? `<span class="pill ${m.categorie}">${escapeHtml(m.categorie)}</span>` : ""}</div>
         <div class="reden">${escapeHtml(m.reden || m.subject)}</div>
       </div>
       <div class="actions">
@@ -3328,7 +3343,7 @@ function renderMailBody(uid, m) {
   box.innerHTML = `
     <div class="mailMeta">
       ${pill ? `<span class="pill ${pill.cls}">${escapeHtml(pill.text)}</span>` : ""}
-      <span>${m.vanType === "klant" ? "Klantvraag" : m.vanType === "leverancier" ? "Leverancier" : "Mail"}${m.reden ? " · " + escapeHtml(m.reden) : ""}</span>
+      <span>${m.vanType && m.vanType !== "onbekend" ? vanTypeLabel(m.vanType) : "Mail"}${m.reden ? " · " + escapeHtml(m.reden) : ""}</span>
     </div>
     <h1>${escapeHtml(m.subject)}</h1>
     <div class="mailFrom compact">
