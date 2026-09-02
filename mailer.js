@@ -21,6 +21,32 @@ function transporter() {
   });
 }
 
+// Bevat de handtekening HTML (bv. een logo of opmaak)?
+function isHtmlHandtekening(h) {
+  return /<[a-z][\s\S]*>/i.test(h || "");
+}
+
+// HTML naar leesbare tekst, voor mailprogramma's die geen opmaak tonen.
+function htmlNaarTekst(html) {
+  return String(html || "")
+    .replace(/<(script|style)[\s\S]*?<\/\1>/gi, "")
+    .replace(/<(br|\/p|\/div|\/tr|\/h[1-6])\s*\/?>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/gi, " ")
+    .replace(/&amp;/gi, "&")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function escapeHtml(s) {
+  return String(s || "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
 // Plakt de vaste handtekening onderaan de mail, tenzij die er al in staat
 // (bv. omdat de gebruiker ze zelf al in de tekst zette of het AI-voorstel ze
 // al bevatte). Zo krijg je nooit twee keer dezelfde ondertekening.
@@ -28,8 +54,23 @@ function metHandtekening(text) {
   const handtekening = (settings.getConfig().handtekening || "").trim();
   const body = (text || "").replace(/\s+$/, "");
   if (!handtekening) return body;
-  if (body.includes(handtekening)) return body;
-  return `${body}\n\n${handtekening}`;
+  const platteHandtekening = isHtmlHandtekening(handtekening) ? htmlNaarTekst(handtekening) : handtekening;
+  if (platteHandtekening && body.includes(platteHandtekening)) return body;
+  return `${body}\n\n${platteHandtekening}`;
+}
+
+// Bouwt de opgemaakte versie van de mail: jouw tekst zoals getypt, met daaronder
+// de handtekening met logo en opmaak. Enkel nodig als de handtekening HTML is.
+function htmlVersie(text) {
+  const handtekening = (settings.getConfig().handtekening || "").trim();
+  if (!isHtmlHandtekening(handtekening)) return null;
+  const platte = htmlNaarTekst(handtekening);
+  let body = (text || "").replace(/\s+$/, "");
+  // Staat de handtekening al als tekst in het bericht? Dan die eruit halen,
+  // want ze komt er zo meteen in opgemaakte vorm onder.
+  if (platte && body.includes(platte)) body = body.replace(platte, "").replace(/\s+$/, "");
+  const bodyHtml = escapeHtml(body).replace(/\r?\n/g, "<br>");
+  return `<div style="font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;font-size:14px;line-height:1.6;color:#1a1a1a">${bodyHtml}<br><br>${handtekening}</div>`;
 }
 
 async function sendMail({ to, cc, subject, text, inReplyTo, references, attachments }) {
@@ -39,6 +80,10 @@ async function sendMail({ to, cc, subject, text, inReplyTo, references, attachme
   const c = settings.getConfig();
   const from = c.displayName ? `"${c.displayName}" <${c.smtpUser}>` : c.smtpUser;
   const bericht = { from, to, subject, text: metHandtekening(text) };
+  // Handtekening met logo/opmaak? Dan sturen we de mail in twee versies mee:
+  // opgemaakt voor wie dat kan tonen, platte tekst als terugval.
+  const html = htmlVersie(text);
+  if (html) bericht.html = html;
   // Bijlagen komen binnen als base64 vanuit de browser.
   if (Array.isArray(attachments) && attachments.length) {
     bericht.attachments = attachments

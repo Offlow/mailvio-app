@@ -6,6 +6,7 @@ const ai = require("./ai");
 const mailer = require("./mailer");
 const settingsStore = require("./settings");
 const classifications = require("./classifications");
+const mailstore = require("./mailstore");
 
 const app = express();
 // Ruimer dan standaard: bijlagen (offerte-pdf, dakfoto's) worden als tekst
@@ -33,15 +34,81 @@ const suggestionCache = new Map(); // uid -> voorstel, leegt mee met de mail-cac
 let folderCache = { at: 0, folders: [] };
 const FOLDER_CACHE_TTL_MS = 5 * 60 * 1000;
 
+// Hoeveel recente mails we bij een ververs opnieuw op gelezen/ongelezen
+// controleren — zodat een mail die je op je gsm las hier ook gelezen wordt.
+const VLAGGEN_CONTROLE = 60;
+// Hoeveel oudere mails we per ronde extra binnenhalen bij een grote mailbox.
+const BACKFILL_BATCH = 300;
+let backfillResterend = 0;
+
+// Haalt de kopregels op. Werkt als Outlook: wat we al hebben komt van de
+// schijf (dus meteen zichtbaar), en van de server halen we enkel de NIEUWE
+// berichten op. Zo hoeft je mailbox nooit meer volledig opnieuw ingeladen te
+// worden — ook niet na een herstart van de app.
 async function getLightMails(forceRefresh) {
+  const accountKey = settingsStore.getConfig().imapUser || "default";
+  const bewaard = mailstore.getMails(accountKey, "INBOX");
+
   const fresh = !forceRefresh && Date.now() - envelopeCache.at < ENVELOPE_CACHE_TTL_MS && envelopeCache.mails.length > 0;
   if (fresh) return { configured: true, ...envelopeCache };
 
-  const data = await mailbox.fetchAllMails();
-  if (data.configured) {
-    envelopeCache = { at: Date.now(), mails: data.mails, total: data.total, capped: data.capped };
+  if (!mailbox.isConfigured()) {
+    return { configured: false, mails: [], total: 0, capped: false };
   }
-  return data;
+
+  let mails = bewaard;
+  try {
+    const hoogste = mailstore.getHoogsteUid(accountKey, "INBOX");
+    const vorigeValidity = mailstore.getUidValidity(accountKey, "INBOX");
+
+    const data = await mailbox.fetchNieuweMails("INBOX", hoogste);
+    if (data.configured) {
+      // Wisselt de mailserver van nummering, dan kloppen onze bewaarde
+      // nummers niet meer en beginnen we voor deze map opnieuw.
+      if (vorigeValidity && data.uidValidity && vorigeValidity !== data.uidValidity) {
+        console.log("uidValidity gewijzigd — mailcache voor INBOX opnieuw opbouwen");
+        mailstore.wisMap(accountKey, "INBOX");
+        const volledig = await mailbox.fetchAllMails("INBOX");
+        mailstore.bewaarMails(accountKey, "INBOX", volledig.mails, data.uidValidity);
+      } else {
+        if (data.nieuwe.length) {
+          mailstore.bewaarMails(accountKey, "INBOX", data.nieuwe, data.uidValidity);
+        }
+        // Wat op de server weg is (verplaatst of verwijderd), hier ook weghalen.
+        if (data.alleUids && data.alleUids.length) {
+          mailstore.verwijderOntbrekende(accountKey, "INBOX", data.alleUids);
+        }
+        // Gelezen-status van de recentste berichten bijwerken.
+        const recent = mailstore.getMails(accountKey, "INBOX").slice(0, VLAGGEN_CONTROLE).map((m) => m.uid);
+        if (recent.length) {
+          const vlaggen = await mailbox.fetchVlaggen("INBOX", recent);
+          for (const [uid, v] of vlaggen) mailstore.werkBij(accountKey, "INBOX", uid, v);
+        }
+
+        // Achterstand wegwerken: bij een grote mailbox (duizenden mails) halen
+        // we per ronde een portie oudere berichten erbij, tot alles binnen is.
+        if (!mailstore.isVolledig(accountKey, "INBOX")) {
+          const laagste = mailstore.getLaagsteUid(accountKey, "INBOX");
+          if (laagste > 0) {
+            const ouder = await mailbox.fetchOudereMails("INBOX", laagste, BACKFILL_BATCH);
+            if (ouder.mails && ouder.mails.length) {
+              mailstore.bewaarMails(accountKey, "INBOX", ouder.mails, data.uidValidity);
+            }
+            if (ouder.klaar) mailstore.markeerVolledig(accountKey, "INBOX");
+            backfillResterend = ouder.resterend || 0;
+          }
+        }
+      }
+      mails = mailstore.getMails(accountKey, "INBOX");
+    }
+  } catch (e) {
+    // Server even niet bereikbaar? Dan tonen we gewoon wat we al hebben.
+    console.error("Nieuwe mails ophalen mislukt, bewaarde mails worden getoond:", e.message);
+    if (!mails.length) return { configured: true, mails: [], total: 0, capped: false };
+  }
+
+  envelopeCache = { at: Date.now(), mails, total: mails.length, capped: false };
+  return { configured: true, mails, total: mails.length, capped: false };
 }
 
 async function getMails(forceRefresh) {
@@ -202,6 +269,8 @@ app.get("/api/mails", async (req, res) => {
       envelopeCap: mailbox.ENVELOPE_CAP,
       scanned: data.scanned,
       scanning: data.scanning,
+      // Hoeveel oudere mails er nog opgehaald moeten worden bij een grote mailbox.
+      backfillResterend,
     });
   } catch (e) {
     console.error(e);

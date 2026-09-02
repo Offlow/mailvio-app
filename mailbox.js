@@ -95,6 +95,112 @@ function heeftBijlage(node) {
   return (node.childNodes || []).some(heeftBijlage);
 }
 
+// Haalt ENKEL op wat we nog niet hebben. Geeft terug welke uid's er nu op de
+// server staan, zodat de opslag weet wat er ondertussen verdwenen is.
+//
+// sindsUid = het hoogste nummer dat we al kennen; alles daarboven is nieuw.
+async function fetchNieuweMails(folder, sindsUid) {
+  if (!isConfigured()) return { configured: false, nieuwe: [], alleUids: [], uidValidity: null };
+
+  const box = folder || "INBOX";
+  const imap = client();
+  await imap.connect();
+  try {
+    const lock = await imap.getMailboxLock(box);
+    try {
+      const mailboxInfo = imap.mailbox || {};
+      const uidValidity = mailboxInfo.uidValidity ? String(mailboxInfo.uidValidity) : null;
+
+      // Welke berichten staan er nu op de server? (enkel nummers, heel licht)
+      const alleUids = await imap.search({ all: true }, { uid: true });
+      const bestaande = (alleUids || []).map(Number);
+
+      const nieuweUids = bestaande.filter((u) => u > Number(sindsUid || 0));
+      // Veiligheidsgrens blijft gelden voor een allereerste keer inladen.
+      const teHalen = nieuweUids.slice(-ENVELOPE_CAP);
+
+      const nieuwe = [];
+      if (teHalen.length) {
+        for await (const msg of imap.fetch(teHalen, { envelope: true, flags: true, bodyStructure: true }, { uid: true })) {
+          nieuwe.push({
+            uid: msg.uid,
+            from: msg.envelope.from?.[0]?.name || msg.envelope.from?.[0]?.address || "Onbekend",
+            fromAddress: msg.envelope.from?.[0]?.address || "",
+            subject: msg.envelope.subject || "(geen onderwerp)",
+            date: msg.envelope.date ? new Date(msg.envelope.date).toISOString() : null,
+            unread: !msg.flags.has("\\Seen"),
+            heeftBijlage: heeftBijlage(msg.bodyStructure),
+          });
+        }
+      }
+
+      return { configured: true, nieuwe, alleUids: bestaande, uidValidity, capped: nieuweUids.length > ENVELOPE_CAP };
+    } finally {
+      lock.release();
+    }
+  } finally {
+    await imap.logout().catch(() => {});
+  }
+}
+
+// Haalt een portie OUDERE berichten op — die van vóór wat we al bewaard
+// hebben. Zo vult een grote mailbox (duizenden mails) zichzelf stap voor stap
+// aan op de achtergrond, zonder ooit één zware ophaalbeurt te doen.
+async function fetchOudereMails(folder, onderUid, aantal) {
+  if (!isConfigured() || !onderUid) return { configured: false, mails: [] };
+  const imap = client();
+  await imap.connect();
+  try {
+    const lock = await imap.getMailboxLock(folder || "INBOX");
+    try {
+      const alleUids = await imap.search({ all: true }, { uid: true });
+      const ouder = (alleUids || []).map(Number).filter((u) => u < Number(onderUid));
+      if (!ouder.length) return { configured: true, mails: [], klaar: true };
+      const teHalen = ouder.slice(-Math.max(1, Number(aantal) || 200));
+
+      const mails = [];
+      for await (const msg of imap.fetch(teHalen, { envelope: true, flags: true, bodyStructure: true }, { uid: true })) {
+        mails.push({
+          uid: msg.uid,
+          from: msg.envelope.from?.[0]?.name || msg.envelope.from?.[0]?.address || "Onbekend",
+          fromAddress: msg.envelope.from?.[0]?.address || "",
+          subject: msg.envelope.subject || "(geen onderwerp)",
+          date: msg.envelope.date ? new Date(msg.envelope.date).toISOString() : null,
+          unread: !msg.flags.has("\\Seen"),
+          heeftBijlage: heeftBijlage(msg.bodyStructure),
+        });
+      }
+      return { configured: true, mails, klaar: ouder.length <= teHalen.length, resterend: ouder.length - teHalen.length };
+    } finally {
+      lock.release();
+    }
+  } finally {
+    await imap.logout().catch(() => {});
+  }
+}
+
+// Haalt enkel de gelezen/ongelezen-vlaggen op van de recentste berichten, zodat
+// een mail die je elders (gsm, Outlook) las hier ook als gelezen komt te staan.
+async function fetchVlaggen(folder, uids) {
+  if (!isConfigured() || !uids || !uids.length) return new Map();
+  const out = new Map();
+  const imap = client();
+  await imap.connect();
+  try {
+    const lock = await imap.getMailboxLock(folder || "INBOX");
+    try {
+      for await (const msg of imap.fetch(uids, { flags: true }, { uid: true })) {
+        out.set(msg.uid, { unread: !msg.flags.has("\\Seen") });
+      }
+    } finally {
+      lock.release();
+    }
+  } finally {
+    await imap.logout().catch(() => {});
+  }
+  return out;
+}
+
 async function fetchAllMails(folder) {
   if (!isConfigured()) {
     return { configured: false, mails: [], total: 0, capped: false };
@@ -300,19 +406,34 @@ const ROL_PER_NAAM = {
 };
 
 // Zoekt de map met een bepaalde rol (archief, prullenmand, ...) op de server.
+// Zoekt DE map voor een rol. Staan er meerdere kandidaten (bv. "Sent" én
+// "Sent Items"), dan wint de map met de officiële markering van de server;
+// anders die met de meeste berichten — dat is de map die je echt gebruikt.
 async function vindMapMetRol(imap, rol) {
   const lijst = await imap.list();
   const specials = Object.entries(ROL_PER_SPECIALUSE).find(([, r]) => r === rol);
-  if (specials) {
-    const m = lijst.find((f) => f.specialUse === specials[0]);
-    if (m) return m.path;
-  }
-  const m2 = lijst.find((f) => {
+
+  const kandidaten = lijst.filter((f) => {
+    if (f.flags && (f.flags.has?.("\\Noselect") || f.flags.has?.("\\NonExistent"))) return false;
+    if (specials && f.specialUse === specials[0]) return true;
     const naam = (f.name || "").toLowerCase();
     const pad = (f.path || "").toLowerCase();
     return ROL_PER_NAAM[naam] === rol || ROL_PER_NAAM[pad] === rol;
   });
-  return m2 ? m2.path : null;
+  if (!kandidaten.length) return null;
+  if (kandidaten.length === 1) return kandidaten[0].path;
+
+  let beste = null;
+  let besteScore = -1;
+  for (const f of kandidaten) {
+    let aantal = 0;
+    try {
+      aantal = (await imap.status(f.path, { messages: true })).messages || 0;
+    } catch (e) { /* map niet opvraagbaar */ }
+    const score = (specials && f.specialUse === specials[0] ? 1e9 : 0) + aantal;
+    if (score > besteScore) { besteScore = score; beste = f; }
+  }
+  return beste ? beste.path : kandidaten[0].path;
 }
 
 // Zet of verwijdert de "gelezen"-vlag — precies wat een gewone mailclient doet.
@@ -423,10 +544,30 @@ async function listFolders() {
         path: f.path,
         name: f.name || f.path,
         rol,
+        specialUse: f.specialUse || "",
         messages,
         unseen,
       });
     }
+
+    // Sommige mailservers hebben MEERDERE mappen die op hetzelfde neerkomen —
+    // bv. zowel "Sent" (6800 berichten) als "Sent Items" (10 berichten), of
+    // "Trash" naast "Deleted Items". Voor elke rol houden we er één over: die
+    // met de officiële markering van de server, anders die met de meeste
+    // berichten. De andere blijven gewoon zichtbaar onder hun eigen naam.
+    const beste = new Map();
+    for (const f of folders) {
+      if (!f.rol) continue;
+      const huidige = beste.get(f.rol);
+      if (!huidige) { beste.set(f.rol, f); continue; }
+      const fScore = (f.specialUse ? 1e9 : 0) + (f.messages || 0);
+      const hScore = (huidige.specialUse ? 1e9 : 0) + (huidige.messages || 0);
+      if (fScore > hScore) beste.set(f.rol, f);
+    }
+    for (const f of folders) {
+      if (f.rol && beste.get(f.rol) !== f) f.rol = "";
+    }
+
     return { configured: true, folders };
   } finally {
     await imap.logout().catch(() => {});
@@ -661,6 +802,9 @@ async function fetchFollowUps() {
 
 module.exports = {
   fetchAllMails,
+  fetchNieuweMails,
+  fetchOudereMails,
+  fetchVlaggen,
   fetchSnippetsForUids,
   fetchMailBody,
   listFolders,

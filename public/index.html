@@ -162,7 +162,9 @@
   .htmlMailBar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:9px 12px;margin-bottom:12px;font-size:12.5px;color:var(--ink-soft)}
   .htmlMailBar button{border:1px solid var(--accent);background:var(--surface);color:var(--accent-ink);border-radius:7px;padding:5px 11px;font-size:12px;font-weight:700;cursor:pointer;margin-left:auto}
   .htmlMailBar button:hover{background:var(--accent-soft)}
-  #mailFrame{width:100%;min-height:220px;border:none;display:block;background:#fff;border-radius:8px}
+  /* Geen eigen scrollbalk: het venster is even hoog als de mail zelf, je
+     scrollt gewoon de pagina door tot bij de antwoordknoppen. */
+  #mailFrame{width:100%;min-height:120px;border:none;display:block;background:#fff;border-radius:8px;overflow:hidden}
 
   /* Bijlagen */
   .bijlagen{margin-top:20px;padding-top:14px;border-top:1px solid var(--border)}
@@ -353,17 +355,21 @@
     </div>
 
     <div class="sectionLabel">Handtekening</div>
-    <p class="hint" style="margin:-2px 0 8px">Komt automatisch onderaan elke mail die je verstuurt, ook bij een antwoord. Meerdere regels mag.</p>
+    <p class="hint" style="margin:-2px 0 8px">Komt automatisch onderaan élke mail die je verstuurt, ook bij een antwoord en bij een AI-voorstel. Gewone tekst mag, maar je kan hier ook HTML plakken met een logo, kleuren en links — dan wordt je mail opgemaakt verstuurd, met platte tekst als terugval.</p>
     <div class="fieldList">
-      <div class="fieldRow"><label for="setSignature">Onderaan de mail</label><textarea id="setSignature" rows="5" placeholder="Met vriendelijke groeten,&#10;Silvio De Maeyer&#10;Dakwerken Daklo&#10;0470 12 34 56 · info@daklo.be"></textarea></div>
+      <div class="fieldRow"><label for="setSignature">Onderaan de mail</label><textarea id="setSignature" rows="7" placeholder="Met vriendelijke groeten,&#10;Silvio De Maeyer&#10;Dakwerken Daklo&#10;0470 12 34 56 · info@daklo.be&#10;&#10;of HTML met logo:&#10;&lt;table&gt;&lt;tr&gt;&lt;td&gt;&lt;img src=&quot;https://daklo.be/logo.png&quot; width=&quot;90&quot;&gt;&lt;/td&gt;...&lt;/table&gt;"></textarea></div>
     </div>
+    <div id="handtekeningVoorbeeld" class="hint" style="margin:6px 0 0"></div>
 
     <div class="sectionLabel">AI-instellingen</div>
-    <p class="hint" style="margin:-2px 0 8px">Bepaalt hoe Mailvio AI je antwoorden opstelt en herschrijft.</p>
+    <p class="hint" style="margin:-2px 0 8px">Bepaalt hoe Mailvio AI je antwoorden opstelt en herschrijft. Ondertekenen doet de AI niet meer zelf — daar zorgt je handtekening hierboven voor.</p>
     <div class="fieldList">
       <div class="fieldRow"><label for="setAiToon">Schrijfstijl</label><input id="setAiToon" type="text" placeholder="Vlaams, kort en professioneel" autocomplete="off"></div>
-      <div class="fieldRow"><label for="setAiSign">Naam onder AI-antwoord</label><input id="setAiSign" type="text" placeholder="Silvio" autocomplete="off"></div>
     </div>
+
+    <div class="sectionLabel">Meer mailboxen</div>
+    <p class="hint" style="margin:-2px 0 8px">Bijvoorbeeld boekhouding@daklo.be naast info@daklo.be. Elke mailbox heeft eigen mappen en een eigen handtekening; je Claude-sleutel en schrijfstijl zijn gedeeld.</p>
+    <button class="btn btn-ghost" id="setExtraAccount" style="margin-bottom:4px">＋ Extra mailbox toevoegen</button>
 
     <div id="settingsMsg" class="settingsMsg"></div>
     <div class="modal-actions">
@@ -429,6 +435,22 @@ function initials(name) {
   const parts = String(name || "?").trim().split(/\s+/);
   return ((parts[0]?.[0] || "") + (parts[1]?.[0] || "")).toUpperCase() || "?";
 }
+// Mail van vandaag toont het uur (14:32), zoals in elke mailbox. Ouder dan
+// vandaag toont de datum; van een vorig jaar ook het jaartal.
+function tijdOfDatum(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d)) return "";
+  const nu = new Date();
+  const zelfdeDag =
+    d.getDate() === nu.getDate() && d.getMonth() === nu.getMonth() && d.getFullYear() === nu.getFullYear();
+  if (zelfdeDag) return d.toLocaleTimeString("nl-BE", { hour: "2-digit", minute: "2-digit" });
+  if (d.getFullYear() === nu.getFullYear()) {
+    return d.toLocaleDateString("nl-BE", { day: "2-digit", month: "2-digit" });
+  }
+  return d.toLocaleDateString("nl-BE", { day: "2-digit", month: "2-digit", year: "2-digit" });
+}
+
 function daysAgo(iso) {
   if (!iso) return 0;
   return Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 86400000));
@@ -681,6 +703,7 @@ async function loadMails(forceRefresh) {
   state.envelopeCap = data.envelopeCap;
   state.mailsScanned = data.scanned || 0;
   state.mailsScanning = !!data.scanning;
+  state.backfillResterend = data.backfillResterend || 0;
   renderBanner();
   renderSidebarCounts();
   renderView();
@@ -948,7 +971,7 @@ function mailRowHtml(m, plain) {
       <div class="from"><span class="name">${escapeHtml(m.from)}</span>${!plain && m.vanType && m.vanType !== "onbekend" ? `<span class="tag ${m.vanType}">${m.vanType === "klant" ? "Klant" : "Lever."}</span>` : ""}</div>
       <div class="subj"><b>${escapeHtml(m.subject)}</b>${m.heeftBijlage ? `<span class="clip" title="Heeft een bijlage">📎</span>` : ""}<span class="snip">— ${escapeHtml(m.snippet || "")}</span></div>
       ${plain ? "" : (() => { const p = statusPill(m); return p ? `<span class="pill ${p.cls}">${escapeHtml(p.text)}</span>` : ""; })()}
-      <div class="time">${m.date ? new Date(m.date).toLocaleDateString("nl-BE", { day: "2-digit", month: "2-digit" }) : ""}</div>
+      <div class="time">${tijdOfDatum(m.date)}</div>
     </div>
   `;
 }
@@ -1001,6 +1024,7 @@ function renderInbox() {
           ${state.mailsScanning
             ? ` Bezig met scannen door de AI: ${state.mailsScanned} van ${state.mails.length} beoordeeld — dit werkt vanzelf verder op de achtergrond.`
             : ` Alle ${state.mailsScanned} geladen mails zijn door de AI beoordeeld.`}
+          ${state.backfillResterend ? ` Nog ${state.backfillResterend} oudere mails worden op de achtergrond binnengehaald.` : ""}
         </div>
         <div class="searchRow">
           <input id="inboxSearch" type="text" placeholder="Zoek in mailbox...">
@@ -1404,18 +1428,47 @@ function vulHtmlMail(m) {
   pre{white-space:pre-wrap;word-break:break-word}
 </style></head><body>${metAfbeeldingen ? (m.html || "").replace(/<img([^>]*?)\sdata-src=/gi, "<img$1 src=") : (m.html || "")}</body></html>`;
 
+  // De mail moet VOLLEDIG te zien zijn: het venster groeit mee met de inhoud,
+  // en je scrollt gewoon de pagina door tot bij Beantwoorden en Doorsturen.
+  // Geen klein scrollvakje binnen de pagina.
+  function meetHoogte() {
+    try {
+      const doc = frame.contentDocument;
+      if (!doc || !doc.body) return;
+      const hoogte = Math.max(
+        doc.body.scrollHeight,
+        doc.documentElement ? doc.documentElement.scrollHeight : 0
+      );
+      if (hoogte > 0) frame.style.height = hoogte + 24 + "px";
+    } catch (e) {
+      frame.style.height = "800px";
+    }
+  }
+
+  // Luisteraar EERST koppelen: anders is de inhoud soms al geladen voor we
+  // meten, en blijft het venster op zijn minimumhoogte staan — dat was net
+  // het kleine scrollvakje.
+  frame.addEventListener("load", () => {
+    meetHoogte();
+    // Nog eens meten nadat afbeeldingen en lettertypes binnen zijn, want die
+    // maken de mail vaak hoger dan bij de eerste meting.
+    setTimeout(meetHoogte, 150);
+    setTimeout(meetHoogte, 600);
+    try {
+      const doc = frame.contentDocument;
+      if (doc && window.ResizeObserver) {
+        new ResizeObserver(meetHoogte).observe(doc.body);
+      }
+      if (doc) {
+        doc.querySelectorAll("img").forEach((img) => img.addEventListener("load", meetHoogte));
+      }
+    } catch (e) { /* niet erg, de metingen hierboven volstaan */ }
+  });
+
   const zet = (metAfbeeldingen) => {
     frame.srcdoc = bouwDoc(metAfbeeldingen);
   };
   zet(false);
-
-  // Hoogte meegroeien met de inhoud, zodat er geen scrollbalk in een scrollbalk staat.
-  frame.addEventListener("load", () => {
-    try {
-      const doc = frame.contentDocument;
-      if (doc) frame.style.height = Math.min(doc.body.scrollHeight + 24, 4000) + "px";
-    } catch (e) { frame.style.height = "600px"; }
-  });
 
   const knop = document.getElementById("toonAfbeeldingen");
   if (knop) {
@@ -2081,6 +2134,7 @@ async function openSettings() {
     document.getElementById("setAiToon").value = data.aiToon || "";
     document.getElementById("setAiSign").value = data.aiHandtekening || "";
     document.getElementById("setSignature").value = data.handtekening || "";
+    toonHandtekeningVoorbeeld();
   } catch (e) {
     msgEl.textContent = "Kon de huidige instellingen niet ophalen.";
     msgEl.className = "settingsMsg err";
@@ -2184,6 +2238,21 @@ async function saveSettings() {
   } finally {
     saveBtn.disabled = false;
   }
+}
+
+document.getElementById("setExtraAccount").addEventListener("click", () => nieuweMailbox());
+
+// Laat meteen zien of je handtekening als opmaak of als platte tekst
+// verstuurd wordt, zodat je niet hoeft te gokken.
+document.getElementById("setSignature").addEventListener("input", toonHandtekeningVoorbeeld);
+function toonHandtekeningVoorbeeld() {
+  const mount = document.getElementById("handtekeningVoorbeeld");
+  const waarde = document.getElementById("setSignature").value || "";
+  if (!waarde.trim()) { mount.textContent = ""; return; }
+  const isHtml = /<[a-z][\s\S]*>/i.test(waarde);
+  mount.textContent = isHtml
+    ? "Wordt als opgemaakte handtekening verstuurd (met platte tekst als terugval)."
+    : "Wordt als gewone tekst onderaan je mail gezet.";
 }
 
 document.getElementById("settingsBtn").addEventListener("click", openSettings);
