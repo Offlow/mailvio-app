@@ -47,6 +47,25 @@ function htmlToText(html) {
     .trim();
 }
 
+// Maakt de HTML van een mail veilig om te tonen: alles wat code kan uitvoeren
+// of stiekem gegevens kan versturen gaat eruit. Externe afbeeldingen worden
+// onklaar gemaakt (src -> data-src) zodat een afzender niet kan zien dat je de
+// mail geopend hebt; de app kan ze op vraag alsnog laden.
+function schoonHtml(html) {
+  if (!html) return "";
+  return String(html)
+    .replace(/<\s*(script|iframe|object|embed|link|meta|base|form)[\s\S]*?<\/\s*\1\s*>/gi, "")
+    .replace(/<\s*(script|iframe|object|embed|link|meta|base|form)\b[^>]*\/?>/gi, "")
+    // inline event-handlers (onclick, onerror, ...)
+    .replace(/\son[a-z]+\s*=\s*"[^"]*"/gi, "")
+    .replace(/\son[a-z]+\s*=\s*'[^']*'/gi, "")
+    .replace(/\son[a-z]+\s*=\s*[^\s>]+/gi, "")
+    // javascript:-links
+    .replace(/(href|src)\s*=\s*("|')\s*javascript:[^"']*\2/gi, '$1="#"')
+    // externe afbeeldingen pas laden als de gebruiker het vraagt
+    .replace(/<img([^>]*?)\ssrc\s*=/gi, "<img$1 data-src=");
+}
+
 async function extractPlainText(source) {
   try {
     const parsed = await simpleParser(source);
@@ -63,17 +82,31 @@ async function extractPlainText(source) {
 // lichte fetch (enkel envelope + vlaggen, geen inhoud) zodat dit snel blijft
 // ook bij honderden/duizenden berichten. De inhoud (voor AI-beoordeling)
 // wordt apart en in porties opgehaald via fetchSnippetsForUids — zie server.js.
-async function fetchAllMails() {
+// Kijkt in de structuur van een mail of er een echte bijlage in zit, zonder
+// de mail zelf te downloaden.
+function heeftBijlage(node) {
+  if (!node) return false;
+  const disp = (node.disposition || "").toLowerCase();
+  if (disp === "attachment") return true;
+  if (node.dispositionParameters?.filename || node.parameters?.name) {
+    const type = (node.type || "").toLowerCase();
+    if (!type.startsWith("text/") && !type.startsWith("multipart/")) return true;
+  }
+  return (node.childNodes || []).some(heeftBijlage);
+}
+
+async function fetchAllMails(folder) {
   if (!isConfigured()) {
     return { configured: false, mails: [], total: 0, capped: false };
   }
 
+  const box = folder || "INBOX";
   const imap = client();
   await imap.connect();
   try {
-    const lock = await imap.getMailboxLock("INBOX");
+    const lock = await imap.getMailboxLock(box);
     try {
-      const status = await imap.status("INBOX", { messages: true });
+      const status = await imap.status(box, { messages: true });
       const total = status.messages || 0;
       if (total === 0) return { configured: true, mails: [], total: 0, capped: false };
 
@@ -81,7 +114,9 @@ async function fetchAllMails() {
       const from = capped ? total - ENVELOPE_CAP + 1 : 1;
 
       const mails = [];
-      for await (const msg of imap.fetch(`${from}:${total}`, { envelope: true, flags: true })) {
+      // bodyStructure erbij: daarmee weten we of er bijlagen zijn zonder de
+      // volledige mail te downloaden (blijft dus snel).
+      for await (const msg of imap.fetch(`${from}:${total}`, { envelope: true, flags: true, bodyStructure: true })) {
         mails.push({
           uid: msg.uid,
           from: msg.envelope.from?.[0]?.name || msg.envelope.from?.[0]?.address || "Onbekend",
@@ -89,6 +124,7 @@ async function fetchAllMails() {
           subject: msg.envelope.subject || "(geen onderwerp)",
           date: msg.envelope.date ? new Date(msg.envelope.date).toISOString() : null,
           unread: !msg.flags.has("\\Seen"),
+          heeftBijlage: heeftBijlage(msg.bodyStructure),
         });
       }
       mails.sort((a, b) => new Date(b.date) - new Date(a.date));
@@ -104,13 +140,13 @@ async function fetchAllMails() {
 
 // Haalt voor een specifieke reeks uid's de inhoud op en bouwt er een kort
 // fragment van (voor AI-beoordeling en als voorbeeldtekst in de inboxlijst).
-async function fetchSnippetsForUids(uids) {
+async function fetchSnippetsForUids(uids, folder) {
   const out = new Map();
   if (!isConfigured() || !uids || !uids.length) return out;
   const imap = client();
   await imap.connect();
   try {
-    const lock = await imap.getMailboxLock("INBOX");
+    const lock = await imap.getMailboxLock(folder || "INBOX");
     try {
       for await (const msg of imap.fetch(uids, { source: true }, { uid: true })) {
         const text = await extractPlainText(msg.source);
@@ -125,29 +161,251 @@ async function fetchSnippetsForUids(uids) {
   return out;
 }
 
-async function fetchMailBody(uid) {
+async function fetchMailBody(uid, folder) {
   if (!isConfigured()) {
     throw new Error("De mailbox is nog niet gekoppeld.");
   }
   const imap = client();
   await imap.connect();
   try {
-    const lock = await imap.getMailboxLock("INBOX");
+    const lock = await imap.getMailboxLock(folder || "INBOX");
     try {
       const msg = await imap.fetchOne(String(uid), { envelope: true, source: true }, { uid: true });
       if (!msg) return null;
-      const text = await extractPlainText(msg.source);
+      const parsed = await simpleParser(msg.source).catch(() => null);
+      const text = parsed
+        ? (parsed.text && parsed.text.trim() ? parsed.text.trim() : htmlToText(parsed.html))
+        : await extractPlainText(msg.source);
+      // Bijlagen (offertes, facturen, foto's van een dak, ...) tonen we in de
+      // mail zelf; de inhoud zelf wordt pas opgehaald als je ze opent.
+      const html = parsed?.html ? schoonHtml(parsed.html) : "";
+      const attachments = (parsed?.attachments || [])
+        .filter((a) => a.contentDisposition !== "inline" || a.filename)
+        .map((a, i) => ({
+          index: i,
+          filename: a.filename || `bijlage-${i + 1}`,
+          contentType: a.contentType || "application/octet-stream",
+          size: a.size || (a.content ? a.content.length : 0),
+        }));
+      const env = msg.envelope || {};
+      const adressen = (lijst) =>
+        (lijst || [])
+          .map((a) => a.address)
+          .filter(Boolean);
       return {
         uid,
-        from: msg.envelope.from?.[0]?.name || msg.envelope.from?.[0]?.address || "Onbekend",
-        fromAddress: msg.envelope.from?.[0]?.address || "",
-        subject: msg.envelope.subject || "(geen onderwerp)",
-        date: msg.envelope.date ? new Date(msg.envelope.date).toISOString() : null,
+        from: env.from?.[0]?.name || env.from?.[0]?.address || "Onbekend",
+        fromAddress: env.from?.[0]?.address || "",
+        // Voor "Allen beantwoorden": alle andere geadresseerden van de mail.
+        to: adressen(env.to),
+        cc: adressen(env.cc),
+        // Voor een net antwoord in dezelfde conversatie (threading in Outlook/Gmail).
+        messageId: env.messageId || "",
+        replyTo: env.replyTo?.[0]?.address || "",
+        subject: env.subject || "(geen onderwerp)",
+        date: env.date ? new Date(env.date).toISOString() : null,
         text,
+        html,
+        attachments,
       };
     } finally {
       lock.release();
     }
+  } finally {
+    await imap.logout().catch(() => {});
+  }
+}
+
+// Haalt één bijlage op zodat ze gedownload/geopend kan worden.
+async function fetchAttachment(uid, index, folder) {
+  if (!isConfigured()) throw new Error("De mailbox is nog niet gekoppeld.");
+  const imap = client();
+  await imap.connect();
+  try {
+    const lock = await imap.getMailboxLock(folder || "INBOX");
+    try {
+      const msg = await imap.fetchOne(String(uid), { source: true }, { uid: true });
+      if (!msg) return null;
+      const parsed = await simpleParser(msg.source);
+      const lijst = (parsed.attachments || []).filter((a) => a.contentDisposition !== "inline" || a.filename);
+      const att = lijst[Number(index)];
+      if (!att) return null;
+      return {
+        filename: att.filename || `bijlage-${Number(index) + 1}`,
+        contentType: att.contentType || "application/octet-stream",
+        content: att.content,
+      };
+    } finally {
+      lock.release();
+    }
+  } finally {
+    await imap.logout().catch(() => {});
+  }
+}
+
+// Haalt de echte mappenstructuur van de mailbox op (Inbox, Verzonden,
+// Concepten, Archief, Prullenmand + eigen mappen), met het aantal berichten
+// en het aantal ongelezen per map.
+const ROL_PER_SPECIALUSE = {
+  "\\Inbox": "inbox",
+  "\\Sent": "verzonden",
+  "\\Drafts": "concepten",
+  "\\Trash": "prullenmand",
+  "\\Junk": "spam",
+  "\\Archive": "archief",
+};
+
+const ROL_PER_NAAM = {
+  inbox: "inbox",
+  sent: "verzonden",
+  "sent items": "verzonden",
+  "sent messages": "verzonden",
+  verzonden: "verzonden",
+  "verzonden items": "verzonden",
+  drafts: "concepten",
+  concepten: "concepten",
+  trash: "prullenmand",
+  deleted: "prullenmand",
+  "deleted items": "prullenmand",
+  prullenmand: "prullenmand",
+  verwijderd: "prullenmand",
+  junk: "spam",
+  spam: "spam",
+  ongewenst: "spam",
+  archive: "archief",
+  archief: "archief",
+  gearchiveerd: "archief",
+};
+
+// Zoekt de map met een bepaalde rol (archief, prullenmand, ...) op de server.
+async function vindMapMetRol(imap, rol) {
+  const lijst = await imap.list();
+  const specials = Object.entries(ROL_PER_SPECIALUSE).find(([, r]) => r === rol);
+  if (specials) {
+    const m = lijst.find((f) => f.specialUse === specials[0]);
+    if (m) return m.path;
+  }
+  const m2 = lijst.find((f) => {
+    const naam = (f.name || "").toLowerCase();
+    const pad = (f.path || "").toLowerCase();
+    return ROL_PER_NAAM[naam] === rol || ROL_PER_NAAM[pad] === rol;
+  });
+  return m2 ? m2.path : null;
+}
+
+// Zet of verwijdert de "gelezen"-vlag — precies wat een gewone mailclient doet.
+async function markeerGelezen(uid, gelezen, folder) {
+  if (!isConfigured()) throw new Error("De mailbox is nog niet gekoppeld.");
+  const imap = client();
+  await imap.connect();
+  try {
+    const lock = await imap.getMailboxLock(folder || "INBOX");
+    try {
+      if (gelezen) await imap.messageFlagsAdd(String(uid), ["\\Seen"], { uid: true });
+      else await imap.messageFlagsRemove(String(uid), ["\\Seen"], { uid: true });
+      return { ok: true, unread: !gelezen };
+    } finally {
+      lock.release();
+    }
+  } finally {
+    await imap.logout().catch(() => {});
+  }
+}
+
+// Verplaatst een mail naar een andere map (archiveren of naar de prullenmand).
+// Valt terug op het markeren als verwijderd als de map niet bestaat.
+async function verplaatsMail(uid, doelRol, folder) {
+  if (!isConfigured()) throw new Error("De mailbox is nog niet gekoppeld.");
+  const imap = client();
+  await imap.connect();
+  try {
+    const doel = await vindMapMetRol(imap, doelRol);
+    const bron = folder || "INBOX";
+    const lock = await imap.getMailboxLock(bron);
+    try {
+      if (doel && doel !== bron) {
+        await imap.messageMove(String(uid), doel, { uid: true });
+        return { ok: true, naar: doel };
+      }
+      // Geen aparte map op deze server: dan markeren als verwijderd.
+      await imap.messageFlagsAdd(String(uid), ["\\Deleted"], { uid: true });
+      return { ok: true, naar: null, gemarkeerd: true };
+    } finally {
+      lock.release();
+    }
+  } finally {
+    await imap.logout().catch(() => {});
+  }
+}
+
+// Schrijft een verstuurde mail bij in de map "Verzonden" op de mailserver,
+// zodat ze ook in Outlook of op je gsm terug te vinden is.
+async function bewaarInVerzonden(raw) {
+  if (!isConfigured() || !raw) return { ok: false };
+  const imap = client();
+  await imap.connect();
+  try {
+    const doel = await vindMapMetRol(imap, "verzonden");
+    if (!doel) return { ok: false, reden: "geen map Verzonden gevonden" };
+    await imap.append(doel, raw, ["\\Seen"]);
+    return { ok: true, map: doel };
+  } finally {
+    await imap.logout().catch(() => {});
+  }
+}
+
+// Bewaart een onafgewerkte mail als concept op de mailserver, zodat je er
+// later (ook vanaf je gsm of in Outlook) aan verder kan werken.
+async function bewaarConcept(raw) {
+  if (!isConfigured() || !raw) return { ok: false };
+  const imap = client();
+  await imap.connect();
+  try {
+    const doel = await vindMapMetRol(imap, "concepten");
+    if (!doel) return { ok: false, reden: "geen map Concepten gevonden" };
+    await imap.append(doel, raw, ["\\Draft", "\\Seen"]);
+    return { ok: true, map: doel };
+  } finally {
+    await imap.logout().catch(() => {});
+  }
+}
+
+async function listFolders() {
+  if (!isConfigured()) return { configured: false, folders: [] };
+  const imap = client();
+  await imap.connect();
+  try {
+    const lijst = await imap.list();
+    const folders = [];
+    for (const f of lijst) {
+      if (f.flags && (f.flags.has?.("\\Noselect") || f.flags.has?.("\\NonExistent"))) continue;
+      const naam = (f.name || "").toLowerCase();
+      const pad = (f.path || "").toLowerCase();
+      const rol =
+        ROL_PER_SPECIALUSE[f.specialUse] ||
+        ROL_PER_NAAM[naam] ||
+        ROL_PER_NAAM[pad] ||
+        (pad === "inbox" ? "inbox" : "");
+
+      let messages = null;
+      let unseen = null;
+      try {
+        const st = await imap.status(f.path, { messages: true, unseen: true });
+        messages = st.messages ?? null;
+        unseen = st.unseen ?? null;
+      } catch (e) {
+        /* map kan niet opgevraagd worden — toon ze dan zonder teller */
+      }
+
+      folders.push({
+        path: f.path,
+        name: f.name || f.path,
+        rol,
+        messages,
+        unseen,
+      });
+    }
+    return { configured: true, folders };
   } finally {
     await imap.logout().catch(() => {});
   }
@@ -172,27 +430,51 @@ async function parseAndBuild(msg) {
   };
 }
 
-async function searchMails(query, limit = 30) {
+// Zoekt standaard in de hele mailbox: inbox + verzonden + archief + eigen
+// mappen. Zo vind je ook terug wat je zelf ooit geantwoord hebt.
+const ZOEK_MAPPEN_MAX = 6;
+
+async function searchMails(query, limit = 30, alleMappen = true) {
   if (!isConfigured()) return { configured: false, mails: [] };
   const q = (query || "").trim();
   if (!q) return { configured: true, mails: [] };
   const imap = client();
   await imap.connect();
   try {
-    const lock = await imap.getMailboxLock("INBOX");
-    try {
-      const uids = await imap.search({ text: q }, { uid: true });
-      if (!uids || !uids.length) return { configured: true, mails: [] };
-      const recentUids = uids.slice(-limit);
-      const mails = [];
-      for await (const msg of imap.fetch(recentUids, { envelope: true, flags: true, source: true }, { uid: true })) {
-        mails.push(await parseAndBuild(msg));
-      }
-      mails.sort((a, b) => new Date(b.date) - new Date(a.date));
-      return { configured: true, mails };
-    } finally {
-      lock.release();
+    let paden = ["INBOX"];
+    if (alleMappen) {
+      try {
+        const lijst = await imap.list();
+        const rest = lijst
+          .filter((f) => !(f.flags?.has?.("\\Noselect") || f.flags?.has?.("\\NonExistent")))
+          .map((f) => f.path)
+          .filter((p) => p && p.toUpperCase() !== "INBOX");
+        // Prullenmand niet doorzoeken: wat je weggegooid hebt wil je niet terug in de resultaten.
+        const zonderPrullenbak = rest.filter((p) => !/trash|prullen|deleted|verwijderd/i.test(p));
+        paden = paden.concat(zonderPrullenbak.slice(0, ZOEK_MAPPEN_MAX));
+      } catch (e) { /* lukt het niet, dan enkel de inbox */ }
     }
+
+    const mails = [];
+    for (const pad of paden) {
+      try {
+        const lock = await imap.getMailboxLock(pad);
+        try {
+          const uids = await imap.search({ text: q }, { uid: true });
+          if (!uids || !uids.length) continue;
+          const recentUids = uids.slice(-limit);
+          for await (const msg of imap.fetch(recentUids, { envelope: true, flags: true, source: true }, { uid: true })) {
+            const mail = await parseAndBuild(msg);
+            mail.folder = pad;
+            mails.push(mail);
+          }
+        } finally {
+          lock.release();
+        }
+      } catch (e) { /* map overslaan als ze niet doorzocht kan worden */ }
+    }
+    mails.sort((a, b) => new Date(b.date) - new Date(a.date));
+    return { configured: true, mails: mails.slice(0, limit * 2), mappen: paden.length };
   } finally {
     await imap.logout().catch(() => {});
   }
@@ -315,6 +597,12 @@ module.exports = {
   fetchAllMails,
   fetchSnippetsForUids,
   fetchMailBody,
+  listFolders,
+  markeerGelezen,
+  verplaatsMail,
+  fetchAttachment,
+  bewaarInVerzonden,
+  bewaarConcept,
   searchMails,
   fetchMailsFromAddress,
   fetchFollowUps,

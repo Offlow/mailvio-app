@@ -35,6 +35,10 @@ function getConfig() {
     anthropicApiKey: stored.anthropicApiKey || process.env.ANTHROPIC_API_KEY || "",
     aiToon: stored.aiToon || process.env.AI_TOON || "Vlaams, kort en professioneel",
     aiHandtekening: stored.aiHandtekening || process.env.AI_HANDTEKENING || "",
+    // Vaste mailhandtekening: het blok met naam/bedrijf/contactgegevens dat
+    // onderaan ELKE uitgaande mail komt. Staat los van aiHandtekening, dat
+    // enkel bepaalt met welke naam de AI een voorgesteld antwoord afsluit.
+    handtekening: stored.handtekening || process.env.MAIL_HANDTEKENING || "",
   };
 }
 
@@ -53,6 +57,7 @@ function getPublicConfig() {
     hasApiKey: !!config.anthropicApiKey,
     aiToon: config.aiToon,
     aiHandtekening: config.aiHandtekening,
+    handtekening: config.handtekening,
   };
 }
 
@@ -78,6 +83,9 @@ function updateSettings(update) {
   }
   if (typeof update.aiToon === "string") next.aiToon = update.aiToon.trim();
   if (typeof update.aiHandtekening === "string") next.aiHandtekening = update.aiHandtekening.trim();
+  // Handtekening mag meerdere regels bevatten — enkel spaties/lege regels aan
+  // het einde weghalen, de opmaak binnenin blijft zoals de gebruiker ze typte.
+  if (typeof update.handtekening === "string") next.handtekening = update.handtekening.replace(/\s+$/, "");
 
   writeStoredSettings(next);
   return getPublicConfig();

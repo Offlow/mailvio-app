@@ -32,8 +32,17 @@ Gebruik exact een van deze categorieën:
 Gebruik voor "vanType" exact een van: "klant", "leverancier", "onbekend".
 Geef in "actieLabel" een kort werkwoord van max 2 woorden in het Vlaams voor de actieknop (bv. "Beantwoorden", "Opstellen", "Bevestigen", "Voorstel doen", "Opvolgen") — enkel als een actie nodig is, anders "".
 
+Bepaal ook waarover de mail gaat, met "soort" — exact een van:
+- "offerte": een prijsvraag, offerte, prijsbestek of bestelling
+- "afspraak": een datum, plaatsbezoek, planning of afspraak die vastgelegd of bevestigd moet worden
+- "factuur": een factuur, betaling, herinnering of boekhouding
+- "reclame": nieuwsbrief, promotie of ongevraagde reclame
+- "overig": al de rest
+
+Zet "belangrijk" op true bij een mail die hij echt niet mag missen: een klacht, een schadegeval, een deadline, een betwisting of een klant die dreigt af te haken. Anders false.
+
 Antwoord ALLEEN met geldige JSON, een array van objecten:
-[{"uid": <uid>, "categorie": "...", "reden": "korte reden in het Vlaams, max 12 woorden", "vanType": "...", "actieLabel": "..."}]
+[{"uid": <uid>, "categorie": "...", "reden": "korte reden in het Vlaams, max 12 woorden", "vanType": "...", "actieLabel": "...", "soort": "...", "belangrijk": true}]
 Geen andere tekst.`;
 
 async function classifyMails(mails) {

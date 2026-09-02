@@ -8,7 +8,9 @@ const settingsStore = require("./settings");
 const classifications = require("./classifications");
 
 const app = express();
-app.use(express.json());
+// Ruimer dan standaard: bijlagen (offerte-pdf, dakfoto's) worden als tekst
+// meegestuurd in de aanvraag en zijn daardoor ongeveer een derde groter.
+app.use(express.json({ limit: "25mb" }));
 app.use(express.static(path.join(__dirname, "public")));
 
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minuten — houdt AI-kosten laag
@@ -79,6 +81,8 @@ async function getMails(forceRefresh) {
       reden: byUid[m.uid]?.reden || "",
       vanType: byUid[m.uid]?.vanType || "onbekend",
       actieLabel: byUid[m.uid]?.actieLabel || "",
+      soort: byUid[m.uid]?.soort || "overig",
+      belangrijk: !!byUid[m.uid]?.belangrijk,
       snippet: m.snippet,
     }));
     classifications.setMany(accountKey, toStore);
@@ -94,6 +98,8 @@ async function getMails(forceRefresh) {
       reden: c?.reden || "",
       vanType: c?.vanType || "onbekend",
       actieLabel: c?.actieLabel || "",
+      soort: c?.soort || "overig",
+      belangrijk: !!c?.belangrijk,
       resolved: !!c?.resolved,
     };
   });
@@ -156,9 +162,58 @@ app.get("/api/mails", async (req, res) => {
   }
 });
 
+// De echte mappenstructuur van de mailbox (Inbox, Verzonden, Concepten,
+// Archief, Prullenmand + eigen mappen), zodat de zijbalk geen vaste lijst is.
+let folderCache = { at: 0, folders: [] };
+const FOLDER_CACHE_TTL_MS = 5 * 60 * 1000;
+
+app.get("/api/folders", async (req, res) => {
+  try {
+    if (!mailbox.isConfigured()) return res.json({ configured: false, folders: [] });
+    const vers = Date.now() - folderCache.at < FOLDER_CACHE_TTL_MS && folderCache.folders.length > 0;
+    if (vers && req.query.refresh !== "1") {
+      return res.json({ configured: true, folders: folderCache.folders });
+    }
+    const data = await mailbox.listFolders();
+    if (data.configured) folderCache = { at: Date.now(), folders: data.folders };
+    res.json(data);
+  } catch (e) {
+    console.error("Kon de mappen niet ophalen:", e.message);
+    res.status(500).json({ error: "Kon de mappen niet ophalen.", detail: e.message });
+  }
+});
+
+// Bladeren door een andere map dan de inbox (Verzonden, Concepten, ...).
+// Bewust zonder AI-beoordeling: dat hoort bij de inbox, niet bij je archief.
+app.get("/api/folder-mails", async (req, res) => {
+  try {
+    const folder = req.query.folder;
+    if (!folder) return res.status(400).json({ error: "Geen map opgegeven." });
+    const data = await mailbox.fetchAllMails(folder);
+    res.json({
+      configured: data.configured,
+      folder,
+      mails: data.mails,
+      total: data.total,
+      capped: data.capped,
+      envelopeCap: mailbox.ENVELOPE_CAP,
+    });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Kon deze map niet openen.", detail: e.message });
+  }
+});
+
 app.get("/api/mails/:uid", async (req, res) => {
   try {
     const uid = Number(req.params.uid);
+    const folder = req.query.folder;
+    // Mail uit een andere map: geen AI-gegevens, gewoon de inhoud tonen.
+    if (folder && folder !== "INBOX") {
+      const body = await mailbox.fetchMailBody(uid, folder);
+      if (!body) return res.status(404).json({ error: "Mail niet gevonden." });
+      return res.json(body);
+    }
     const data = await getMails(false);
     const meta = data.mails.find((m) => m.uid === uid) || {};
     const body = await mailbox.fetchMailBody(uid);
@@ -203,6 +258,104 @@ app.post("/api/mails/:uid/resolve", (req, res) => {
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "Kon de mail niet bijwerken.", detail: e.message });
+  }
+});
+
+// Adresboek: alle afzenders uit je mailbox, zodat je een adres niet volledig
+// hoeft te typen. Wordt afgeleid uit de mails die al ingeladen zijn.
+app.get("/api/contacten", async (req, res) => {
+  try {
+    const data = await getMails(false);
+    const perAdres = new Map();
+    for (const m of data.mails || []) {
+      const adres = (m.fromAddress || "").toLowerCase();
+      if (!adres || !adres.includes("@")) continue;
+      const bestaand = perAdres.get(adres);
+      if (bestaand) {
+        bestaand.aantal += 1;
+        if (m.date && (!bestaand.laatst || m.date > bestaand.laatst)) bestaand.laatst = m.date;
+      } else {
+        perAdres.set(adres, { adres, naam: m.from || adres, aantal: 1, laatst: m.date || null });
+      }
+    }
+    const contacten = [...perAdres.values()].sort((a, b) => b.aantal - a.aantal || String(b.laatst).localeCompare(String(a.laatst)));
+    res.json({ contacten });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Kon de contacten niet ophalen.", contacten: [] });
+  }
+});
+
+// Een onafgewerkte mail als concept bewaren op de mailserver.
+app.post("/api/draft", async (req, res) => {
+  const { to, cc, subject, text, attachments } = req.body || {};
+  if (!subject && !text && !to) {
+    return res.status(400).json({ error: "Er valt nog niets te bewaren." });
+  }
+  try {
+    const result = await mailer.saveDraft({ to, cc, subject, text, attachments });
+    if (!result.ok) {
+      return res.status(400).json({ error: result.reden === "geen map Concepten gevonden"
+        ? "Je mailserver heeft geen map 'Concepten'."
+        : "Kon het concept niet bewaren." });
+    }
+    folderCache = { at: 0, folders: [] };
+    res.json({ ok: true, map: result.map });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Kon het concept niet bewaren.", detail: e.message });
+  }
+});
+
+// Een bijlage openen/downloaden (offerte, factuur, foto van een dak, ...).
+app.get("/api/mails/:uid/bijlage/:index", async (req, res) => {
+  try {
+    const uid = Number(req.params.uid);
+    const index = Number(req.params.index);
+    const att = await mailbox.fetchAttachment(uid, index, req.query.folder);
+    if (!att) return res.status(404).json({ error: "Bijlage niet gevonden." });
+    // Bestandsnaam veilig houden voor de Content-Disposition-header.
+    const veiligeNaam = String(att.filename).replace(/[\r\n"]/g, "_");
+    res.setHeader("Content-Type", att.contentType);
+    res.setHeader("Content-Disposition", `inline; filename="${veiligeNaam}"`);
+    res.send(att.content);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Kon de bijlage niet openen.", detail: e.message });
+  }
+});
+
+// Gelezen / ongelezen markeren — zoals in elke gewone mailbox.
+app.post("/api/mails/:uid/read", async (req, res) => {
+  try {
+    const uid = Number(req.params.uid);
+    const gelezen = req.body?.read !== false;
+    const folder = req.body?.folder;
+    await mailbox.markeerGelezen(uid, gelezen, folder);
+    cache.mails = (cache.mails || []).map((m) => (m.uid === uid ? { ...m, unread: !gelezen } : m));
+    envelopeCache.mails = (envelopeCache.mails || []).map((m) => (m.uid === uid ? { ...m, unread: !gelezen } : m));
+    res.json({ ok: true, unread: !gelezen });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Kon de mail niet bijwerken.", detail: e.message });
+  }
+});
+
+// Archiveren of naar de prullenmand verplaatsen.
+app.post("/api/mails/:uid/move", async (req, res) => {
+  try {
+    const uid = Number(req.params.uid);
+    const doel = req.body?.to === "prullenmand" ? "prullenmand" : "archief";
+    const folder = req.body?.folder;
+    const result = await mailbox.verplaatsMail(uid, doel, folder);
+    // Weg uit de inbox: ook uit de caches halen zodat de lijst meteen klopt.
+    cache.mails = (cache.mails || []).filter((m) => m.uid !== uid);
+    envelopeCache.mails = (envelopeCache.mails || []).filter((m) => m.uid !== uid);
+    folderCache = { at: 0, folders: [] };
+    res.json({ ok: true, ...result });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Kon de mail niet verplaatsen.", detail: e.message });
   }
 });
 
@@ -253,12 +406,12 @@ app.post("/api/rewrite", async (req, res) => {
 });
 
 app.post("/api/send", async (req, res) => {
-  const { to, subject, text, resolveUid } = req.body || {};
+  const { to, cc, subject, text, resolveUid, inReplyTo, references, attachments } = req.body || {};
   if (!to || !subject || !text) {
     return res.status(400).json({ error: "Vul ontvanger, onderwerp en tekst in." });
   }
   try {
-    await mailer.sendMail({ to, subject, text });
+    await mailer.sendMail({ to, cc, subject, text, inReplyTo, references, attachments });
     // Een effectief verstuurd antwoord telt als "beantwoord" — de originele
     // mail mag dan uit de openstaande-zaken-lijsten verdwijnen.
     if (resolveUid) {

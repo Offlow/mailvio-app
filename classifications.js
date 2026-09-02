@@ -43,6 +43,8 @@ function setMany(accountKey, entries) {
       reden: e.reden || "",
       vanType: e.vanType || "onbekend",
       actieLabel: e.actieLabel || "",
+      soort: e.soort || "overig",
+      belangrijk: !!e.belangrijk,
       snippet: e.snippet || "",
       classifiedAt: Date.now(),
     };
