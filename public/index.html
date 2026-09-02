@@ -35,7 +35,16 @@
   /* Accountregel onder het logo: mag nooit over het menu vallen of afgeknipt
      worden. Vaste hoogte weg, eigen ruimte, en een lang mailadres breekt af
      met "..." in plaats van eroverheen te lopen. */
-  .acctChip{display:block;flex:0 0 auto;background:var(--surface-2);border-radius:9px;padding:8px 10px;font-size:12.5px;line-height:1.35;color:var(--ink-soft);margin:0 0 16px;min-width:0;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .acctSwitch{position:relative;flex:0 0 auto;margin:0 0 16px}
+  .acctChip{display:block;width:100%;text-align:left;border:1px solid var(--border);cursor:pointer;background:var(--surface-2);border-radius:9px;padding:8px 26px 8px 10px;font-size:12.5px;line-height:1.35;font-family:inherit;color:var(--ink-soft);min-width:0;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .acctChip:hover{border-color:var(--accent);color:var(--ink)}
+  .acctChip::after{content:"▾";position:absolute;right:9px;top:8px;color:var(--ink-faint);font-size:11px}
+  .acctMenu{position:absolute;top:calc(100% + 4px);left:0;right:0;z-index:30;background:var(--surface);border:1px solid var(--border);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.12);padding:5px;display:flex;flex-direction:column;gap:2px}
+  .acctMenu button{border:none;background:none;font-family:inherit;text-align:left;font-size:12.5px;padding:7px 9px;border-radius:7px;cursor:pointer;color:var(--ink);display:flex;align-items:center;gap:7px}
+  .acctMenu button:hover{background:var(--surface-2)}
+  .acctMenu button.actief{font-weight:800;color:var(--accent-ink);background:var(--accent-soft)}
+  .acctMenu .scheiding{height:1px;background:var(--border);margin:4px 0}
+  .acctMenu .nietIngesteld{color:var(--ink-faint);font-size:11px;margin-left:auto}
   .navItem{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;font-size:13.5px;font-weight:700;color:var(--ink);cursor:pointer;border:none;background:none;width:100%;text-align:left}
   .navItem:hover{background:var(--surface-2)}
   .navItem.active{background:var(--accent-soft);color:var(--accent-ink)}
@@ -49,6 +58,12 @@
   .navGroup{font-size:10.5px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-faint);margin:16px 8px 4px}
   .navGroup:first-of-type{margin-top:4px}
   .folderHint{font-size:12px;color:var(--ink-faint);padding:6px 10px;line-height:1.4}
+  .acctBalk{display:flex;align-items:center;gap:7px;flex-wrap:wrap;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:8px 10px;margin-bottom:14px}
+  .acctBalkLabel{font-size:12px;color:var(--ink-faint);font-weight:700}
+  .acctBalkKnop{border:1px solid var(--border);background:var(--surface);border-radius:99px;padding:4px 11px;font-size:12px;font-family:inherit;font-weight:700;cursor:pointer;color:var(--ink)}
+  .acctBalkKnop.actief{background:var(--accent);border-color:var(--accent);color:#fff}
+  .acctBalkVerwijder{margin-left:auto;border:1px solid var(--border);background:none;border-radius:7px;padding:4px 10px;font-size:11.5px;font-family:inherit;cursor:pointer;color:var(--red)}
+  .acctBalkVerwijder:hover{background:var(--surface)}
   .sidebarFooter{margin-top:auto;padding-top:12px;border-top:1px solid var(--border)}
   .userChip{display:flex;align-items:center;gap:8px;padding:8px 8px 2px;font-size:13px;font-weight:700}
   .userChip .avatar{width:26px;height:26px;font-size:11px}
@@ -262,7 +277,10 @@
 <div class="layout">
   <nav class="sidebar">
     <div class="brand"><span class="dot"></span><h1>Mailvio</h1></div>
-    <div class="acctChip" id="acctChip">niet gekoppeld</div>
+    <div class="acctSwitch" id="acctSwitch">
+      <button class="acctChip" id="acctChip" title="Wissel van mailbox">niet gekoppeld</button>
+      <div class="acctMenu" id="acctMenu" hidden></div>
+    </div>
 
     <button class="navItem" data-nav="vandaag">☆ Vandaag</button>
     <button class="navItem" data-nav="zoeken">🔍 Zoeken</button>
@@ -303,11 +321,14 @@
 <!-- Instellingen modal -->
 <div class="overlay" id="settingsOverlay" hidden>
   <div class="modal">
-    <h2>Account instellen</h2>
-    <p class="hint">Vul je mailaccount in zoals je dat ook in Outlook of Apple Mail zou doen. Wordt bewaard op de server. Bij een nieuwe deploy van de app moet je dit mogelijk opnieuw invullen.</p>
+    <h2 id="settingsTitel">Account instellen</h2>
+    <p class="hint">Vul je mailaccount in zoals je dat ook in Outlook of Apple Mail zou doen. Alles wordt bewaard op de persistente schijf, dus dit blijft staan na een nieuwe versie van de app.</p>
+
+    <div id="settingsAccountBalk"></div>
 
     <div class="sectionLabel">Account</div>
     <div class="fieldList">
+      <div class="fieldRow"><label for="setLabel">Mailboxnaam</label><input id="setLabel" type="text" placeholder="bv. Info of Boekhouding" autocomplete="off"></div>
       <div class="fieldRow"><label for="setName">Naam</label><input id="setName" type="text" placeholder="Dakwerken Daklo" autocomplete="off"></div>
       <div class="fieldRow"><label for="setEmail">E-mailadres</label><input id="setEmail" type="text" placeholder="info@daklo.be" autocomplete="off"></div>
     </div>
@@ -432,11 +453,85 @@ async function loadSettings() {
 
 function renderIdentity() {
   const s = state.settings || {};
-  const label = s.imapUser || "niet gekoppeld";
-  document.getElementById("acctChip").textContent = label;
+  const accounts = s.accounts || [];
+  const huidig = accounts.find((a) => a.actief);
+  const label = (huidig && huidig.label) || s.imapUser || "niet gekoppeld";
+  const chip = document.getElementById("acctChip");
+  chip.textContent = accounts.length > 1 ? `${label} · ${accounts.length} mailboxen` : label;
   const name = s.displayName || s.imapUser || "Account";
   document.getElementById("userName").textContent = s.displayName || "Account";
   document.getElementById("userAvatar").textContent = initials(name);
+  renderAccountMenu();
+}
+
+function renderAccountMenu() {
+  const menu = document.getElementById("acctMenu");
+  if (!menu) return;
+  const accounts = (state.settings && state.settings.accounts) || [];
+  menu.innerHTML =
+    accounts
+      .map(
+        (a) => `<button class="${a.actief ? "actief" : ""}" data-acct="${a.index}">
+          ${a.actief ? "●" : "○"} ${escapeHtml(a.label)}
+          ${a.ingesteld ? "" : '<span class="nietIngesteld">nog instellen</span>'}
+        </button>`
+      )
+      .join("") +
+    `<div class="scheiding"></div>
+     <button data-acct-nieuw="1">＋ Mailbox toevoegen</button>`;
+
+  menu.querySelectorAll("[data-acct]").forEach((b) =>
+    b.addEventListener("click", () => wisselAccount(Number(b.dataset.acct)))
+  );
+  menu.querySelector("[data-acct-nieuw]").addEventListener("click", () => nieuweMailbox());
+}
+
+async function wisselAccount(index) {
+  document.getElementById("acctMenu").hidden = true;
+  if ((state.settings.accounts || []).find((a) => a.actief && a.index === index)) return;
+  showToast("Bezig met wisselen van mailbox...");
+  try {
+    const res = await fetch("/api/accounts/actief", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ index }),
+    });
+    if (!res.ok) throw new Error((await res.json()).error || "Wisselen mislukt.");
+  } catch (e) {
+    showToast(e.message);
+    return;
+  }
+  // Alles wat bij de vorige mailbox hoorde uit het scherm halen.
+  state.mails = [];
+  state.folders = [];
+  state.folderMails = [];
+  state.mailDetail = {};
+  state.suggestion = {};
+  state.folder = "INBOX";
+  state.view = "vandaag";
+  await loadSettings();
+  await loadStatus();
+  await loadMails(true);
+  loadFolders();
+  loadContacten();
+  showToast("Je zit nu in " + (state.settings.imapUser || "de andere mailbox") + ".");
+}
+
+async function nieuweMailbox() {
+  document.getElementById("acctMenu").hidden = true;
+  try {
+    const res = await fetch("/api/accounts", { method: "POST" });
+    if (!res.ok) throw new Error((await res.json()).error || "Toevoegen mislukt.");
+  } catch (e) {
+    showToast(e.message);
+    return;
+  }
+  state.mails = [];
+  state.folders = [];
+  await loadSettings();
+  await loadStatus();
+  openSettings();
+  showToast("Vul de gegevens van je tweede mailbox in.");
 }
 
 // ---------------------------------------------------------------------------
@@ -661,6 +756,17 @@ document.querySelectorAll(".navItem[data-nav]").forEach((btn) => {
 });
 document.querySelectorAll(".navItem[data-soon]").forEach((btn) => {
   btn.addEventListener("click", () => showToast("Deze functie komt in een latere versie van Mailvio."));
+});
+
+// Mailboxwisselaar openen/sluiten
+document.getElementById("acctChip").addEventListener("click", (e) => {
+  e.stopPropagation();
+  const menu = document.getElementById("acctMenu");
+  menu.hidden = !menu.hidden;
+});
+document.addEventListener("click", (e) => {
+  const menu = document.getElementById("acctMenu");
+  if (menu && !menu.hidden && !e.target.closest(".acctSwitch")) menu.hidden = true;
 });
 
 function renderView() {
@@ -1957,6 +2063,9 @@ async function openSettings() {
   document.getElementById("settingsOverlay").hidden = false;
   try {
     const data = await (await fetch("/api/settings")).json();
+    state.settings = data;
+    renderSettingsAccountBalk(data);
+    document.getElementById("setLabel").value = data.naam || "";
     document.getElementById("setName").value = data.displayName || "";
     document.getElementById("setEmail").value = data.imapUser || "";
     document.getElementById("setHost").value = data.imapHost || "";
@@ -1977,6 +2086,62 @@ async function openSettings() {
     msgEl.className = "settingsMsg err";
   }
 }
+// Toont bovenaan de instellingen welke mailbox je aan het bewerken bent, en
+// laat je wisselen of er een verwijderen.
+function renderSettingsAccountBalk(data) {
+  const mount = document.getElementById("settingsAccountBalk");
+  const titel = document.getElementById("settingsTitel");
+  const accounts = data.accounts || [];
+  if (!mount) return;
+  if (accounts.length <= 1) {
+    mount.innerHTML = "";
+    titel.textContent = "Account instellen";
+    return;
+  }
+  const huidig = accounts.find((a) => a.actief) || accounts[0];
+  titel.textContent = "Instellingen — " + (huidig.label || "mailbox");
+  mount.innerHTML = `
+    <div class="acctBalk">
+      <span class="acctBalkLabel">Je bewerkt:</span>
+      ${accounts.map((a) => `<button class="acctBalkKnop ${a.actief ? "actief" : ""}" data-bewerk="${a.index}">${escapeHtml(a.label)}</button>`).join("")}
+      <button class="acctBalkVerwijder" data-verwijder-acct="${huidig.index}" title="Deze mailbox verwijderen">Verwijderen</button>
+    </div>
+  `;
+  mount.querySelectorAll("[data-bewerk]").forEach((b) =>
+    b.addEventListener("click", async () => {
+      await wisselAccount(Number(b.dataset.bewerk));
+      openSettings();
+    })
+  );
+  mount.querySelector("[data-verwijder-acct]").addEventListener("click", async (e) => {
+    const index = Number(e.currentTarget.dataset.verwijderAcct);
+    const naam = accounts.find((a) => a.index === index)?.label || "deze mailbox";
+    const msgEl = document.getElementById("settingsMsg");
+    // Bewust geen browser-popup: die blokkeert de app. In de plaats een
+    // tweede klik ter bevestiging.
+    if (e.currentTarget.dataset.bevestig !== "1") {
+      e.currentTarget.dataset.bevestig = "1";
+      e.currentTarget.textContent = "Zeker? Klik nog eens";
+      msgEl.textContent = `"${naam}" wordt verwijderd uit Mailvio. Je mailbox zelf blijft bestaan bij je provider.`;
+      msgEl.className = "settingsMsg";
+      return;
+    }
+    try {
+      const res = await fetch(`/api/accounts/${index}`, { method: "DELETE" });
+      if (!res.ok) throw new Error((await res.json()).error || "Verwijderen mislukt.");
+      await loadSettings();
+      await loadStatus();
+      await loadMails(true);
+      loadFolders();
+      openSettings();
+      showToast(`"${naam}" is verwijderd.`);
+    } catch (err) {
+      msgEl.textContent = err.message;
+      msgEl.className = "settingsMsg err";
+    }
+  });
+}
+
 function closeSettings() { document.getElementById("settingsOverlay").hidden = true; }
 
 async function saveSettings() {
@@ -1984,6 +2149,7 @@ async function saveSettings() {
   const msgEl = document.getElementById("settingsMsg");
   const email = document.getElementById("setEmail").value;
   const body = {
+    naam: document.getElementById("setLabel").value,
     displayName: document.getElementById("setName").value,
     imapUser: email,
     imapHost: document.getElementById("setHost").value,

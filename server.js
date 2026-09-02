@@ -30,6 +30,8 @@ let envelopeCache = { at: 0, mails: [], total: 0, capped: false };
 const SCAN_BATCH_SIZE = 15;
 let cache = { at: 0, mails: [], total: 0, capped: false, scanned: 0, scanning: false };
 const suggestionCache = new Map(); // uid -> voorstel, leegt mee met de mail-cache
+let folderCache = { at: 0, folders: [] };
+const FOLDER_CACHE_TTL_MS = 5 * 60 * 1000;
 
 async function getLightMails(forceRefresh) {
   const fresh = !forceRefresh && Date.now() - envelopeCache.at < ENVELOPE_CACHE_TTL_MS && envelopeCache.mails.length > 0;
@@ -131,6 +133,49 @@ app.get("/api/settings", (req, res) => {
   res.json(settingsStore.getPublicConfig());
 });
 
+// Alles wat per mailbox verschilt uit het geheugen gooien. Nodig bij het
+// wisselen van mailbox, anders zie je even de mails van de vorige.
+function leegCaches() {
+  cache = { at: 0, mails: [], total: 0, capped: false, scanned: 0, scanning: false };
+  envelopeCache = { at: 0, mails: [], total: 0, capped: false };
+  folderCache = { at: 0, folders: [] };
+  suggestionCache.clear();
+}
+
+app.get("/api/accounts", (req, res) => {
+  res.json({ accounts: settingsStore.getAccounts(), actief: settingsStore.getActiveIndex() });
+});
+
+app.post("/api/accounts/actief", (req, res) => {
+  try {
+    const actief = settingsStore.setActiveIndex(req.body?.index);
+    leegCaches();
+    res.json({ ok: true, actief, accounts: settingsStore.getAccounts() });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+app.post("/api/accounts", (req, res) => {
+  try {
+    const actief = settingsStore.addAccount();
+    leegCaches();
+    res.json({ ok: true, actief, accounts: settingsStore.getAccounts() });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+app.delete("/api/accounts/:index", (req, res) => {
+  try {
+    const accounts = settingsStore.removeAccount(req.params.index);
+    leegCaches();
+    res.json({ ok: true, accounts, actief: settingsStore.getActiveIndex() });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
 app.post("/api/settings", (req, res) => {
   try {
     const updated = settingsStore.updateSettings(req.body || {});
@@ -166,9 +211,6 @@ app.get("/api/mails", async (req, res) => {
 
 // De echte mappenstructuur van de mailbox (Inbox, Verzonden, Concepten,
 // Archief, Prullenmand + eigen mappen), zodat de zijbalk geen vaste lijst is.
-let folderCache = { at: 0, folders: [] };
-const FOLDER_CACHE_TTL_MS = 5 * 60 * 1000;
-
 app.get("/api/folders", async (req, res) => {
   try {
     if (!mailbox.isConfigured()) return res.json({ configured: false, folders: [] });
