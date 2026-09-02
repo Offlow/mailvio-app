@@ -223,6 +223,29 @@
   .micKnop.luistert{background:#fdecea;border-color:#e88b83;color:#b3261e;animation:pols 1.1s ease-in-out infinite}
   @keyframes pols{0%,100%{opacity:1}50%{opacity:.55}}
   .micHint{font-size:12px;color:var(--ink-faint);margin:-12px 0 14px}
+
+  /* Automatisering */
+  .regelView{flex:1 1 auto;overflow-y:auto;padding:26px 34px 60px}
+  .regel{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:13px 15px;margin-bottom:9px;display:flex;align-items:flex-start;gap:13px}
+  .regel .info{flex:1 1 auto;min-width:0}
+  .regel .naam{font-weight:800;font-size:13.5px}
+  .regel .uitleg{font-size:12.5px;color:var(--ink-soft);line-height:1.5;margin-top:3px}
+  .regel .acties{font-size:11.5px;color:var(--ink-faint);margin-top:5px}
+  .regel.uit{opacity:.55}
+  .schakelaar{position:relative;width:42px;height:24px;flex:0 0 auto;border:none;border-radius:99px;background:var(--border);cursor:pointer;padding:0;transition:background .15s}
+  .schakelaar.aan{background:var(--accent)}
+  .schakelaar::after{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;transition:transform .15s;box-shadow:0 1px 3px rgba(0,0,0,.25)}
+  .schakelaar.aan::after{transform:translateX(18px)}
+  .regelWis{border:none;background:none;cursor:pointer;color:var(--ink-faint);font-size:13px;padding:3px 6px;border-radius:6px;flex:0 0 auto}
+  .regelWis:hover{background:var(--surface-2);color:#b3261e}
+  .regelBouwer{background:var(--surface);border:1px dashed var(--border);border-radius:12px;padding:15px 16px;margin-bottom:18px}
+  .regelZin{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13.5px;font-weight:700}
+  .regelZin select,.regelZin input{border:1px solid var(--border);border-radius:8px;padding:7px 10px;font-family:inherit;font-size:13px;background:var(--surface-2);color:var(--ink)}
+  .regelZin input{min-width:190px}
+  .actieKeuze{display:flex;gap:7px;flex-wrap:wrap;margin-top:11px}
+  .actieVink{display:flex;align-items:center;gap:6px;border:1px solid var(--border);border-radius:99px;padding:6px 12px;font-size:12.5px;font-weight:700;cursor:pointer;background:var(--surface-2)}
+  .actieVink input{margin:0}
+  .actieVink.gekozen{background:var(--accent-soft);border-color:var(--accent);color:var(--accent-ink)}
   .miniCard{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 16px}
   .miniCard .title{font-weight:800;font-size:13.5px;display:flex;align-items:center;gap:7px;margin-bottom:6px}
   .miniCard .title .dotmark{width:7px;height:7px;border-radius:50%}
@@ -254,6 +277,10 @@
   .mailRow .time{flex:0 0 46px;text-align:right;font-size:12px;color:var(--ink-faint)}
   .aiPanel{width:320px;flex:0 0 320px;border-left:1px solid var(--border);background:var(--surface);padding:18px 16px;overflow-y:auto;display:flex;flex-direction:column}
   .aiPanel .panelTitle{font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-faint);margin-bottom:10px}
+  .paneelKnoppen{display:flex;flex-direction:column;gap:6px}
+  .paneelKnoppen button{border:1px solid var(--border);background:var(--surface-2);border-radius:9px;padding:9px 12px;font-family:inherit;font-size:12.5px;font-weight:700;text-align:left;cursor:pointer;color:var(--accent-ink)}
+  .paneelKnoppen button.plain{color:var(--ink-soft);background:none}
+  .paneelKnoppen button:hover{border-color:var(--accent);background:var(--accent-soft)}
   .aiChatBox{margin-top:auto;padding-top:14px;border-top:1px solid var(--border)}
   .aiChatBox input{width:100%;border:1px solid var(--border);border-radius:9px;padding:9px 11px;font-size:13px;font-family:inherit;margin-top:8px}
 
@@ -411,6 +438,7 @@
     <button class="navItem" data-nav="taken" id="navTaken">✓ To-do <span class="count" id="cntTaken"></span></button>
     <button class="navItem" data-nav="zaken">◎ Nog open <span class="count" id="cntZaken"></span></button>
     <button class="navItem" data-nav="agenda">📅 Agenda</button>
+    <button class="navItem" data-nav="regels">⚙︎ Automatisering</button>
     <button class="navItem" data-nav="zoeken">🔍 Zoeken</button>
 
     <div class="navGroup">Mailbox</div>
@@ -570,6 +598,7 @@ const state = {
   chatLog: {},      // uid -> [{who,text}] mini-log per mail (AI-panel)
   taken: [],        // je eigen to-dolijst
   afspraken: [],    // je agenda
+  regels: null,     // automatiseringsregels
   weekStart: null,  // week die je in de agenda bekijkt
   zakenTab: "alles",
   sleepMail: null,  // mail die je nu aan het slepen bent
@@ -864,7 +893,7 @@ async function loadMails(forceRefresh) {
   renderSidebarCounts();
   // Schermen die niets met de mailijst te maken hebben NIET opnieuw tekenen:
   // anders verdween je tekst terwijl je een taak aan het typen was.
-  if (!["taken", "agenda", "mail", "klant", "zoeken"].includes(state.view)) {
+  if (!["taken", "agenda", "mail", "klant", "zoeken", "regels"].includes(state.view)) {
     renderView();
   }
 
@@ -968,6 +997,7 @@ function renderView() {
   if (state.view === "opvolgingen") return renderOpvolgingen();
   if (state.view === "taken") return renderTaken();
   if (state.view === "agenda") return renderAgenda();
+  if (state.view === "regels") return renderRegels();
   if (state.view === "folder") return renderFolderView();
   if (state.view === "mail") return; // wordt al gerenderd door openMail()
   if (state.view === "klant") return; // wordt al gerenderd door openKlantContext()
@@ -1042,6 +1072,136 @@ function openCtxMenu(e, uid, folder) {
 document.addEventListener("click", sluitCtx);
 document.addEventListener("scroll", sluitCtx, true);
 window.addEventListener("resize", sluitCtx);
+
+// ---------------------------------------------------------------------------
+// Automatisering
+// ---------------------------------------------------------------------------
+// Alles wat Mailvio uit zichzelf doet, staat hier met een schakelaar. Loopt er
+// ooit iets fout met een automatisering, dan zet je die uit zonder dat de rest
+// stilvalt. Daaronder maak je je eigen regels: "als ... dan ...".
+const REGEL_VELDEN = { afzender: "de afzender", onderwerp: "het onderwerp", inhoud: "de inhoud", soort: "het soort mail" };
+const REGEL_TESTEN = { bevat: "bevat", is: "is precies", begint_met: "begint met" };
+const REGEL_ACTIES = {
+  reclame: "naar Reclame",
+  belangrijk: "markeer belangrijk",
+  dringend: "markeer dringend",
+  geen_actie: "geen actie nodig",
+  taak: "zet op mijn to-do",
+  niet_opvolgen: "niet meer opvolgen",
+};
+
+async function laadRegels(stil) {
+  try {
+    state.regels = await (await fetch("/api/regels")).json();
+  } catch (e) {
+    state.regels = state.regels || { ingebouwd: [], eigen: [] };
+  }
+  if (!stil && state.view === "regels") renderRegels();
+}
+
+async function regelActie(pad, opties) {
+  try {
+    const data = await (await fetch(pad, opties)).json();
+    if (data.error) { showToast(data.error); return; }
+    if (data.ingebouwd) state.regels = { ingebouwd: data.ingebouwd, eigen: data.eigen || [] };
+  } catch (e) {
+    showToast("Kon dit niet bewaren: " + e.message);
+    return;
+  }
+  renderRegels();
+  // De beoordeling van je mails verandert mee, dus opnieuw ophalen.
+  loadMails(true);
+}
+
+function renderRegels() {
+  const mount = document.getElementById("viewMount");
+  if (!state.regels) {
+    mount.innerHTML = '<div class="regelView"><div class="empty">Bezig met laden...</div></div>';
+    laadRegels();
+    return;
+  }
+  const { ingebouwd, eigen } = state.regels;
+
+  mount.innerHTML = `
+    <div class="regelView">
+      <h1 style="margin:0 0 4px;font-size:22px">Automatisering</h1>
+      <div class="sub" style="margin-bottom:18px">Alles wat Mailvio uit zichzelf doet, staat hier. Werkt er iets niet zoals je wil? Zet het uit — de rest blijft gewoon werken.</div>
+
+      <div class="sectionTitle">Ingebouwd</div>
+      ${ingebouwd.map((r) => `
+        <div class="regel ${r.aan ? "" : "uit"}">
+          <button class="schakelaar ${r.aan ? "aan" : ""}" data-ing="${r.sleutel}" data-aan="${r.aan ? "1" : "0"}" title="${r.aan ? "Uitzetten" : "Aanzetten"}"></button>
+          <div class="info">
+            <div class="naam">${escapeHtml(r.naam)}</div>
+            <div class="uitleg">${escapeHtml(r.uitleg)}</div>
+          </div>
+        </div>`).join("")}
+
+      <div class="sectionTitle" style="margin-top:28px">Je eigen regels</div>
+      <div class="regelBouwer">
+        <div class="regelZin">
+          <span>Als</span>
+          <select id="rgVeld">${Object.entries(REGEL_VELDEN).map(([k, v]) => `<option value="${k}">${v}</option>`).join("")}</select>
+          <select id="rgTest">${Object.entries(REGEL_TESTEN).map(([k, v]) => `<option value="${k}">${v}</option>`).join("")}</select>
+          <input id="rgWaarde" type="text" placeholder="bv. nieuwsbrief, of een e-mailadres">
+        </div>
+        <div class="actieKeuze" id="rgActies">
+          ${Object.entries(REGEL_ACTIES).map(([k, v]) => `<label class="actieVink"><input type="checkbox" value="${k}"> ${v}</label>`).join("")}
+        </div>
+        <div style="margin-top:12px"><button class="btn btn-primary" id="rgMaak">Regel toevoegen</button></div>
+      </div>
+
+      ${eigen.length ? eigen.map((r) => `
+        <div class="regel ${r.aan ? "" : "uit"}">
+          <button class="schakelaar ${r.aan ? "aan" : ""}" data-eigen="${r.id}" data-aan="${r.aan ? "1" : "0"}"></button>
+          <div class="info">
+            <div class="naam">${escapeHtml(r.naam)}</div>
+            <div class="uitleg">Als ${escapeHtml(REGEL_VELDEN[r.veld] || r.veld)} ${escapeHtml(REGEL_TESTEN[r.test] || r.test)} "${escapeHtml(r.waarde)}".</div>
+            <div class="acties">Dan: ${r.acties.map((a) => escapeHtml(REGEL_ACTIES[a] || a)).join(" · ")}</div>
+          </div>
+          <button class="regelWis" data-wisregel="${r.id}" title="Regel verwijderen">✕</button>
+        </div>`).join("") : '<div class="empty">Je hebt nog geen eigen regels. Maak er hierboven één.</div>'}
+    </div>`;
+
+  mount.querySelectorAll("[data-ing]").forEach((b) => b.addEventListener("click", () => {
+    regelActie("/api/regels/ingebouwd", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sleutel: b.dataset.ing, aan: b.dataset.aan !== "1" }),
+    });
+  }));
+  mount.querySelectorAll("[data-eigen]").forEach((b) => b.addEventListener("click", () => {
+    regelActie(`/api/regels/${b.dataset.eigen}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ aan: b.dataset.aan !== "1" }),
+    });
+  }));
+  mount.querySelectorAll("[data-wisregel]").forEach((b) => b.addEventListener("click", () => {
+    const r = eigen.find((x) => x.id === b.dataset.wisregel);
+    if (!confirm(`Regel "${r ? r.naam : ""}" verwijderen?`)) return;
+    regelActie(`/api/regels/${b.dataset.wisregel}`, { method: "DELETE" });
+  }));
+  mount.querySelectorAll(".actieVink").forEach((label) => {
+    const vink = label.querySelector("input");
+    vink.addEventListener("change", () => label.classList.toggle("gekozen", vink.checked));
+  });
+  document.getElementById("rgMaak").addEventListener("click", () => {
+    const acties = [...document.querySelectorAll("#rgActies input:checked")].map((i) => i.value);
+    const waarde = document.getElementById("rgWaarde").value.trim();
+    if (!waarde) return showToast("Vul in waar de regel op moet reageren.");
+    if (!acties.length) return showToast("Kies minstens één actie.");
+    regelActie("/api/regels", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        veld: document.getElementById("rgVeld").value,
+        test: document.getElementById("rgTest").value,
+        waarde, acties,
+      }),
+    });
+  });
+}
 
 // ---------------------------------------------------------------------------
 // Agenda — weekweergave
@@ -2112,6 +2272,7 @@ async function openMail(uid, folder) {
       <aside class="aiPanel" id="mailAiPanel">
         <div class="panelTitle">Mailvio AI · over deze mail</div>
         <div id="aiSuggestBox">Bezig met analyseren...</div>
+        <div id="mailActies"></div>
       </aside>
     </div>
   `;
@@ -2210,16 +2371,14 @@ async function laadBijlageSamenvattingen(uid, m) {
       // Ondertussen een andere mail geopend? Dan niets meer invullen.
       if (!document.body.contains(veld)) return;
       const tekst = (data.samenvatting || "").trim();
+      // Geen samenvatting mogelijk? Dan schrijven we er niets onder — een
+      // regel uitleg over wat NIET lukte helpt je niet vooruit.
+      if (!tekst) { veld.remove(); continue; }
       veld.classList.remove("laadt");
-      if (tekst) {
-        veld.textContent = tekst;
-      } else {
-        veld.classList.add("laadt");
-        veld.textContent = data.reden || data.error || "Kon deze bijlage niet samenvatten.";
-      }
+      veld.textContent = tekst;
     } catch (e) {
       if (!document.body.contains(veld)) return;
-      veld.textContent = "Kon deze bijlage niet samenvatten.";
+      veld.remove();
     }
   }
 }
@@ -2353,50 +2512,65 @@ function renderMailBody(uid, m) {
       <button class="replyBtn primary" data-act="reply">↩ Beantwoorden</button>
       ${heeftMeerOntvangers(m) ? `<button class="replyBtn" data-act="replyall">↩↩ Allen beantwoorden</button>` : ""}
       <button class="replyBtn" data-act="forward">↪ Doorsturen</button>
+      <button class="replyBtn" data-act="trash">🗑 Verwijderen</button>
     </div>
     ${bijlagenHtml(uid, m)}
     <div id="replyMount"></div>
     ${m.html ? htmlMailHtml() : `<div class="mailBody">${escapeHtml(m.text || m.snippet || "(geen inhoud)")}</div>`}
 
-    <div class="quickActions">
-      ${inbox ? `
-      <button data-act="vraagai">★ Vraag AI</button>
-      <button data-act="opnieuw">★ Maak nieuw antwoord</button>
-      <button data-act="samenvat">★ Vat samen</button>
-      <button class="plain" id="klantBtn">Klantcontext</button>
-      <button class="plain" data-act="resolve" data-resolved="${m.resolved ? "1" : "0"}">${m.resolved ? "↺ Heropenen" : "✓ Afgehandeld"}</button>
-      ` : `<button class="plain" id="klantBtn">Klantcontext</button>`}
-      <button class="plain" data-act="agenda">📅 Zet in agenda</button>
-      <button class="plain" data-act="unread">✉ Als ongelezen</button>
-      <button class="plain" data-act="archive">📁 Archiveren</button>
-      <button class="plain" data-act="trash">🗑 Verwijderen</button>
-    </div>
     <div id="agendaMount"></div>
   `;
-  box.querySelector('[data-act="agenda"]').addEventListener("click", () => zetInAgenda(uid, m));
-  box.querySelector('[data-act="unread"]').addEventListener("click", () => markeerOngelezen(uid));
-  box.querySelector('[data-act="archive"]').addEventListener("click", () => verplaatsMail(uid, "archief"));
-  box.querySelector('[data-act="trash"]').addEventListener("click", () => verplaatsMail(uid, "prullenmand"));
   if (m.html) vulHtmlMail(m);
   laadBijlageSamenvattingen(uid, m);
   box.querySelector('[data-act="reply"]').addEventListener("click", () => openReply(uid, m, "reply"));
   const allenBtn = box.querySelector('[data-act="replyall"]');
   if (allenBtn) allenBtn.addEventListener("click", () => openReply(uid, m, "replyall"));
   box.querySelector('[data-act="forward"]').addEventListener("click", () => openReply(uid, m, "forward"));
-  if (!inbox) {
-    box.querySelector("#klantBtn").addEventListener("click", () => openKlantContext(m.fromAddress, m.from));
-    return;
-  }
-  box.querySelector('[data-act="vraagai"]').addEventListener("click", () => {
+  box.querySelector('[data-act="trash"]').addEventListener("click", () => verplaatsMail(uid, "prullenmand"));
+  renderMailActiesPaneel(uid, m, inbox);
+}
+
+// De AI- en beheerknoppen staan in de kolom rechts, niet boven de mail: zo
+// blijft de mail zelf rustig en heb je alles wat je met deze mail kan doen
+// altijd binnen handbereik. Archiveren zit enkel nog in de rechtermuisknop.
+function renderMailActiesPaneel(uid, m, inbox) {
+  const paneel = document.getElementById("mailActies");
+  if (!paneel) return;
+  paneel.innerHTML = `
+    <div class="panelTitle" style="margin-top:18px">Wat kan je met deze mail</div>
+    <div class="paneelKnoppen">
+      ${inbox ? `
+      <button data-act="samenvat">★ Vat deze mail samen</button>
+      <button data-act="opnieuw">★ Maak een nieuw antwoord</button>
+      <button data-act="vraagai">★ Stel er een vraag over</button>
+      <button data-act="taak">✓ Zet op mijn to-do</button>
+      <button data-act="agenda">📅 Zet in agenda</button>
+      <button class="plain" id="klantBtn">👤 Klantenfiche</button>
+      <button class="plain" data-act="unread">✉ Markeer als ongelezen</button>
+      <button class="plain" data-act="resolve" data-resolved="${m.resolved ? "1" : "0"}">${m.resolved ? "↺ Terug openzetten" : "✓ Afgehandeld"}</button>
+      ` : `
+      <button data-act="taak">✓ Zet op mijn to-do</button>
+      <button data-act="agenda">📅 Zet in agenda</button>
+      <button class="plain" id="klantBtn">👤 Klantenfiche</button>
+      <button class="plain" data-act="unread">✉ Markeer als ongelezen</button>`}
+    </div>`;
+
+  paneel.querySelector('[data-act="agenda"]').addEventListener("click", () => zetInAgenda(uid, m));
+  paneel.querySelector('[data-act="unread"]').addEventListener("click", () => markeerOngelezen(uid));
+  paneel.querySelector("#klantBtn").addEventListener("click", () => openKlantContext(m.fromAddress, m.from));
+  paneel.querySelector('[data-act="taak"]').addEventListener("click", () => maakTaakVanMail({
+    uid, folder: state.currentFolder || "INBOX",
+    subject: m.subject || "", from: m.from || "", fromAddress: m.fromAddress || "", date: m.date || null,
+  }));
+  if (!inbox) return;
+  paneel.querySelector('[data-act="vraagai"]').addEventListener("click", () => {
     const q = prompt("Wat wil je aan Mailvio AI vragen over deze mail?");
     if (q) askAboutMail(uid, m, q);
   });
-  box.querySelector('[data-act="opnieuw"]').addEventListener("click", () => loadSuggestion(uid, m, true));
-  box.querySelector('[data-act="samenvat"]').addEventListener("click", () => askAboutMail(uid, m, "Vat deze mail samen in 2 zinnen."));
-  box.querySelector("#klantBtn").addEventListener("click", () => openKlantContext(m.fromAddress, m.from));
-  box.querySelector('[data-act="resolve"]').addEventListener("click", (e) => {
-    const nowResolved = e.target.dataset.resolved !== "1";
-    resolveMail(uid, nowResolved);
+  paneel.querySelector('[data-act="opnieuw"]').addEventListener("click", () => loadSuggestion(uid, m, true));
+  paneel.querySelector('[data-act="samenvat"]').addEventListener("click", () => askAboutMail(uid, m, "Vat deze mail samen in 2 zinnen."));
+  paneel.querySelector('[data-act="resolve"]').addEventListener("click", (e) => {
+    resolveMail(uid, e.target.dataset.resolved !== "1");
   });
 }
 
@@ -3187,6 +3361,7 @@ document.getElementById("settingsSave").addEventListener("click", saveSettings);
   loadContacten();
   laadTaken();
   laadAgenda(true);
+  laadRegels(true);
 })();
 </script>
 </body>

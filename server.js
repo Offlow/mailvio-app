@@ -12,6 +12,7 @@ const afzenders = require("./afzenders");
 const bijlagen = require("./bijlagen");
 const taken = require("./taken");
 const agenda = require("./agenda");
+const regels = require("./regels");
 
 const app = express();
 // Ruimer dan standaard: bijlagen (offerte-pdf, dakfoto's) worden als tekst
@@ -279,9 +280,18 @@ async function getMails(forceRefresh) {
       genegeerd: !!c?.genegeerd,
     };
 
+    // Staat "Reclame herkennen" uit, dan telt het oordeel van de AI daarover
+    // niet mee en blijft alles gewone post.
+    if (!regels.aanstaat(accountKey, "reclame_herkennen") && basis.soort === "reclame") {
+      basis.soort = "overig";
+    }
+    if (!regels.aanstaat(accountKey, "reclame_vragen")) basis.reclameTwijfel = false;
+
     // Wat JIJ ooit over deze afzender besliste, weegt zwaarder dan het
     // oordeel van de AI — en de vraag wordt dan ook niet meer gesteld.
-    const beslist = afzenders.oordeel(accountKey, m.fromAddress);
+    const beslist = regels.aanstaat(accountKey, "afzender_onthouden")
+      ? afzenders.oordeel(accountKey, m.fromAddress)
+      : null;
     if (beslist) {
       basis.reclameTwijfel = false;
       basis.afzenderBeslist = true;
@@ -297,13 +307,30 @@ async function getMails(forceRefresh) {
     }
 
     // Een aanvraag via de website is altijd het belangrijkst.
-    if (basis.viaWebsite) {
+    if (basis.viaWebsite && regels.aanstaat(accountKey, "website_voorrang")) {
       basis.belangrijk = true;
       basis.vanType = "klant";
       if (basis.categorie === "geen_actie" || basis.categorie === "onbekend") {
         basis.categorie = "dringend";
       }
       if (!basis.actieLabel) basis.actieLabel = "Beantwoorden";
+    }
+
+    // Jouw eigen regels komen als laatste: die overrulen alles hierboven.
+    const geraakt = regels.pasToe(accountKey, m, basis);
+    if (geraakt.length) {
+      basis.regels = geraakt.map((r) => r.naam);
+      // "Maak er een taak van" kan enkel hier, want de takenlijst zit apart.
+      for (const r of geraakt) {
+        if (!r.acties.includes("taak")) continue;
+        const bestaat = taken.getAlle(accountKey).some((t) => (t.mails || []).some((x) => String(x.uid) === String(m.uid)));
+        if (!bestaat) {
+          taken.voegToe(accountKey, m.subject || "Mail opvolgen", {
+            notitie: `Automatisch aangemaakt door de regel "${r.naam}".`,
+            mails: [{ uid: m.uid, folder: "INBOX", subject: m.subject || "", from: m.from || "", fromAddress: m.fromAddress || "", date: m.date || null }],
+          });
+        }
+      }
     }
 
     return basis;
@@ -546,6 +573,9 @@ app.get("/api/mails/:uid/afspraak", async (req, res) => {
   try {
     const uid = Number(req.params.uid);
     const folder = req.query.folder;
+    if (!regels.aanstaat(taakAccount(), "afspraak_herkennen")) {
+      return res.json({ gevonden: false, reden: "Afspraken uit mails halen staat uit bij Automatisering — vul de datum hieronder zelf in." });
+    }
     const body = await mailbox.fetchMailBody(uid, folder);
     if (!body) return res.status(404).json({ error: "Mail niet gevonden." });
     const afspraak = await ai.extractAfspraak(body);
@@ -663,6 +693,10 @@ app.get("/api/mails/:uid/bijlage/:index/samenvatting", async (req, res) => {
     const index = Number(req.params.index);
     const folder = req.query.folder || "INBOX";
     const accountKey = settingsStore.getConfig().imapUser || "default";
+
+    if (!regels.aanstaat(accountKey, "bijlage_samenvatten")) {
+      return res.json({ samenvatting: "", reden: "Bijlagen samenvatten staat uit bij Automatisering." });
+    }
 
     const bewaard = bijlagen.get(accountKey, folder, uid, index);
     if (bewaard) return res.json(bewaard);
@@ -904,6 +938,41 @@ app.get("/api/klant/:address/fiche", async (req, res) => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// Automatiseringsregels
+// ---------------------------------------------------------------------------
+app.get("/api/regels", (req, res) => {
+  res.json(regels.overzicht(taakAccount()));
+});
+
+app.post("/api/regels/ingebouwd", (req, res) => {
+  const { sleutel, aan } = req.body || {};
+  const resultaat = regels.zetIngebouwd(taakAccount(), sleutel, aan);
+  if (!resultaat) return res.status(400).json({ error: "Onbekende regel." });
+  cache.at = 0; // opnieuw beoordelen met de nieuwe instelling
+  res.json(resultaat);
+});
+
+app.post("/api/regels", (req, res) => {
+  const regel = regels.voegToe(taakAccount(), req.body || {});
+  if (!regel) return res.status(400).json({ error: "Vul een waarde in en kies minstens één actie." });
+  cache.at = 0;
+  res.json({ regel, ...regels.overzicht(taakAccount()) });
+});
+
+app.patch("/api/regels/:id", (req, res) => {
+  const regel = regels.wijzigEigen(taakAccount(), req.params.id, req.body || {});
+  if (!regel) return res.status(404).json({ error: "Regel niet gevonden." });
+  cache.at = 0;
+  res.json({ regel, ...regels.overzicht(taakAccount()) });
+});
+
+app.delete("/api/regels/:id", (req, res) => {
+  regels.verwijderEigen(taakAccount(), req.params.id);
+  cache.at = 0;
+  res.json(regels.overzicht(taakAccount()));
+});
+
 app.get("/api/followups", async (req, res) => {
   try {
     const data = await mailbox.fetchFollowUps();
@@ -937,7 +1006,7 @@ app.post("/api/send", async (req, res) => {
     await mailer.sendMail({ to, cc, subject, text, inReplyTo, references, attachments });
     // Een effectief verstuurd antwoord telt als "beantwoord" — de originele
     // mail mag dan uit de openstaande-zaken-lijsten verdwijnen.
-    if (resolveUid) {
+    if (resolveUid && regels.aanstaat(taakAccount(), "antwoord_afhandelen")) {
       const uid = Number(resolveUid);
       const accountKey = settingsStore.getConfig().imapUser || "default";
       classifications.setResolved(accountKey, uid, true);
