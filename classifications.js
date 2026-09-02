@@ -72,4 +72,19 @@ function setResolved(accountKey, uid, resolved) {
   return entry;
 }
 
-module.exports = { getAll, setMany, setResolved };
+// "Niet meer opvolgen": de mail blijft gewoon in je mailbox staan, maar
+// Mailvio houdt er geen openstaande zaak meer van bij. Je hoeft er dus niet
+// meer op te antwoorden en hij komt niet meer terug op je dashboard.
+function setGenegeerd(accountKey, uid, genegeerd) {
+  if (!accountKey) return null;
+  const store = readStore();
+  const forAccount = store[accountKey] || {};
+  const existing = forAccount[uid] || {};
+  const entry = { ...existing, genegeerd: !!genegeerd, resolved: genegeerd ? true : existing.resolved };
+  forAccount[uid] = entry;
+  store[accountKey] = forAccount;
+  writeStore(store);
+  return entry;
+}
+
+module.exports = { getAll, setMany, setResolved, setGenegeerd };

@@ -11,6 +11,7 @@ const auth = require("./auth");
 const afzenders = require("./afzenders");
 const bijlagen = require("./bijlagen");
 const taken = require("./taken");
+const agenda = require("./agenda");
 
 const app = express();
 // Ruimer dan standaard: bijlagen (offerte-pdf, dakfoto's) worden als tekst
@@ -275,6 +276,7 @@ async function getMails(forceRefresh) {
       viaWebsite: !!c?.viaWebsite,
       reclameTwijfel: !!c?.reclameTwijfel,
       resolved: !!c?.resolved,
+      genegeerd: !!c?.genegeerd,
     };
 
     // Wat JIJ ooit over deze afzender besliste, weegt zwaarder dan het
@@ -492,6 +494,22 @@ app.get("/api/mails/:uid/suggestion", async (req, res) => {
 // Markeert een mail als (niet-)afgehandeld. Dit is de ENIGE manier waarop een
 // mail uit "Openstaande Zaken"/"Actie nodig"/Vandaag verdwijnt — nooit door
 // tijdsverloop of een herscan.
+// Niet meer opvolgen — de mail blijft staan, maar telt niet meer mee als
+// openstaande zaak. Terugdraaien kan altijd.
+app.post("/api/mails/:uid/negeer", (req, res) => {
+  try {
+    const uid = Number(req.params.uid);
+    const genegeerd = req.body?.genegeerd !== false;
+    const accountKey = settingsStore.getConfig().imapUser || "default";
+    classifications.setGenegeerd(accountKey, uid, genegeerd);
+    cache.mails = (cache.mails || []).map((m) => (m.uid === uid ? { ...m, genegeerd, resolved: genegeerd ? true : m.resolved } : m));
+    res.json({ ok: true, genegeerd });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Kon de mail niet bijwerken.", detail: e.message });
+  }
+});
+
 app.post("/api/mails/:uid/resolve", (req, res) => {
   try {
     const uid = Number(req.params.uid);
@@ -810,6 +828,79 @@ app.get("/api/klant/:address", async (req, res) => {
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "Kon de klantgeschiedenis niet ophalen.", detail: e.message, mails: [] });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Agenda
+// ---------------------------------------------------------------------------
+// Afspraken worden hier bewaard zodat je in Mailvio zelf een weekoverzicht hebt.
+// Het .ics-bestand blijft bestaan om ze ook in Apple/Google Agenda te zetten.
+app.get("/api/agenda", (req, res) => {
+  const accountKey = taakAccount();
+  const { van, tot } = req.query;
+  const lijst = van && tot ? agenda.getTussen(accountKey, van, tot) : agenda.getAlle(accountKey);
+  res.json({ afspraken: lijst });
+});
+
+app.post("/api/agenda", (req, res) => {
+  const item = agenda.voegToe(taakAccount(), req.body || {});
+  if (!item) return res.status(400).json({ error: "Een afspraak heeft minstens een datum nodig." });
+  res.json({ afspraak: item, afspraken: agenda.getAlle(taakAccount()) });
+});
+
+app.patch("/api/agenda/:id", (req, res) => {
+  const item = agenda.wijzig(taakAccount(), req.params.id, req.body || {});
+  if (!item) return res.status(404).json({ error: "Afspraak niet gevonden." });
+  res.json({ afspraak: item, afspraken: agenda.getAlle(taakAccount()) });
+});
+
+app.delete("/api/agenda/:id", (req, res) => {
+  agenda.verwijder(taakAccount(), req.params.id);
+  res.json({ ok: true, afspraken: agenda.getAlle(taakAccount()) });
+});
+
+// De klantenfiche: één blik op alles wat je met deze persoon te maken hebt —
+// een korte AI-samenvatting, wat er nog openstaat, wanneer je nog langsgaat,
+// en de volledige mailgeschiedenis.
+app.get("/api/klant/:address/fiche", async (req, res) => {
+  try {
+    const address = decodeURIComponent(req.params.address);
+    const accountKey = taakAccount();
+    const data = await mailbox.fetchMailsFromAddress(address);
+    const mails = data.mails || [];
+
+    const labels = classifications.getAll(accountKey);
+    const openstaand = mails
+      .map((m) => ({ ...m, ...(labels[m.uid] || {}) }))
+      .filter((m) => !m.resolved && m.categorie && m.categorie !== "geen_actie" && m.categorie !== "onbekend");
+
+    const volgende = agenda.volgendeVoor(accountKey, address);
+    const taakLijst = taken
+      .getAlle(accountKey)
+      .filter((t) => !t.klaar && (t.mails || []).some((m) => String(m.fromAddress || "").toLowerCase() === address.toLowerCase()));
+
+    let samenvatting = "";
+    if (ai.isConfigured() && mails.length) {
+      try {
+        samenvatting = await ai.vatKlantSamen(address, mails.slice(0, 15));
+      } catch (e) {
+        console.error("Klantsamenvatting mislukt:", e.message);
+      }
+    }
+
+    res.json({
+      configured: data.configured,
+      adres: address,
+      mails,
+      openstaand,
+      volgendeAfspraak: volgende,
+      taken: taakLijst,
+      samenvatting,
+    });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Kon de klantenfiche niet opbouwen.", detail: e.message, mails: [] });
   }
 });
 

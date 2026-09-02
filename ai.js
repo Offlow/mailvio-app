@@ -212,6 +212,31 @@ async function vatBijlageSamen(bijlage) {
   return { samenvatting: tekst, reden: "" };
 }
 
+// Een korte klantsamenvatting voor de klantenfiche: wie is dit, wat loopt er,
+// waar moet je op letten. Enkel op basis van de mails die er effectief zijn.
+const KLANT_SYSTEM = `Je bent de assistent van een zelfstandige dakwerker in Vlaanderen.
+Je krijgt de onderwerpen en fragmenten van de mailgeschiedenis met één contactpersoon.
+Schrijf in maximaal 3 korte zinnen, in het Nederlands (Vlaams, zakelijk):
+1. Wie dit is en wat voor werk het betreft.
+2. Wat er tot nu gebeurd is (offerte, bezoek, factuur, klacht, ...).
+3. Waar de dakwerker nu op moet letten of wat de volgende stap is.
+Verzin NOOIT iets dat niet in de mails staat. Weet je iets niet, laat het weg.
+Geen opsomming, geen kopjes, enkel de zinnen.`;
+
+async function vatKlantSamen(adres, mails) {
+  if (!isConfigured()) throw new Error("De AI is nog niet ingesteld.");
+  const regels = mails
+    .map((m) => `- ${m.date ? new Date(m.date).toLocaleDateString("nl-BE") : "?"} — ${m.subject || "(geen onderwerp)"}${m.snippet ? ": " + String(m.snippet).slice(0, 200) : ""}`)
+    .join("\n");
+  const resp = await client().messages.create({
+    model: "claude-sonnet-5",
+    max_tokens: 350,
+    system: KLANT_SYSTEM,
+    messages: [{ role: "user", content: `Contactpersoon: ${adres}\n\nMailgeschiedenis (nieuwste eerst):\n${regels}` }],
+  });
+  return resp.content.map((b) => (b.type === "text" ? b.text : "")).join("").trim();
+}
+
 async function rewriteProfessional(text) {
   if (!isConfigured()) {
     throw new Error("De AI is nog niet ingesteld.");
@@ -229,13 +254,13 @@ async function rewriteProfessional(text) {
 }
 
 const CHAT_SYSTEM = `Je bent de AI-assistent in Mailvio, een persoonlijke mailapp voor een zelfstandige dakwerker in Vlaanderen.
-Je krijgt de recentste mails uit zijn mailbox als context, maar dat is niet per se de hele mailbox. Gebruik het gereedschap "zoek_mailbox" telkens de vraag mogelijk over een mail gaat die niet in die recente lijst staat — bv. een naam, bedrijf, oud onderwerp, "wanneer heb ik met X gemaild", of gewoon wanneer je het niet zeker weet. Zoek liever één keer te veel dan een verkeerd of onvolledig antwoord te geven.
+Je krijgt de recentste mails uit zijn HUIDIGE mailbox als context, maar hij heeft mogelijk MEERDERE mailboxen (bv. een algemene en een boekhoudingmailbox). Het gereedschap "zoek_mailbox" doorzoekt ze ALLEMAAL tegelijk. Zegt een resultaat uit welke mailbox het komt, vermeld dat dan in je antwoord. Gebruik het gereedschap "zoek_mailbox" telkens de vraag mogelijk over een mail gaat die niet in die recente lijst staat — bv. een naam, bedrijf, oud onderwerp, "wanneer heb ik met X gemaild", of gewoon wanneer je het niet zeker weet. Zoek liever één keer te veel dan een verkeerd of onvolledig antwoord te geven.
 Beantwoord de vraag kort, direct en vriendelijk in het Vlaams — geen lange uitleg, geen jargon.
 Als je een mail voorstelt te herschrijven of te beantwoorden, schrijf die dan meteen kort en professioneel uit.`;
 
 const SEARCH_TOOL = {
   name: "zoek_mailbox",
-  description: "Doorzoekt de VOLLEDIGE mailbox (niet enkel de recentste mails die je als context kreeg) op een zoekterm in onderwerp, afzender of inhoud. Gebruik dit telkens het antwoord mogelijk niet in de meegegeven recente mails staat.",
+  description: "Doorzoekt ALLE gekoppelde mailboxen (dus ook de boekhoudingmailbox, niet enkel de mailbox waar de gebruiker nu in werkt) op een zoekterm in onderwerp, afzender of inhoud. Gebruik dit telkens het antwoord mogelijk niet in de meegegeven recente mails staat.",
   input_schema: {
     type: "object",
     properties: {
@@ -245,12 +270,16 @@ const SEARCH_TOOL = {
   },
 };
 
+// Zoekt over ALLE gekoppelde mailboxen heen — dus ook in de boekhoudingmailbox
+// terwijl je in info@ aan het werken bent. Bij elk resultaat staat uit welke
+// mailbox het komt, zodat het antwoord dat kan vermelden.
 async function runMailboxSearch(zoekterm) {
   try {
-    const { mails } = await mailbox.searchMails(zoekterm, 20);
+    const { mails } = await mailbox.searchAlleMailboxen(zoekterm, 15);
     if (!mails.length) return `Geen mails gevonden voor "${zoekterm}".`;
     return mails
-      .map((m) => `- (uid ${m.uid}) Van: ${m.from} <${m.fromAddress}> | Onderwerp: ${m.subject} | ${new Date(m.date).toLocaleDateString("nl-BE")} | ${m.snippet}`)
+      .slice(0, 40)
+      .map((m) => `- (uid ${m.uid}${m.mailbox ? ", mailbox: " + m.mailbox : ""}) Van: ${m.from} <${m.fromAddress}> | Onderwerp: ${m.subject} | ${m.date ? new Date(m.date).toLocaleDateString("nl-BE") : "?"} | ${m.snippet || ""}`)
       .join("\n");
   } catch (e) {
     return "Zoeken in de mailbox is mislukt: " + e.message;
@@ -311,4 +340,4 @@ async function chat(message, mails) {
   return "Geen antwoord ontvangen.";
 }
 
-module.exports = { classifyMails, suggestReply, rewriteProfessional, chat, isConfigured, extractAfspraak, vatBijlageSamen };
+module.exports = { classifyMails, suggestReply, rewriteProfessional, chat, isConfigured, extractAfspraak, vatBijlageSamen, vatKlantSamen };

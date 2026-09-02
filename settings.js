@@ -113,6 +113,9 @@ function getConfig() {
     // afbeeldingen mee geladen worden. Standaard uit (dan weet een afzender
     // niet dat je zijn mail geopend hebt), maar je kan het aanzetten.
     toonAfbeeldingen: stored.toonAfbeeldingen === true,
+    // Hoe Mailvio JOU aanspreekt. Los van de mailboxnaam: die kan
+    // "info@daklo.be" of "boekhouding" zijn, maar jij blijft dezelfde persoon.
+    aanspreektitel: stored.aanspreektitel || "",
   };
 }
 
@@ -133,6 +136,15 @@ function getAccounts() {
       actief: i === stored.actief,
     };
   });
+}
+
+// De volledige (interne) instellingen van ELK account — nodig om over alle
+// mailboxen heen te kunnen zoeken, ook al werk je nu in maar één ervan.
+function getAlleConfigs() {
+  const stored = normaliseer(readStoredSettings());
+  return stored.accounts
+    .map((a, i) => ({ index: i, label: accountLabel(accountConfig(a), i), ...accountConfig(a) }))
+    .filter((c) => c.imapHost && c.imapUser && c.imapPassword);
 }
 
 function getActiveIndex() {
@@ -188,6 +200,7 @@ function getPublicConfig() {
     aiToon: config.aiToon,
     aiHandtekening: config.aiHandtekening,
     toonAfbeeldingen: config.toonAfbeeldingen,
+    aanspreektitel: config.aanspreektitel,
     handtekening: config.handtekening,
     accounts: getAccounts(),
     actief: getActiveIndex(),
@@ -236,6 +249,7 @@ function updateSettings(update) {
   if (typeof update.aiToon === "string") stored.aiToon = update.aiToon.trim();
   if (typeof update.aiHandtekening === "string") stored.aiHandtekening = update.aiHandtekening.trim();
   if (typeof update.toonAfbeeldingen === "boolean") stored.toonAfbeeldingen = update.toonAfbeeldingen;
+  if (typeof update.aanspreektitel === "string") stored.aanspreektitel = update.aanspreektitel.trim();
 
   writeStoredSettings(stored);
   return getPublicConfig();
@@ -243,6 +257,7 @@ function updateSettings(update) {
 
 module.exports = {
   getConfig,
+  getAlleConfigs,
   getPublicConfig,
   updateSettings,
   getAccounts,

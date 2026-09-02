@@ -14,8 +14,8 @@ function isConfigured() {
   return !!(c.imapHost && c.imapUser && c.imapPassword);
 }
 
-function client() {
-  const c = settings.getConfig();
+function client(config) {
+  const c = config || settings.getConfig();
   return new ImapFlow({
     host: c.imapHost,
     port: Number(c.imapPort || 993),
@@ -601,11 +601,11 @@ async function parseAndBuild(msg) {
 // mappen. Zo vind je ook terug wat je zelf ooit geantwoord hebt.
 const ZOEK_MAPPEN_MAX = 6;
 
-async function searchMails(query, limit = 30, alleMappen = true) {
-  if (!isConfigured()) return { configured: false, mails: [] };
+async function searchMails(query, limit = 30, alleMappen = true, config) {
+  if (!config && !isConfigured()) return { configured: false, mails: [] };
   const q = (query || "").trim();
   if (!q) return { configured: true, mails: [] };
-  const imap = client();
+  const imap = client(config);
   await imap.connect();
   try {
     let paden = ["INBOX"];
@@ -804,7 +804,27 @@ async function fetchFollowUps() {
   }
 }
 
+// Zoekt in ALLE gekoppelde mailboxen tegelijk. Handig als je bv. een factuur
+// zoekt die in de boekhoudingmailbox zit terwijl je in info@ aan het werken bent.
+// Elk resultaat draagt de naam van de mailbox waar het uit komt.
+async function searchAlleMailboxen(query, limitPerBox = 15) {
+  const configs = settings.getAlleConfigs();
+  if (!configs.length) return { configured: false, mails: [] };
+  const resultaten = [];
+  for (const c of configs) {
+    try {
+      const r = await searchMails(query, limitPerBox, true, c);
+      for (const m of r.mails || []) resultaten.push({ ...m, mailbox: c.label, mailboxAdres: c.imapUser });
+    } catch (e) {
+      console.error(`Zoeken in ${c.imapUser} mislukt:`, e.message);
+    }
+  }
+  resultaten.sort((a, b) => new Date(b.date) - new Date(a.date));
+  return { configured: true, mails: resultaten };
+}
+
 module.exports = {
+  searchAlleMailboxen,
   fetchAllMails,
   fetchNieuweMails,
   fetchOudereMails,

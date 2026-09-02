@@ -169,6 +169,60 @@
   .sleepHint{font-size:12.5px;color:var(--ink-faint);border:1px dashed var(--border);border-radius:11px;padding:13px 15px;margin-bottom:16px;line-height:1.5}
   .taak.sleepOver,.navItem.sleepOver,.sleepHint.sleepOver{border-color:var(--accent);background:var(--accent-soft)}
   .mailRow.sleept{opacity:.45}
+
+  /* Agenda — weekweergave */
+  .agendaView{flex:1 1 auto;overflow-y:auto;padding:26px 34px 60px}
+  .weekBalk{display:flex;align-items:center;gap:10px;margin:2px 0 16px}
+  .weekBalk .weekTitel{font-weight:800;font-size:15px;margin-right:auto}
+  .weekRooster{display:grid;grid-template-columns:repeat(7,1fr);gap:10px}
+  @media (max-width:1000px){.weekRooster{grid-template-columns:1fr}}
+  .weekDag{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:11px 12px;min-height:130px;display:flex;flex-direction:column}
+  .weekDag.vandaagDag{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft)}
+  .weekDagKop{font-size:11.5px;font-weight:800;color:var(--ink-faint);text-transform:uppercase;letter-spacing:.04em;margin-bottom:9px}
+  .weekDag.vandaagDag .weekDagKop{color:var(--accent-ink)}
+  .afspraak{background:var(--accent-soft);border-radius:8px;padding:7px 9px;margin-bottom:6px;cursor:pointer}
+  .afspraak .uur{font-size:11px;font-weight:800;color:var(--accent-ink)}
+  .afspraak .wat{font-size:12.5px;font-weight:700;line-height:1.35;word-break:break-word}
+  .afspraak .waar{font-size:11px;color:var(--ink-faint);margin-top:2px}
+  .weekLeeg{font-size:11.5px;color:var(--ink-faint)}
+
+  /* Klantenfiche */
+  .ficheKaarten{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:16px 0 22px}
+  @media (max-width:1000px){.ficheKaarten{grid-template-columns:1fr}}
+  .ficheKaart{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:13px 15px}
+  .ficheKaart .kop{font-size:11px;text-transform:uppercase;letter-spacing:.05em;font-weight:800;color:var(--ink-faint);margin-bottom:7px}
+  .ficheKaart .groot{font-size:19px;font-weight:800;line-height:1.2}
+  .ficheKaart .klein{font-size:12.5px;color:var(--ink-soft);line-height:1.5;margin-top:3px}
+  .ficheSamenvatting{background:var(--accent-soft);border-radius:12px;padding:14px 16px;font-size:13.5px;line-height:1.6;color:var(--accent-ink);margin-bottom:4px}
+
+  /* Reclame-vraag op het dashboard */
+  .twijfelKaart{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:12px;margin-bottom:8px}
+  .twijfelKaart .info{flex:1 1 auto;min-width:0}
+  .twijfelKaart .van{font-weight:800;font-size:13px}
+  .twijfelKaart .onderwerp{font-size:12.5px;color:var(--ink-soft);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .twijfelKnop{border:1px solid var(--border);background:var(--surface);border-radius:9px;padding:7px 12px;font-family:inherit;font-size:13px;font-weight:800;cursor:pointer}
+  .twijfelKnop.ja{color:#b3261e;border-color:#f0c8c4}
+  .twijfelKnop.nee{color:var(--accent-ink);border-color:var(--accent)}
+  .twijfelKnop:hover{background:var(--surface-2)}
+
+  /* Tabbladen in Nog open */
+  .tabRij{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 16px}
+  .tabKnop{border:1px solid var(--border);background:var(--surface);border-radius:99px;padding:7px 14px;font-family:inherit;font-size:12.5px;font-weight:800;color:var(--ink-soft);cursor:pointer}
+  .tabKnop.aan{background:var(--accent-soft);border-color:var(--accent);color:var(--accent-ink)}
+
+  /* Rechtermuisknopmenu op een mail */
+  .ctxMenu{position:fixed;z-index:200;background:var(--surface);border:1px solid var(--border);border-radius:11px;box-shadow:0 12px 34px rgba(0,0,0,.18);padding:5px;min-width:212px;display:flex;flex-direction:column;gap:1px}
+  .ctxMenu button{border:none;background:none;font-family:inherit;text-align:left;font-size:13px;padding:8px 11px;border-radius:7px;cursor:pointer;color:var(--ink);display:flex;align-items:center;gap:9px}
+  .ctxMenu button:hover{background:var(--surface-2)}
+  .ctxMenu button.gevaar{color:#b3261e}
+  .ctxMenu .lijn{height:1px;background:var(--border);margin:4px 2px}
+
+  /* Inspreken */
+  .micKnop{border:1px solid var(--border);background:var(--surface);border-radius:10px;padding:0 13px;font-size:16px;cursor:pointer;font-family:inherit;flex:0 0 auto}
+  .micKnop:hover{border-color:var(--accent)}
+  .micKnop.luistert{background:#fdecea;border-color:#e88b83;color:#b3261e;animation:pols 1.1s ease-in-out infinite}
+  @keyframes pols{0%,100%{opacity:1}50%{opacity:.55}}
+  .micHint{font-size:12px;color:var(--ink-faint);margin:-12px 0 14px}
   .miniCard{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:14px 16px}
   .miniCard .title{font-weight:800;font-size:13.5px;display:flex;align-items:center;gap:7px;margin-bottom:6px}
   .miniCard .title .dotmark{width:7px;height:7px;border-radius:50%}
@@ -221,7 +275,7 @@
   .htmlMailBar button:hover{background:var(--accent-soft)}
   /* Geen eigen scrollbalk: het venster is even hoog als de mail zelf, je
      scrollt gewoon de pagina door tot bij de antwoordknoppen. */
-  #mailFrame{width:100%;min-height:120px;border:none;display:block;background:#fff;border-radius:8px;overflow:hidden}
+  #mailFrame{width:100%;min-height:120px;height:400px;border:none;display:block;background:#fff;border-radius:8px;overflow:hidden}
 
   /* Bijlagen */
   .bijlagen{margin-top:20px;padding-top:14px;border-top:1px solid var(--border)}
@@ -240,6 +294,10 @@
 
   /* Antwoordbalk direct onder de mail — zoals in een gewone mailbox. */
   .replyBar{display:flex;gap:8px;flex-wrap:wrap;margin-top:22px;padding-top:16px;border-top:1px solid var(--border)}
+  /* Zoals in Outlook: beantwoorden en doorsturen staan bovenaan, met de
+     bijlagen erboven, en de mail loopt daaronder gewoon door. */
+  .replyBar.boven{margin-top:0;padding-top:0;border-top:none;margin-bottom:14px}
+  .bijlagen.boven{margin-top:0;padding-top:0;border-top:none;border-bottom:1px solid var(--border);padding-bottom:14px;margin-bottom:16px}
   .replyBtn{border:1px solid var(--border);background:var(--surface);color:var(--ink);border-radius:9px;padding:9px 16px;font-size:13.5px;font-weight:700;cursor:pointer}
   .replyBtn:hover{background:var(--surface-2)}
   .replyBtn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
@@ -351,6 +409,8 @@
       <span class="navHomeTekst"><b>Dashboard</b><small>Alles op één scherm</small></span>
     </button>
     <button class="navItem" data-nav="taken" id="navTaken">✓ To-do <span class="count" id="cntTaken"></span></button>
+    <button class="navItem" data-nav="zaken">◎ Nog open <span class="count" id="cntZaken"></span></button>
+    <button class="navItem" data-nav="agenda">📅 Agenda</button>
     <button class="navItem" data-nav="zoeken">🔍 Zoeken</button>
 
     <div class="navGroup">Mailbox</div>
@@ -374,6 +434,7 @@
 </div>
 
 <div class="toast" id="toast"></div>
+<div class="ctxMenu" id="ctxMenu" hidden></div>
 
 <!-- Adresboek: afgeleid uit je eigen mailgeschiedenis, voor snel aanvullen -->
 <datalist id="contactenLijst"></datalist>
@@ -410,6 +471,12 @@
     <div class="sectionLabel">Claude AI</div>
     <div class="fieldList">
       <div class="fieldRow"><label for="setApiKey">API-sleutel</label><input id="setApiKey" type="password" placeholder="sk-ant-..." autocomplete="off"></div>
+    </div>
+
+    <div class="sectionLabel">Jij</div>
+    <p class="hint" style="margin:-2px 0 8px">Hoe Mailvio jou aanspreekt op het dashboard. Dit staat los van de mailbox waar je in werkt — of je nu in info@ of in de boekhoudingmailbox zit, jij blijft dezelfde persoon.</p>
+    <div class="fieldList">
+      <div class="fieldRow"><label for="setAanspreek">Spreek me aan als</label><input id="setAanspreek" type="text" placeholder="Lorenzo" autocomplete="off"></div>
     </div>
 
     <div class="sectionLabel">Weergave van mails</div>
@@ -502,6 +569,9 @@ const state = {
   suggestion: {},   // uid -> AI-voorstel
   chatLog: {},      // uid -> [{who,text}] mini-log per mail (AI-panel)
   taken: [],        // je eigen to-dolijst
+  afspraken: [],    // je agenda
+  weekStart: null,  // week die je in de agenda bekijkt
+  zakenTab: "alles",
   sleepMail: null,  // mail die je nu aan het slepen bent
   folders: [],      // echte IMAP-mappen van de mailbox
   folder: "INBOX",  // map die nu bekeken wordt
@@ -620,6 +690,7 @@ async function wisselAccount(index) {
   loadFolders();
   loadContacten();
   laadTaken();
+  laadAgenda(true);
   showToast("Je zit nu in " + (state.settings.imapUser || "de andere mailbox") + ".");
 }
 
@@ -791,7 +862,11 @@ async function loadMails(forceRefresh) {
   state.backfillResterend = data.backfillResterend || 0;
   renderBanner();
   renderSidebarCounts();
-  renderView();
+  // Schermen die niets met de mailijst te maken hebben NIET opnieuw tekenen:
+  // anders verdween je tekst terwijl je een taak aan het typen was.
+  if (!["taken", "agenda", "mail", "klant", "zoeken"].includes(state.view)) {
+    renderView();
+  }
 
   // Nog niet alle mails beoordeeld? Blijf op de achtergrond automatisch
   // volgende porties opvragen tot alles gescand is — zonder dat de gebruiker
@@ -892,9 +967,172 @@ function renderView() {
   if (state.view === "zaken") return renderOpenstaandeZaken();
   if (state.view === "opvolgingen") return renderOpvolgingen();
   if (state.view === "taken") return renderTaken();
+  if (state.view === "agenda") return renderAgenda();
   if (state.view === "folder") return renderFolderView();
   if (state.view === "mail") return; // wordt al gerenderd door openMail()
   if (state.view === "klant") return; // wordt al gerenderd door openKlantContext()
+}
+
+// ---------------------------------------------------------------------------
+// Rechtermuisknop op een mail
+// ---------------------------------------------------------------------------
+// Enkel wat je echt gebruikt: openen, beantwoorden, doorsturen, gelezen zetten,
+// aan je to-do hangen, archiveren en verwijderen.
+function sluitCtx() {
+  const menu = document.getElementById("ctxMenu");
+  if (menu) menu.hidden = true;
+}
+
+function openCtxMenu(e, uid, folder) {
+  e.preventDefault();
+  const menu = document.getElementById("ctxMenu");
+  if (!menu) return;
+  const uitMap = folder && folder !== "INBOX";
+  const m = (uitMap ? state.folderMails : state.mails).find((x) => x.uid === uid) || {};
+
+  menu.innerHTML = `
+    <button data-ctx="open">📬 Openen</button>
+    <button data-ctx="reply">↩ Beantwoorden</button>
+    <button data-ctx="forward">↪ Doorsturen</button>
+    <div class="lijn"></div>
+    <button data-ctx="todo">✓ Toevoegen aan to-do</button>
+    <button data-ctx="lezen">${m.unread ? "◉ Markeren als gelezen" : "○ Markeren als ongelezen"}</button>
+    <div class="lijn"></div>
+    <button data-ctx="archief">🗄 Archiveren</button>
+    <button class="gevaar" data-ctx="prullenmand">🗑 Verwijderen</button>`;
+
+  menu.hidden = false;
+  // Binnen het scherm houden, ook als je onderaan of rechts klikt.
+  const b = menu.getBoundingClientRect();
+  menu.style.left = Math.min(e.clientX, window.innerWidth - b.width - 8) + "px";
+  menu.style.top = Math.min(e.clientY, window.innerHeight - b.height - 8) + "px";
+
+  menu.querySelectorAll("[data-ctx]").forEach((knop) =>
+    knop.addEventListener("click", async () => {
+      const actie = knop.dataset.ctx;
+      sluitCtx();
+      if (actie === "open") return openMail(uid, folder);
+      if (actie === "lezen") {
+        await markeerGelezenOpServer(uid, !!m.unread);
+        showToast(m.unread ? "Gemarkeerd als gelezen." : "Gemarkeerd als ongelezen.");
+        renderSidebarCounts();
+        return renderView();
+      }
+      if (actie === "archief" || actie === "prullenmand") {
+        state.currentFolder = uitMap ? folder : "INBOX";
+        return verplaatsMail(uid, actie);
+      }
+      if (actie === "todo") {
+        return maakTaakVanMail({
+          uid, folder: uitMap ? folder : "INBOX",
+          subject: m.subject || "", from: m.from || "", fromAddress: m.fromAddress || "", date: m.date || null,
+        });
+      }
+      if (actie === "reply" || actie === "forward") {
+        // De mail moet eerst geopend zijn, want een antwoord heeft de volledige
+        // inhoud nodig om te kunnen citeren.
+        await openMail(uid, folder);
+        const detail = state.mailDetail[uitMap ? `${folder}:${uid}` : uid] || state.mailDetail[uid];
+        if (detail) openReply(uid, detail, actie);
+      }
+    })
+  );
+}
+
+document.addEventListener("click", sluitCtx);
+document.addEventListener("scroll", sluitCtx, true);
+window.addEventListener("resize", sluitCtx);
+
+// ---------------------------------------------------------------------------
+// Agenda — weekweergave
+// ---------------------------------------------------------------------------
+// Afspraken die je vanuit een mail hebt vastgelegd, staan hier per week naast
+// elkaar. Zo zie je in één blik wat er deze week gepland is.
+async function laadAgenda(stil) {
+  try {
+    const r = await fetch("/api/agenda");
+    const data = await r.json();
+    state.afspraken = data.afspraken || [];
+  } catch (e) {
+    state.afspraken = state.afspraken || [];
+  }
+  if (!stil && state.view === "agenda") renderAgenda();
+}
+
+// Maandag van de week waar deze datum in valt.
+function maandagVan(d) {
+  const dt = new Date(d);
+  const dag = (dt.getDay() + 6) % 7; // maandag = 0
+  dt.setDate(dt.getDate() - dag);
+  dt.setHours(0, 0, 0, 0);
+  return dt;
+}
+
+function datumSleutel(d) {
+  const dt = new Date(d);
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+}
+
+function renderAgenda() {
+  const mount = document.getElementById("viewMount");
+  const start = maandagVan(state.weekStart || new Date());
+  const dagen = [];
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(start);
+    d.setDate(start.getDate() + i);
+    dagen.push(d);
+  }
+  const vandaag = datumSleutel(new Date());
+  const eind = dagen[6];
+  const titel = `${start.toLocaleDateString("nl-BE", { day: "numeric", month: "long" })} — ${eind.toLocaleDateString("nl-BE", { day: "numeric", month: "long", year: "numeric" })}`;
+
+  const perDag = (d) => (state.afspraken || [])
+    .filter((a) => a.datum === datumSleutel(d))
+    .sort((a, b) => String(a.begin).localeCompare(String(b.begin)));
+
+  mount.innerHTML = `
+    <div class="agendaView">
+      <h1 style="margin:0 0 4px;font-size:22px">Agenda</h1>
+      <div class="sub" style="margin-bottom:14px">Alles wat je vanuit een mail hebt vastgelegd. Klik op een afspraak om de mail erbij te openen.</div>
+      <div class="weekBalk">
+        <span class="weekTitel">${escapeHtml(titel)}</span>
+        <button class="btn btn-ghost" id="weekVorige">← Vorige week</button>
+        <button class="btn btn-ghost" id="weekNu">Deze week</button>
+        <button class="btn btn-ghost" id="weekVolgende">Volgende week →</button>
+      </div>
+      <div class="weekRooster">
+        ${dagen.map((d) => {
+          const lijst = perDag(d);
+          return `
+            <div class="weekDag ${datumSleutel(d) === vandaag ? "vandaagDag" : ""}">
+              <div class="weekDagKop">${d.toLocaleDateString("nl-BE", { weekday: "short" })} ${d.getDate()}/${d.getMonth() + 1}</div>
+              ${lijst.length ? lijst.map((a) => `
+                <div class="afspraak" data-afspraak="${a.id}">
+                  <div class="uur">${escapeHtml(a.begin)}${a.duur ? ` · ${a.duur}m` : ""}</div>
+                  <div class="wat">${escapeHtml(a.titel)}</div>
+                  ${a.plaats ? `<div class="waar">${escapeHtml(a.plaats)}</div>` : ""}
+                </div>`).join("") : '<div class="weekLeeg">Niets gepland</div>'}
+            </div>`;
+        }).join("")}
+      </div>
+    </div>`;
+
+  const verzet = (weken) => {
+    const d = new Date(start);
+    d.setDate(d.getDate() + weken * 7);
+    state.weekStart = d;
+    renderAgenda();
+  };
+  document.getElementById("weekVorige").addEventListener("click", () => verzet(-1));
+  document.getElementById("weekVolgende").addEventListener("click", () => verzet(1));
+  document.getElementById("weekNu").addEventListener("click", () => { state.weekStart = new Date(); renderAgenda(); });
+
+  mount.querySelectorAll("[data-afspraak]").forEach((el) => el.addEventListener("click", () => {
+    const a = (state.afspraken || []).find((x) => x.id === el.dataset.afspraak);
+    if (!a) return;
+    if (a.uid) return openMail(Number(a.uid));
+    showToast(`${a.titel} — ${a.datum} om ${a.begin}${a.plaats ? " · " + a.plaats : ""}`);
+  }));
 }
 
 // ---------------------------------------------------------------------------
@@ -979,8 +1217,10 @@ function renderTaken() {
 
       <div class="takenInvoer">
         <input type="text" id="nieuweTaak" placeholder="Bv. offerte maken voor Peeters — typ en druk op Enter">
+        <button class="micKnop" id="taakMic" title="Taak inspreken">🎤</button>
         <button class="btn btn-primary" id="taakToevoegen">Toevoegen</button>
       </div>
+      <div class="micHint" id="micHint" hidden></div>
 
       <div class="sleepHint" id="sleepNieuw">Sleep een mail uit je inbox hierheen om er meteen een taak van te maken — of laat ze op een bestaande taak vallen om ze eraan te koppelen.</div>
 
@@ -990,14 +1230,24 @@ function renderTaken() {
     </div>`;
 
   const veld = document.getElementById("nieuweTaak");
+  // Was je aan het typen toen de lijst zich vernieuwde? Zet je tekst terug en
+  // spring met de cursor naar waar je gebleven was.
+  if (state._taakTekst) {
+    veld.value = state._taakTekst;
+    veld.focus();
+    veld.setSelectionRange(veld.value.length, veld.value.length);
+  }
+  veld.addEventListener("input", () => { state._taakTekst = veld.value; });
   const voegToe = () => {
     const titel = veld.value.trim();
     if (!titel) return;
     veld.value = "";
+    state._taakTekst = "";
     taakActie("/api/taken", jsonPost({ titel }));
   };
   document.getElementById("taakToevoegen").addEventListener("click", voegToe);
   veld.addEventListener("keydown", (e) => { if (e.key === "Enter") voegToe(); });
+  koppelSpraak(veld, "taakMic", "micHint", voegToe);
 
   mount.querySelectorAll("[data-vink]").forEach((b) => b.addEventListener("click", () => {
     const t = lijst.find((x) => x.id === b.dataset.vink);
@@ -1066,6 +1316,92 @@ function renderTaken() {
   });
 }
 
+// Een taak inspreken in plaats van typen. We gebruiken de spraakherkenning die
+// in je browser zelf zit, ingesteld op Vlaams (nl-BE) zodat namen en woorden
+// als "offerte", "dakgoot" of "Stekene" juist herkend worden. Tussentijds zie je
+// meteen wat hij verstaat, zodat je kan bijsturen voor je het toevoegt.
+function koppelSpraak(veld, knopId, hintId, klaar) {
+  const knop = document.getElementById(knopId);
+  const hint = document.getElementById(hintId);
+  if (!knop) return;
+  const Herkenner = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!Herkenner) {
+    knop.hidden = true;
+    return;
+  }
+
+  let herkenner = null;
+  let luistert = false;
+
+  const stop = () => {
+    luistert = false;
+    knop.classList.remove("luistert");
+    if (hint) hint.hidden = true;
+    try { herkenner && herkenner.stop(); } catch (e) { /* al gestopt */ }
+  };
+
+  knop.addEventListener("click", () => {
+    if (luistert) return stop();
+
+    herkenner = new Herkenner();
+    herkenner.lang = "nl-BE";
+    herkenner.continuous = true;
+    herkenner.interimResults = true;
+    // Meerdere gissingen laten maken en de beste nemen: dat scheelt merkbaar
+    // bij vaktermen en eigennamen.
+    herkenner.maxAlternatives = 3;
+
+    const beginTekst = veld.value;
+    herkenner.addEventListener("result", (e) => {
+      let vast = "";
+      let bezig = "";
+      for (let i = 0; i < e.results.length; i++) {
+        const res = e.results[i];
+        // Bij een afgewerkt stuk de alternatief met de hoogste zekerheid nemen.
+        let beste = res[0];
+        for (let j = 1; j < res.length; j++) {
+          if ((res[j].confidence || 0) > (beste.confidence || 0)) beste = res[j];
+        }
+        if (res.isFinal) vast += beste.transcript;
+        else bezig += beste.transcript;
+      }
+      const samen = (beginTekst ? beginTekst + " " : "") + (vast + bezig).trim();
+      veld.value = samen.replace(/\s+/g, " ").trim();
+      state._taakTekst = veld.value;
+      if (hint) {
+        hint.hidden = false;
+        hint.textContent = bezig ? "Aan het luisteren: " + bezig : "Aan het luisteren...";
+      }
+    });
+
+    herkenner.addEventListener("error", (e) => {
+      stop();
+      showToast(e.error === "not-allowed"
+        ? "Geef Mailvio toegang tot je microfoon om een taak in te spreken."
+        : "Inspreken lukte niet: " + e.error);
+    });
+    herkenner.addEventListener("end", () => {
+      const had = luistert;
+      stop();
+      // Klaar met praten? De taak staat nu in het veld — je kan nog aanpassen
+      // en dan zelf op Enter of Toevoegen duwen.
+      if (had && veld.value.trim() && hint) {
+        hint.hidden = false;
+        hint.textContent = 'Klopt het? Pas gerust aan en druk op Enter.';
+      }
+    });
+
+    try {
+      herkenner.start();
+      luistert = true;
+      knop.classList.add("luistert");
+      if (hint) { hint.hidden = false; hint.textContent = "Aan het luisteren... klik nog eens op de microfoon als je klaar bent."; }
+    } catch (e) {
+      showToast("Inspreken lukte niet: " + e.message);
+    }
+  });
+}
+
 // Een mail wordt een taak: de titel stellen we voor op basis van het onderwerp,
 // zodat je meteen kan aanpassen naar wat er écht moet gebeuren.
 function maakTaakVanMail(mail) {
@@ -1100,7 +1436,9 @@ function timeGreeting() {
 
 function renderVandaag() {
   const mount = document.getElementById("viewMount");
-  const naam = (state.settings.displayName || "").split(" ")[0] || "";
+  // Hoe Mailvio je aanspreekt: eerst wat je zelf bij de instellingen invulde.
+  // Zo blijft het "Goedemiddag Lorenzo", ook als je in de boekhoudingmailbox zit.
+  const naam = (state.settings.aanspreektitel || "").trim() || (state.settings.displayName || "").split(" ")[0] || "";
   // Afgehandelde mails tellen niet meer mee — ze verdwijnen ENKEL doordat je ze
   // afvinkt of effectief beantwoordt, nooit vanzelf door tijd of een herscan.
   const open = state.mails.filter((m) => !m.resolved && m.soort !== "reclame");
@@ -1113,10 +1451,24 @@ function renderVandaag() {
   const offertes = open.filter((m) => m.soort === "offerte").sort(nieuwste);
   const belangrijk = open.filter((m) => m.belangrijk).sort(nieuwste);
 
+  // Mails waar de AI twijfelt of het reclame is. Jij beslist — één keer per
+  // afzender, daarna gaat alles van dat adres vanzelf naar de juiste plek.
+  const gezien = new Set();
+  const twijfel = state.mails
+    .filter((m) => m.reclameTwijfel && !m.afzenderBeslist && m.fromAddress)
+    .filter((m) => {
+      const a = m.fromAddress.toLowerCase();
+      if (gezien.has(a)) return false;
+      gezien.add(a);
+      return true;
+    })
+    .sort(nieuwste)
+    .slice(0, 6);
+
   // Eén kolom: duidelijke titel, één zin uitleg over wat er precies in zit,
   // de vijf recentste mails, en een knop naar de volledige lijst.
   function kolom(titel, kleur, uitleg, mails, doel) {
-    const top = mails.slice(0, 5);
+    const top = mails.slice(0, 3);
     return `
       <div class="kolom">
         <div class="kolomKop"><span class="dotmark" style="background:${kleur}"></span> ${titel}<span class="aantal">${mails.length}</span></div>
@@ -1127,7 +1479,7 @@ function renderVandaag() {
             <div class="kolomOnderwerp">${escapeHtml(m.subject)}</div>
           </div>
         `).join("") : '<div class="kolomLeeg">Niets openstaand hier.</div>'}
-        ${mails.length > 5 ? `<button class="kolomAlles" data-goto="${doel}">Alle ${mails.length} bekijken →</button>` : (mails.length ? `<button class="kolomAlles" data-goto="${doel}">Open deze map →</button>` : "")}
+        <button class="kolomAlles" data-goto="${doel}">${mails.length > 3 ? `Bekijk alle ${mails.length} →` : "Open deze lijst →"}</button>
       </div>`;
   }
 
@@ -1147,12 +1499,27 @@ function renderVandaag() {
       </div>
       <div class="promptAnswer" id="vandaagAnswer" hidden></div>
 
+      ${twijfel.length ? `
+      <div class="sectionTitle" style="margin-top:26px"><span class="dotmark" style="background:var(--yellow)"></span> Is dit reclame?</div>
+      <div class="kolomUitleg" style="margin-bottom:10px">Mailvio twijfelt bij ${twijfel.length} afzender${twijfel.length === 1 ? "" : "s"}. Zeg het één keer, dan weet ze het voorgoed voor dat adres.</div>
+      ${twijfel.map((m) => `
+        <div class="twijfelKaart">
+          <span class="avatar">${initials(m.from)}</span>
+          <div class="info">
+            <div class="van">${escapeHtml(m.from)} <span style="font-weight:600;color:var(--ink-faint)">${escapeHtml(m.fromAddress || "")}</span></div>
+            <div class="onderwerp">${escapeHtml(m.subject)}</div>
+          </div>
+          <button class="twijfelKnop ja" data-reclame="${escapeHtml(m.fromAddress || "")}">✓ Reclame</button>
+          <button class="twijfelKnop nee" data-geenreclame="${escapeHtml(m.fromAddress || "")}">✗ Echte mail</button>
+        </div>`).join("")}
+      ` : ""}
+
       ${!state.mails.length ? '<div class="empty">Nog geen mails geladen.</div>' : `
       <div class="sectionTitle" style="margin-top:26px"><span class="dotmark" style="background:var(--red)"></span> Openstaande zaken</div>
       <div class="kolomRij">
         ${kolom("Actie nodig", "var(--red)", "Mails die vandaag een antwoord van jou vragen — klachten, dringende klantvragen, alles wat niet kan wachten.", actie, "dringend")}
         ${kolom("Opvolgen", "var(--orange)", "Mag nog een paar dagen wachten, maar mag je niet vergeten — leveranciers, losse vragen, dingen zonder deadline.", opvolgen, "binnenkort")}
-        ${kolom("Wachten op antwoord", "var(--yellow)", "Jij hebt gereageerd of gelezen, de andere kant is aan zet. Al twee dagen of langer stil.", wachten, "opvolgingen")}
+        ${kolom("Wachten op antwoord", "var(--yellow)", "Jij hebt gereageerd of gelezen, de andere kant is aan zet. Al twee dagen of langer stil.", wachten, "wachten")}
       </div>
 
       <div class="sectionTitle" style="margin-top:26px"><span class="dotmark" style="background:var(--accent)"></span> Per soort</div>
@@ -1169,13 +1536,32 @@ function renderVandaag() {
   koppelSleepbareMails(mount);
   mount.querySelectorAll("[data-goto]").forEach((b) => b.addEventListener("click", () => {
     const doel = b.dataset.goto;
-    if (doel === "opvolgingen") { state.view = "opvolgingen"; }
-    else { state.view = "inbox"; state.filter = doel; }
+    state.view = "inbox"; state.filter = doel;
     renderSidebarCounts(); renderView();
   }));
+  mount.querySelectorAll("[data-reclame]").forEach((b) => b.addEventListener("click", () => beslisOverAfzender(b.dataset.reclame, true)));
+  mount.querySelectorAll("[data-geenreclame]").forEach((b) => b.addEventListener("click", () => beslisOverAfzender(b.dataset.geenreclame, false)));
   mount.querySelectorAll(".chip").forEach((c) => c.addEventListener("click", () => askVandaag(c.dataset.q)));
   document.getElementById("vandaagAsk").addEventListener("click", () => askVandaag(document.getElementById("vandaagPrompt").value));
   document.getElementById("vandaagPrompt").addEventListener("keydown", (e) => { if (e.key === "Enter") askVandaag(e.target.value); });
+}
+
+// Jouw oordeel over een afzender bewaren. Vanaf nu belandt élke mail van dit
+// adres meteen op de juiste plek — Mailvio vraagt het geen tweede keer.
+async function beslisOverAfzender(adres, reclame) {
+  if (!adres) return;
+  try {
+    await fetch("/api/afzender/oordeel", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ adres, reclame }),
+    });
+  } catch (e) {
+    showToast("Kon dit niet bewaren: " + e.message);
+    return;
+  }
+  showToast(reclame ? `Alles van ${adres} gaat voortaan naar Reclame.` : `${adres} blijft gewone post.`);
+  await loadMails(true);
 }
 
 async function askVandaag(question) {
@@ -1278,6 +1664,9 @@ function koppelSleepbareMails(root) {
       rij.classList.remove("sleept");
       setTimeout(() => { state.sleepMail = null; }, 100);
     });
+    rij.addEventListener("contextmenu", (e) => {
+      openCtxMenu(e, Number(rij.dataset.sleep), state.view === "folder" ? state.folder : "INBOX");
+    });
   });
 }
 
@@ -1290,6 +1679,7 @@ function filteredMails() {
   else if (state.filter === "afspraken") list = list.filter((m) => m.soort === "afspraak");
   else if (state.filter === "offertes") list = list.filter((m) => m.soort === "offerte");
   else if (state.filter === "belangrijk") list = list.filter((m) => m.belangrijk);
+  else if (state.filter === "wachten") list = list.filter((m) => !m.unread && !m.resolved && m.categorie && m.categorie !== "geen_actie" && m.categorie !== "onbekend" && daysAgo(m.date) >= 2);
   else if (state.filter === "reclame") list = list.filter((m) => m.soort === "reclame");
   // Reclame hoort niet tussen je gewone post: enkel in de map Reclame zelf.
   if (state.filter !== "reclame" && state.filter !== "alle") {
@@ -1309,6 +1699,19 @@ const FILTER_TITELS = {
   afspraken: "Afspraken",
   offertes: "Offertes",
   belangrijk: "Belangrijk",
+  wachten: "Wachten op antwoord",
+  reclame: "Reclame",
+};
+// Onder elke titel één zin: wat zit hier precies in? Zo blijft duidelijk waar
+// je bent als je vanuit het dashboard een kolom openklikt.
+const FILTER_UITLEG = {
+  dringend: "Mails die vandaag een antwoord van jou vragen.",
+  binnenkort: "Mag nog een paar dagen wachten, maar mag je niet vergeten.",
+  wachten: "Jij hebt gereageerd of gelezen, de andere kant is aan zet — al twee dagen of langer stil.",
+  afspraken: "Mails met een datum, plaatsbezoek of planning die vastgelegd moet worden.",
+  offertes: "Prijsvragen, offertes, bestekken en bestellingen.",
+  belangrijk: "Wat Mailvio als belangrijk inschat. Aanvragen via daklo.be staan hier altijd bij.",
+  reclame: "Nieuwsbrieven en promotie, apart gehouden van je gewone post.",
 };
 function filterTitel() {
   return FILTER_TITELS[state.filter] || "Inbox";
@@ -1329,7 +1732,8 @@ function renderInbox() {
             <button class="btn btn-primary" id="newMailBtn">+ Nieuwe mail</button>
           </div>
         </div>
-        <div style="font-size:12px;color:var(--ink-faint);margin:-8px 0 12px">
+        ${FILTER_UITLEG[state.filter] ? `<div class="kolomUitleg" style="margin:-8px 0 10px">${FILTER_UITLEG[state.filter]} — ${list.length} mail${list.length === 1 ? "" : "s"}.</div>` : ""}
+        <div style="font-size:12px;color:var(--ink-faint);margin:-2px 0 12px">
           ${state.mails.length} mail${state.mails.length === 1 ? "" : "s"} geladen${state.mailsTotal > state.mails.length ? " van " + state.mailsTotal : ""}${state.mailsCapped ? " (veiligheidsgrens van " + (state.envelopeCap || "") + " bereikt — laat het weten als dit te weinig is)" : ""}.
           ${state.mailsScanning
             ? ` Bezig met scannen door de AI: ${state.mailsScanned} van ${state.mails.length} beoordeeld — dit werkt vanzelf verder op de achtergrond.`
@@ -1414,7 +1818,9 @@ function renderZoeken() {
     </div>
   `;
   const input = document.getElementById("zoekInput");
+  if (state._zoekTerm) input.value = state._zoekTerm;
   input.focus();
+  input.addEventListener("input", () => { state._zoekTerm = input.value; });
   input.addEventListener("keydown", async (e) => {
     if (e.key !== "Enter") return;
     const q = input.value.trim();
@@ -1470,45 +1876,87 @@ function renderZoeken() {
 // ---------------------------------------------------------------------------
 function renderOpenstaandeZaken() {
   const mount = document.getElementById("viewMount");
-  const groups = [
-    { key: "dringend", label: "Dringend", dot: "var(--red)" },
-    { key: "vandaag", label: "Vandaag", dot: "var(--orange)" },
-    { key: "binnenkort", label: "Binnenkort", dot: "var(--yellow)" },
+  const tabs = [
+    { key: "alles", label: "Alles", uitleg: "Alles wat nog een reactie of opvolging van jou vraagt." },
+    { key: "dringend", label: "Dringend", uitleg: "Moet vandaag nog gebeuren." },
+    { key: "vandaag", label: "Vandaag", uitleg: "Zou vandaag beantwoord moeten worden." },
+    { key: "binnenkort", label: "Binnenkort", uitleg: "Mag een paar dagen wachten, maar mag je niet vergeten." },
+    { key: "genegeerd", label: "Niet meer opvolgen", uitleg: "Zaken die je bewust hebt laten vallen. Hier kan je ze terugzetten." },
   ];
-  const todoCardHtml = (m) => `
+  const actief = state.zakenTab || "alles";
+  const info = tabs.find((t) => t.key === actief) || tabs[0];
+
+  const alle = state.mails;
+  let lijst;
+  if (actief === "genegeerd") {
+    lijst = alle.filter((m) => m.genegeerd);
+  } else {
+    lijst = alle.filter((m) => !m.resolved && !m.genegeerd && m.categorie && m.categorie !== "geen_actie" && m.categorie !== "onbekend");
+    if (actief !== "alles") lijst = lijst.filter((m) => m.categorie === actief);
+  }
+  lijst = lijst.slice().sort((a, b) => new Date(a.date) - new Date(b.date));
+
+  const kaart = (m) => `
     <div class="todoCard">
       <span class="avatar">${initials(m.from)}</span>
       <div class="info">
-        <div class="name">${escapeHtml(m.from)} ${m.vanType && m.vanType !== "onbekend" ? `<span class="tag ${m.vanType}">${m.vanType === "klant" ? "Klant" : "Leverancier"}</span>` : ""}</div>
+        <div class="name">${escapeHtml(m.from)} ${m.vanType && m.vanType !== "onbekend" ? `<span class="tag ${m.vanType}">${m.vanType === "klant" ? "Klant" : "Leverancier"}</span>` : ""}${m.categorie ? `<span class="pill ${m.categorie}">${escapeHtml(m.categorie)}</span>` : ""}</div>
         <div class="reden">${escapeHtml(m.reden || m.subject)}</div>
       </div>
       <div class="actions">
         <button class="btn btn-ghost" data-open="${m.uid}">Open mail</button>
-        <button class="btn btn-primary" data-open="${m.uid}">${escapeHtml(m.actieLabel || "Bekijken")}</button>
-        <button class="btn btn-ghost" data-resolve="${m.uid}" title="Markeer als afgehandeld">✓</button>
+        ${m.genegeerd
+          ? `<button class="btn btn-primary" data-terug="${m.uid}">↺ Terug opvolgen</button>`
+          : `<button class="btn btn-primary" data-open="${m.uid}">${escapeHtml(m.actieLabel || "Bekijken")}</button>
+             <button class="btn btn-ghost" data-resolve="${m.uid}" title="Markeer als afgehandeld">✓</button>
+             <button class="btn btn-ghost" data-negeer="${m.uid}" title="Niet meer opvolgen">🚫</button>`}
       </div>
-    </div>
-  `;
-  // "resolved" mails verdwijnen hier enkel omdat ze expliciet afgevinkt zijn
-  // of effectief beantwoord — nooit door tijdsverloop of een herscan.
-  const sections = groups.map((g) => {
-    const list = state.mails.filter((m) => m.categorie === g.key && !m.resolved).sort((a, b) => new Date(a.date) - new Date(b.date));
-    return `
-      <div class="sectionTitle"><span class="dotmark" style="background:${g.dot}"></span> ${g.label} — ${list.length}</div>
-      ${list.length ? list.map(todoCardHtml).join("") : '<div class="empty">Niets in deze groep.</div>'}
-    `;
-  }).join("");
+    </div>`;
 
   mount.innerHTML = `
     <div class="vandaagView"><div class="inner">
-      <h1>Openstaande Zaken</h1>
-      <div class="sub">Alles wat nog een reactie of opvolging nodig heeft, gegroepeerd per urgentie. Een zaak verdwijnt hier enkel als je ze afvinkt of er via Mailvio effectief op antwoordt.</div>
-      ${state.mails.length ? sections : '<div class="empty">Nog geen mails geladen.</div>'}
-    </div></div>
-  `;
+      <h1>Nog open</h1>
+      <div class="sub">Een zaak verdwijnt hier enkel als je ze afvinkt, er via Mailvio op antwoordt, of ze op "niet meer opvolgen" zet.</div>
+      <div class="tabRij">
+        ${tabs.map((t) => {
+          const n = t.key === "genegeerd"
+            ? alle.filter((m) => m.genegeerd).length
+            : alle.filter((m) => !m.resolved && !m.genegeerd && m.categorie && m.categorie !== "geen_actie" && m.categorie !== "onbekend" && (t.key === "alles" || m.categorie === t.key)).length;
+          return `<button class="tabKnop ${t.key === actief ? "aan" : ""}" data-tab="${t.key}">${t.label}${n ? ` · ${n}` : ""}</button>`;
+        }).join("")}
+      </div>
+      <div class="kolomUitleg" style="margin-bottom:14px">${info.uitleg}</div>
+      ${lijst.length ? lijst.map(kaart).join("") : '<div class="empty">Niets in deze groep.</div>'}
+    </div></div>`;
+
+  mount.querySelectorAll("[data-tab]").forEach((b) => b.addEventListener("click", () => {
+    state.zakenTab = b.dataset.tab;
+    renderOpenstaandeZaken();
+  }));
   mount.querySelectorAll("[data-open]").forEach((b) => b.addEventListener("click", () => openMail(Number(b.dataset.open))));
   koppelSleepbareMails(mount);
   mount.querySelectorAll("[data-resolve]").forEach((b) => b.addEventListener("click", (e) => { e.stopPropagation(); resolveMail(Number(b.dataset.resolve), true); }));
+  mount.querySelectorAll("[data-negeer]").forEach((b) => b.addEventListener("click", (e) => { e.stopPropagation(); negeerMail(Number(b.dataset.negeer), true); }));
+  mount.querySelectorAll("[data-terug]").forEach((b) => b.addEventListener("click", (e) => { e.stopPropagation(); negeerMail(Number(b.dataset.terug), false); }));
+}
+
+// Een zaak bewust laten vallen (of terugzetten). De mail blijft gewoon in je
+// mailbox staan — Mailvio houdt er enkel geen openstaande zaak meer van bij.
+async function negeerMail(uid, genegeerd) {
+  try {
+    await fetch(`/api/mails/${uid}/negeer`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ genegeerd }),
+    });
+  } catch (e) {
+    showToast("Kon niet bijwerken: " + e.message);
+    return;
+  }
+  state.mails = state.mails.map((m) => (m.uid === uid ? { ...m, genegeerd, resolved: genegeerd ? true : m.resolved } : m));
+  showToast(genegeerd ? "Je volgt deze zaak niet meer op." : "Zaak staat terug open.");
+  renderSidebarCounts();
+  renderView();
 }
 
 // ---------------------------------------------------------------------------
@@ -1574,7 +2022,7 @@ async function openKlantContext(address, name) {
         <button class="backBtn" id="backBtnKlant">← Terug naar mail</button>
         <h1>${escapeHtml(name || address)}</h1>
         <div class="mailMeta"><span>${escapeHtml(address || "")}</span></div>
-        <div id="klantList"><div class="empty">Bezig met ophalen van mailhistoriek...</div></div>
+        <div id="klantFiche"><div class="empty">Bezig met het opbouwen van de klantenfiche...</div></div>
       </div>
     </div>
   `;
@@ -1583,26 +2031,60 @@ async function openKlantContext(address, name) {
     renderSidebarCounts();
     openMail(state.currentUid);
   });
-  const listEl = document.getElementById("klantList");
+  const box = document.getElementById("klantFiche");
   if (!address) {
-    listEl.innerHTML = '<div class="empty">Geen e-mailadres gekend voor deze afzender.</div>';
+    box.innerHTML = '<div class="empty">Geen e-mailadres gekend voor deze afzender.</div>';
     return;
   }
+  let data;
   try {
-    const res = await fetch(`/api/klant/${encodeURIComponent(address)}`);
-    const data = await res.json();
-    const mails = data.mails || [];
-    if (!data.configured) {
-      listEl.innerHTML = '<div class="empty">De mailbox is nog niet gekoppeld.</div>';
-    } else if (!mails.length) {
-      listEl.innerHTML = '<div class="empty">Geen eerdere mails gevonden van dit adres.</div>';
-    } else {
-      listEl.innerHTML = `<div class="sectionTitle">${mails.length} mail${mails.length === 1 ? "" : "s"} gevonden</div>` + mails.map(mailRowHtml).join("");
-      listEl.querySelectorAll("[data-open]").forEach((el) => el.addEventListener("click", () => openMail(Number(el.dataset.open))));
-    }
+    data = await (await fetch(`/api/klant/${encodeURIComponent(address)}/fiche`)).json();
   } catch (e) {
-    listEl.innerHTML = '<div class="empty">Kon de klantgeschiedenis niet ophalen.</div>';
+    box.innerHTML = '<div class="empty">Kon de klantenfiche niet ophalen.</div>';
+    return;
   }
+  if (!data.configured) {
+    box.innerHTML = '<div class="empty">De mailbox is nog niet gekoppeld.</div>';
+    return;
+  }
+  const mails = data.mails || [];
+  const open = data.openstaand || [];
+  const afspraak = data.volgendeAfspraak;
+  const eersteContact = mails.length ? mails[mails.length - 1].date : null;
+
+  box.innerHTML = `
+    ${data.samenvatting ? `<div class="ficheSamenvatting">${escapeHtml(data.samenvatting)}</div>` : ""}
+
+    <div class="ficheKaarten">
+      <div class="ficheKaart">
+        <div class="kop">Nog openstaand</div>
+        <div class="groot">${open.length}</div>
+        <div class="klein">${open.length ? open.slice(0, 2).map((m) => escapeHtml(m.subject)).join("<br>") : "Alles afgehandeld."}</div>
+      </div>
+      <div class="ficheKaart">
+        <div class="kop">Volgende afspraak</div>
+        <div class="groot">${afspraak ? escapeHtml(new Date(afspraak.datum).toLocaleDateString("nl-BE", { day: "numeric", month: "short" })) : "—"}</div>
+        <div class="klein">${afspraak ? `${escapeHtml(afspraak.begin)} · ${escapeHtml(afspraak.titel)}${afspraak.plaats ? "<br>" + escapeHtml(afspraak.plaats) : ""}` : "Niets gepland met deze klant."}</div>
+      </div>
+      <div class="ficheKaart">
+        <div class="kop">Mailgeschiedenis</div>
+        <div class="groot">${mails.length}</div>
+        <div class="klein">${eersteContact ? "Eerste contact " + new Date(eersteContact).toLocaleDateString("nl-BE") : "Nog geen mails gevonden."}</div>
+      </div>
+    </div>
+
+    ${(data.taken || []).length ? `
+      <div class="sectionTitle">✓ Openstaande taken</div>
+      ${data.taken.map((t) => `<div class="todoCard"><div class="info"><div class="name">${escapeHtml(t.titel)}</div><div class="reden">${(t.subtaken || []).filter((x) => !x.klaar).length} subtaak/subtaken open</div></div><div class="actions"><button class="btn btn-ghost" data-naartaken="1">Open to-do</button></div></div>`).join("")}
+    ` : ""}
+
+    <div class="sectionTitle" style="margin-top:22px">Alle mails — ${mails.length}</div>
+    <div id="klantList">${mails.length ? mails.map((m) => mailRowHtml(m, true)).join("") : '<div class="empty">Geen eerdere mails gevonden van dit adres.</div>'}</div>
+  `;
+  box.querySelectorAll("[data-open]").forEach((el) => el.addEventListener("click", () => openMail(Number(el.dataset.open))));
+  box.querySelectorAll("[data-naartaken]").forEach((el) => el.addEventListener("click", () => {
+    state.view = "taken"; renderSidebarCounts(); renderView();
+  }));
 }
 
 // ---------------------------------------------------------------------------
@@ -1694,7 +2176,7 @@ function bijlagenHtml(uid, m) {
   if (!lijst.length) return "";
   const folder = state.currentFolder && state.currentFolder !== "INBOX" ? "?folder=" + encodeURIComponent(state.currentFolder) : "";
   return `
-    <div class="bijlagen">
+    <div class="bijlagen boven">
       <div class="bijlagenKop">${lijst.length} bijlage${lijst.length === 1 ? "" : "n"}</div>
       <div class="bijlagenLijst kolom">
         ${lijst.map((a) => `
@@ -1742,8 +2224,11 @@ async function laadBijlageSamenvattingen(uid, m) {
   }
 }
 
-// Een opgemaakte (HTML) mail tonen we in een afgeschermd venster: geen scripts,
-// geen toegang tot de app, en externe afbeeldingen pas na jouw toestemming.
+// Een opgemaakte (HTML) mail tonen we in een afgeschermd venster: de scripts van
+// de afzender zijn er op de server al uit gehaald, het venster heeft geen toegang
+// tot Mailvio of je cookies, en externe afbeeldingen laden pas met jouw akkoord.
+// Het enige script dat er wél in draait is dat van Mailvio zelf: het geeft door
+// hoe hoog de mail is, zodat ze altijd volledig getoond wordt.
 function htmlMailHtml() {
   return `
     <div class="htmlMail">
@@ -1751,7 +2236,7 @@ function htmlMailHtml() {
         <span>Externe afbeeldingen zijn geblokkeerd — zo weet de afzender niet dat je de mail geopend hebt.</span>
         <button id="toonAfbeeldingen">Afbeeldingen tonen</button>
       </div>
-      <iframe id="mailFrame" sandbox="allow-popups allow-popups-to-escape-sandbox" referrerpolicy="no-referrer" title="Inhoud van de mail"></iframe>
+      <iframe id="mailFrame" sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox" referrerpolicy="no-referrer" title="Inhoud van de mail"></iframe>
     </div>
   `;
 }
@@ -1776,54 +2261,50 @@ function vulHtmlMail(m) {
   const bar = document.getElementById("htmlMailBar");
   if (bar && heeftAfbeeldingen && !altijd) bar.hidden = false;
 
+  // Elke mail krijgt een eigen sleutel, zodat een hoogtebericht van een mail
+  // die je net gesloten hebt niet meer meetelt.
+  const sleutel = "mail" + Date.now() + Math.random().toString(36).slice(2, 7);
+  frame.dataset.sleutel = sleutel;
+
+  // Dit stukje draait BINNEN de afgeschermde mail en geeft enkel de hoogte door.
+  // De mail zelf kan niets: geen toegang tot Mailvio, geen cookies, geen eigen
+  // scripts (die zijn er op de server al uit gehaald).
+  const meetScript = `<script>(function(){
+    var sleutel = ${JSON.stringify(sleutel)};
+    function meet(){
+      var h = Math.max(
+        document.body ? document.body.scrollHeight : 0,
+        document.body ? document.body.offsetHeight : 0,
+        document.documentElement ? document.documentElement.scrollHeight : 0,
+        document.documentElement ? document.documentElement.offsetHeight : 0
+      );
+      if (h > 0) parent.postMessage({ mailvioHoogte: h, sleutel: sleutel }, "*");
+    }
+    window.addEventListener("load", meet);
+    window.addEventListener("resize", meet);
+    document.addEventListener("DOMContentLoaded", meet);
+    if (window.ResizeObserver && document.documentElement) {
+      new ResizeObserver(meet).observe(document.documentElement);
+    }
+    // Afbeeldingen en lettertypes maken de mail vaak hoger dan bij de eerste meting.
+    [0, 60, 200, 500, 1200, 2500].forEach(function(t){ setTimeout(meet, t); });
+    document.addEventListener("load", meet, true);
+    document.addEventListener("error", meet, true);
+  })();<\/script>`;
+
   const bouwDoc = (metAfbeeldingen) => `<!doctype html><html><head><meta charset="utf-8">
 <style>
+  html,body{height:auto;overflow:visible}
   body{margin:0;padding:2px 0;font-family:'Manrope',system-ui,-apple-system,sans-serif;font-size:14px;line-height:1.65;color:#1a1a1a;word-wrap:break-word;overflow-wrap:break-word}
   img{max-width:100%;height:auto}
   table{max-width:100%!important}
   a{color:#2f5fd8}
   blockquote{margin:8px 0 8px 10px;padding-left:12px;border-left:3px solid #ddd;color:#555}
   pre{white-space:pre-wrap;word-break:break-word}
-</style></head><body>${metAfbeeldingen ? herstelAfbeeldingen(m.html || "") : (m.html || "")}</body></html>`;
-
-  // De mail moet VOLLEDIG te zien zijn: het venster groeit mee met de inhoud,
-  // en je scrollt gewoon de pagina door tot bij Beantwoorden en Doorsturen.
-  // Geen klein scrollvakje binnen de pagina.
-  function meetHoogte() {
-    try {
-      const doc = frame.contentDocument;
-      if (!doc || !doc.body) return;
-      const hoogte = Math.max(
-        doc.body.scrollHeight,
-        doc.documentElement ? doc.documentElement.scrollHeight : 0
-      );
-      if (hoogte > 0) frame.style.height = hoogte + 24 + "px";
-    } catch (e) {
-      frame.style.height = "800px";
-    }
-  }
-
-  // Luisteraar EERST koppelen: anders is de inhoud soms al geladen voor we
-  // meten, en blijft het venster op zijn minimumhoogte staan — dat was net
-  // het kleine scrollvakje.
-  frame.addEventListener("load", () => {
-    meetHoogte();
-    // Nog eens meten nadat afbeeldingen en lettertypes binnen zijn, want die
-    // maken de mail vaak hoger dan bij de eerste meting.
-    setTimeout(meetHoogte, 150);
-    setTimeout(meetHoogte, 600);
-    try {
-      const doc = frame.contentDocument;
-      if (doc && window.ResizeObserver) {
-        new ResizeObserver(meetHoogte).observe(doc.body);
-      }
-      if (doc) {
-        doc.querySelectorAll("img").forEach((img) => img.addEventListener("load", meetHoogte));
-      }
-    } catch (e) { /* niet erg, de metingen hierboven volstaan */ }
-  });
+</style></head><body>${metAfbeeldingen ? herstelAfbeeldingen(m.html || "") : (m.html || "")}${meetScript}</body></html>`;
 
   const zet = (metAfbeeldingen) => {
+    frame.style.height = "400px";
     frame.srcdoc = bouwDoc(metAfbeeldingen);
   };
   zet(altijd);
@@ -1836,6 +2317,19 @@ function vulHtmlMail(m) {
     });
   }
 }
+
+// De mail laat vanuit haar eigen venster weten hoe hoog ze is. Wij zetten het
+// venster op die hoogte, zodat de mail ALTIJD volledig zichtbaar is en je
+// gewoon de pagina doorscrollt tot bij Beantwoorden en Doorsturen — hoe lang
+// de mail ook is, en zonder scrollvakje in de mail zelf.
+window.addEventListener("message", (e) => {
+  const data = e.data;
+  if (!data || typeof data.mailvioHoogte !== "number") return;
+  const frame = document.getElementById("mailFrame");
+  if (!frame || frame.dataset.sleutel !== data.sleutel) return;
+  const hoogte = Math.max(120, Math.min(data.mailvioHoogte + 28, 200000));
+  frame.style.height = hoogte + "px";
+});
 
 function renderMailBody(uid, m) {
   const box = document.getElementById("mailBody");
@@ -1855,15 +2349,14 @@ function renderMailBody(uid, m) {
       <div class="who"><b>${escapeHtml(m.from)}</b><span>${escapeHtml(m.fromAddress || "")}</span></div>
       <div class="date">${m.date ? new Date(m.date).toLocaleString("nl-BE") : ""}</div>
     </div>
-    ${m.html ? htmlMailHtml() : `<div class="mailBody">${escapeHtml(m.text || m.snippet || "(geen inhoud)")}</div>`}
-    ${bijlagenHtml(uid, m)}
-
-    <div class="replyBar">
+    <div class="replyBar boven">
       <button class="replyBtn primary" data-act="reply">↩ Beantwoorden</button>
       ${heeftMeerOntvangers(m) ? `<button class="replyBtn" data-act="replyall">↩↩ Allen beantwoorden</button>` : ""}
       <button class="replyBtn" data-act="forward">↪ Doorsturen</button>
     </div>
+    ${bijlagenHtml(uid, m)}
     <div id="replyMount"></div>
+    ${m.html ? htmlMailHtml() : `<div class="mailBody">${escapeHtml(m.text || m.snippet || "(geen inhoud)")}</div>`}
 
     <div class="quickActions">
       ${inbox ? `
@@ -1987,7 +2480,19 @@ async function maakAgendaBestand() {
     showToast("Agenda-bestand gemaakt — open het om de afspraak toe te voegen.");
   } catch (e) {
     showToast(e.message);
+    return;
   }
+  // De afspraak ook in Mailvio zelf bewaren, zodat ze in je weekoverzicht en
+  // op de klantenfiche verschijnt.
+  try {
+    const m = state.mailDetail[state.currentUid] || {};
+    await fetch("/api/agenda", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...gegevens, klant: m.from || "", klantAdres: m.fromAddress || "", uid: state.currentUid }),
+    });
+    laadAgenda(true);
+  } catch (e) { /* het .ics-bestand is al gemaakt, dat volstaat */ }
 }
 
 // ---------------------------------------------------------------------------
@@ -2494,6 +2999,7 @@ async function openSettings() {
     document.getElementById("setAiSign").value = data.aiHandtekening || "";
     document.getElementById("setSignature").value = data.handtekening || "";
     document.getElementById("setAfbeeldingen").checked = !!data.toonAfbeeldingen;
+    document.getElementById("setAanspreek").value = data.aanspreektitel || "";
     toonHandtekeningVoorbeeld();
   } catch (e) {
     msgEl.textContent = "Kon de huidige instellingen niet ophalen.";
@@ -2578,6 +3084,7 @@ async function saveSettings() {
     aiHandtekening: document.getElementById("setAiSign").value,
     handtekening: document.getElementById("setSignature").value,
     toonAfbeeldingen: document.getElementById("setAfbeeldingen").checked,
+    aanspreektitel: document.getElementById("setAanspreek").value,
   };
   saveBtn.disabled = true;
   msgEl.textContent = "Bezig met opslaan...";
@@ -2679,6 +3186,7 @@ document.getElementById("settingsSave").addEventListener("click", saveSettings);
   loadFolders();
   loadContacten();
   laadTaken();
+  laadAgenda(true);
 })();
 </script>
 </body>
