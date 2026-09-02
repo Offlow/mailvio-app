@@ -263,6 +263,73 @@ app.post("/api/mails/:uid/resolve", (req, res) => {
   }
 });
 
+// Zet een afspraak uit een mail om in een agenda-bestand (.ics) dat opent in
+// Apple Agenda, Google Agenda of Outlook — zonder koppeling met een agenda.
+// Let op: bewust ZONDER "Z" op het einde. Dat betekent in een agenda-bestand
+// "lokale tijd", zodat 14u30 in de mail ook 14u30 in de agenda wordt. Met een
+// Z zou de agenda het als UTC lezen en er in de zomer 16u30 van maken.
+function icsDatum(datum, tijd, minutenLater) {
+  const [j, m, d] = String(datum).split("-").map(Number);
+  const [uu, mm] = (tijd || "09:00").split(":").map(Number);
+  const dt = new Date(Date.UTC(j, (m || 1) - 1, d || 1, uu || 9, mm || 0));
+  if (minutenLater) dt.setUTCMinutes(dt.getUTCMinutes() + minutenLater);
+  const p = (n) => String(n).padStart(2, "0");
+  return `${dt.getUTCFullYear()}${p(dt.getUTCMonth() + 1)}${p(dt.getUTCDate())}T${p(dt.getUTCHours())}${p(dt.getUTCMinutes())}00`;
+}
+
+function icsTekst(s) {
+  return String(s || "").replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\r?\n/g, "\\n");
+}
+
+app.get("/api/mails/:uid/afspraak", async (req, res) => {
+  try {
+    const uid = Number(req.params.uid);
+    const folder = req.query.folder;
+    const body = await mailbox.fetchMailBody(uid, folder);
+    if (!body) return res.status(404).json({ error: "Mail niet gevonden." });
+    const afspraak = await ai.extractAfspraak(body);
+    if (!afspraak.gevonden || !afspraak.datum) {
+      return res.json({ gevonden: false, reden: "Geen datum of afspraak gevonden in deze mail." });
+    }
+    res.json({ gevonden: true, ...afspraak, van: body.from, vanAdres: body.fromAddress });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Kon er geen afspraak uit halen.", detail: e.message });
+  }
+});
+
+app.post("/api/afspraak.ics", (req, res) => {
+  try {
+    const { titel, datum, begin, duur, plaats, notitie } = req.body || {};
+    if (!datum) return res.status(400).json({ error: "Geen datum opgegeven." });
+    const minuten = Number(duur) || 60;
+    const ics = [
+      "BEGIN:VCALENDAR",
+      "VERSION:2.0",
+      "PRODID:-//Mailvio//NL",
+      "CALSCALE:GREGORIAN",
+      "METHOD:PUBLISH",
+      "BEGIN:VEVENT",
+      `UID:mailvio-${Date.now()}@daklo.be`,
+      `DTSTAMP:${icsDatum(new Date().toISOString().slice(0, 10), new Date().toISOString().slice(11, 16))}Z`,
+      `DTSTART:${icsDatum(datum, begin)}`,
+      `DTEND:${icsDatum(datum, begin, minuten)}`,
+      `SUMMARY:${icsTekst(titel || "Afspraak")}`,
+      plaats ? `LOCATION:${icsTekst(plaats)}` : "",
+      notitie ? `DESCRIPTION:${icsTekst(notitie)}` : "",
+      "END:VEVENT",
+      "END:VCALENDAR",
+    ].filter(Boolean).join("\r\n");
+
+    res.setHeader("Content-Type", "text/calendar; charset=utf-8");
+    res.setHeader("Content-Disposition", 'attachment; filename="afspraak.ics"');
+    res.send(ics);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Kon het agenda-bestand niet maken.", detail: e.message });
+  }
+});
+
 // Adresboek: alle afzenders uit je mailbox, zodat je een adres niet volledig
 // hoeft te typen. Wordt afgeleid uit de mails die al ingeladen zijn.
 app.get("/api/contacten", async (req, res) => {

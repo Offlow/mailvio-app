@@ -109,6 +109,42 @@ async function suggestReply(mail) {
   });
 }
 
+// Haalt uit een mail de gegevens van een afspraak: wat, wanneer, waar.
+const AFSPRAAK_SYSTEM = `Je haalt uit een mail de gegevens van een afspraak voor een zelfstandige dakwerker in Vlaanderen.
+Vandaag is {VANDAAG}. Reken relatieve dagen ("volgende dinsdag", "morgen") om naar een echte datum.
+
+Antwoord ALLEEN met geldige JSON:
+{
+  "gevonden": true of false,
+  "titel": "korte titel, bv. Plaatsbezoek dak Peeters",
+  "datum": "JJJJ-MM-DD",
+  "begin": "UU:MM" (of "" als er geen uur vermeld staat),
+  "duur": aantal minuten (standaard 60),
+  "plaats": "adres of plaats, of lege tekst",
+  "notitie": "1 zin met waarover het gaat"
+}
+Zet "gevonden" op false als er echt geen afspraak of datum in de mail staat.
+Geen andere tekst.`;
+
+async function extractAfspraak(mail) {
+  if (!isConfigured()) throw new Error("De AI is nog niet ingesteld.");
+  const anthropic = client();
+  const vandaag = new Date().toLocaleDateString("nl-BE", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
+  const resp = await anthropic.messages.create({
+    model: "claude-sonnet-5",
+    max_tokens: 512,
+    system: AFSPRAAK_SYSTEM.replace("{VANDAAG}", vandaag),
+    messages: [
+      {
+        role: "user",
+        content: `Van: ${mail.from} <${mail.fromAddress}>\nOnderwerp: ${mail.subject}\n\n${(mail.text || mail.snippet || "").slice(0, 4000)}`,
+      },
+    ],
+  });
+  const text = resp.content.map((b) => (b.type === "text" ? b.text : "")).join("");
+  return extractJson(text, { gevonden: false });
+}
+
 async function rewriteProfessional(text) {
   if (!isConfigured()) {
     throw new Error("De AI is nog niet ingesteld.");
@@ -208,4 +244,4 @@ async function chat(message, mails) {
   return "Geen antwoord ontvangen.";
 }
 
-module.exports = { classifyMails, suggestReply, rewriteProfessional, chat, isConfigured };
+module.exports = { classifyMails, suggestReply, rewriteProfessional, chat, isConfigured, extractAfspraak };

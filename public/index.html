@@ -172,6 +172,13 @@
   .replyClose:hover{background:var(--border);color:var(--ink)}
   .replyBox .fieldList{border:none;border-bottom:1px solid var(--border);border-radius:0}
   .replyBody{width:100%;min-height:200px;border:none;outline:none;padding:12px 14px;font-family:inherit;font-size:13.5px;line-height:1.6;color:var(--ink);background:none;resize:vertical;display:block}
+  /* Afspraak uit een mail */
+  .agendaBox{margin-top:14px;border:1px solid var(--border);border-radius:12px;background:var(--surface);overflow:hidden}
+  .agendaKop{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--surface-2);border-bottom:1px solid var(--border);font-size:13px}
+  .agendaHint{font-size:12px;color:var(--ink-faint);padding:9px 14px 0}
+  .agendaBox .fieldList{border:none;border-radius:0}
+  .agendaBox .empty{padding:12px 14px}
+
   .bijlageKiezer{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 14px;border-top:1px solid var(--border)}
   .gekozenBijlagen{display:flex;gap:6px;flex-wrap:wrap}
   .gekozenBijlage{display:inline-flex;align-items:center;gap:6px;background:var(--surface-2);border:1px solid var(--border);border-radius:99px;padding:4px 6px 4px 10px;font-size:12px;font-weight:700}
@@ -1349,12 +1356,14 @@ function renderMailBody(uid, m) {
       <button class="plain" id="klantBtn">Klantcontext</button>
       <button class="plain" data-act="resolve" data-resolved="${m.resolved ? "1" : "0"}">${m.resolved ? "↺ Heropenen" : "✓ Afgehandeld"}</button>
       ` : `<button class="plain" id="klantBtn">Klantcontext</button>`}
+      <button class="plain" data-act="agenda">📅 Zet in agenda</button>
       <button class="plain" data-act="unread">✉ Als ongelezen</button>
       <button class="plain" data-act="archive">📁 Archiveren</button>
       <button class="plain" data-act="trash">🗑 Verwijderen</button>
-      <button class="plain" disabled title="Komt in een latere versie">Zet in agenda</button>
     </div>
+    <div id="agendaMount"></div>
   `;
+  box.querySelector('[data-act="agenda"]').addEventListener("click", () => zetInAgenda(uid, m));
   box.querySelector('[data-act="unread"]').addEventListener("click", () => markeerOngelezen(uid));
   box.querySelector('[data-act="archive"]').addEventListener("click", () => verplaatsMail(uid, "archief"));
   box.querySelector('[data-act="trash"]').addEventListener("click", () => verplaatsMail(uid, "prullenmand"));
@@ -1378,6 +1387,89 @@ function renderMailBody(uid, m) {
     const nowResolved = e.target.dataset.resolved !== "1";
     resolveMail(uid, nowResolved);
   });
+}
+
+// ---------------------------------------------------------------------------
+// Afspraak uit een mail in je agenda zetten
+// ---------------------------------------------------------------------------
+async function zetInAgenda(uid, m) {
+  const mount = document.getElementById("agendaMount");
+  if (!mount) return;
+  mount.innerHTML = `<div class="agendaBox"><div class="empty">Bezig met de afspraak uit de mail te halen...</div></div>`;
+  const folder = state.currentFolder && state.currentFolder !== "INBOX" ? "?folder=" + encodeURIComponent(state.currentFolder) : "";
+  let a;
+  try {
+    a = await (await fetch(`/api/mails/${uid}/afspraak${folder}`)).json();
+  } catch (e) {
+    mount.innerHTML = `<div class="agendaBox"><div class="empty">Kon er geen afspraak uit halen.</div></div>`;
+    return;
+  }
+  if (!a.gevonden) {
+    mount.innerHTML = `<div class="agendaBox">
+      <div class="agendaKop"><b>Geen afspraak gevonden</b><button class="replyClose" id="agendaClose">✕</button></div>
+      <div class="empty">${escapeHtml(a.reden || a.error || "Er staat geen datum in deze mail.")} Je kan hieronder zelf een datum invullen.</div>
+      ${agendaFormulier({ titel: m.subject, datum: "", begin: "09:00", duur: 60, plaats: "", notitie: "" })}
+    </div>`;
+  } else {
+    mount.innerHTML = `<div class="agendaBox">
+      <div class="agendaKop"><b>Afspraak uit deze mail</b><button class="replyClose" id="agendaClose">✕</button></div>
+      <div class="agendaHint">Nagekeken door de AI — pas gerust aan voor je ze toevoegt.</div>
+      ${agendaFormulier(a)}
+    </div>`;
+  }
+  document.getElementById("agendaClose").addEventListener("click", () => { mount.innerHTML = ""; });
+  document.getElementById("agendaMaak").addEventListener("click", () => maakAgendaBestand());
+  document.getElementById("agendaBox") && document.getElementById("agendaBox").scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+function agendaFormulier(a) {
+  return `
+    <div class="fieldList">
+      <div class="fieldRow"><label for="agTitel">Titel</label><input id="agTitel" type="text" value="${escapeHtml(a.titel || "")}"></div>
+      <div class="fieldRow"><label for="agDatum">Datum</label><input id="agDatum" type="date" value="${escapeHtml(a.datum || "")}"></div>
+      <div class="fieldRow"><label for="agBegin">Startuur</label><input id="agBegin" type="time" value="${escapeHtml(a.begin || "09:00")}"></div>
+      <div class="fieldRow"><label for="agDuur">Duur (min)</label><input id="agDuur" type="number" min="15" step="15" value="${Number(a.duur) || 60}"></div>
+      <div class="fieldRow"><label for="agPlaats">Plaats</label><input id="agPlaats" type="text" value="${escapeHtml(a.plaats || "")}"></div>
+      <div class="fieldRow"><label for="agNotitie">Notitie</label><input id="agNotitie" type="text" value="${escapeHtml(a.notitie || "")}"></div>
+    </div>
+    <div class="replyActions">
+      <button class="btn btn-primary" id="agendaMaak">Aan agenda toevoegen</button>
+      <span class="replyHint">Opent in Apple Agenda, Google Agenda of Outlook.</span>
+    </div>
+  `;
+}
+
+async function maakAgendaBestand() {
+  const datum = document.getElementById("agDatum").value;
+  if (!datum) { showToast("Vul eerst een datum in."); return; }
+  const gegevens = {
+    titel: document.getElementById("agTitel").value,
+    datum,
+    begin: document.getElementById("agBegin").value || "09:00",
+    duur: Number(document.getElementById("agDuur").value) || 60,
+    plaats: document.getElementById("agPlaats").value,
+    notitie: document.getElementById("agNotitie").value,
+  };
+  try {
+    const res = await fetch("/api/afspraak.ics", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(gegevens),
+    });
+    if (!res.ok) throw new Error("Kon het agenda-bestand niet maken.");
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "afspraak.ics";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    showToast("Agenda-bestand gemaakt — open het om de afspraak toe te voegen.");
+  } catch (e) {
+    showToast(e.message);
+  }
 }
 
 // ---------------------------------------------------------------------------
