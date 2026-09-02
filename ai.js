@@ -446,6 +446,7 @@ async function chat(message, mails) {
     !m.resolved && !m.genegeerd && m.soort !== "reclame" &&
     m.categorie && m.categorie !== "geen_actie" && m.categorie !== "onbekend";
 
+  const beoordeeld = alles.filter((m) => m.categorie && m.categorie !== "onbekend").length;
   const open = alles.filter(isOpen).slice(0, OPEN_LIMIET);
   const openUids = new Set(open.map((m) => m.uid));
   const rest = alles.filter((m) => !openUids.has(m.uid) && m.soort !== "reclame").slice(0, RECENT_LIMIET);
@@ -481,22 +482,27 @@ async function chat(message, mails) {
   const messages = [
     {
       role: "user",
-      content: `Vandaag is het ${vandaag}. Hieronder staat de mailbox zoals Mailvio ze al beoordeeld heeft (${alles.length} mails geladen).\n\n${context}\n\nVraag van de dakwerker: ${message}`,
+      content: `Vandaag is het ${vandaag}. Hieronder staat de mailbox zoals Mailvio ze al beoordeeld heeft (${beoordeeld} van ${alles.length} mails beoordeeld).${beoordeeld === 0 ? " LET OP: er is nog GEEN ENKELE mail beoordeeld — zeg dat eerlijk in plaats van te gokken." : ""}\n\n${context}\n\nVraag van de dakwerker: ${message}`,
     },
   ];
 
   // Eén zoekronde blijft mogelijk voor iets dat écht niet in de lijst staat
   // (bv. "wanneer heb ik vorig jaar met die klant gemaild"), maar de gewone
   // vraag wordt meteen uit de context beantwoord.
-  const MAX_TOOL_ROUNDS = 1;
+  // Eén zoekronde blijft mogelijk voor iets dat écht niet in de lijst staat.
+  // BELANGRIJK: in de LAATSTE ronde bieden we het zoekgereedschap NIET meer aan.
+  // Anders kan de AI opnieuw willen zoeken in plaats van te antwoorden, en dan
+  // kwam er letterlijk niets terug — dat was de "Geen antwoord ontvangen".
+  const MAX_TOOL_ROUNDS = 2;
   for (let round = 0; round <= MAX_TOOL_ROUNDS; round++) {
+    const laatsteRonde = round === MAX_TOOL_ROUNDS;
     let resp;
     try {
       resp = await anthropic.messages.create({
         model: modelSlim(),
         max_tokens: 1024,
         system: CHAT_SYSTEM,
-        tools: [SEARCH_TOOL],
+        ...(laatsteRonde ? {} : { tools: [SEARCH_TOOL] }),
         messages,
       });
     } catch (e) {
@@ -505,9 +511,14 @@ async function chat(message, mails) {
     }
 
     const toolUses = resp.content.filter((b) => b.type === "tool_use");
-    if (!toolUses.length || round === MAX_TOOL_ROUNDS) {
+    if (!toolUses.length) {
       const text = resp.content.map((b) => (b.type === "text" ? b.text : "")).join("").trim();
-      return text || "Geen antwoord ontvangen.";
+      if (text) return text;
+      // Nog steeds niets? Dan zeggen we tenminste eerlijk wat er aan de hand is
+      // in plaats van een lege doos.
+      return beoordeeld === 0
+        ? "Ik kan je hier nog niet mee helpen: geen enkele mail is al door de AI beoordeeld. Kijk het lampje onderaan de zijbalk na — daar staat wat er scheelt."
+        : "Ik kreeg geen antwoord van de AI. Probeer het nog eens.";
     }
 
     messages.push({ role: "assistant", content: resp.content });
@@ -518,7 +529,9 @@ async function chat(message, mails) {
     }
     messages.push({ role: "user", content: toolResults });
   }
-  return "Geen antwoord ontvangen.";
+  return beoordeeld === 0
+    ? "Ik kan je hier nog niet mee helpen: geen enkele mail is al door de AI beoordeeld. Kijk het lampje onderaan de zijbalk na — daar staat wat er scheelt."
+    : "Ik kreeg geen antwoord van de AI. Probeer het nog eens.";
 }
 
 module.exports = { classifyMails, suggestReply, rewriteProfessional, chat, isConfigured, extractAfspraak, vatBijlageSamen, vatKlantSamen, stelRegelVoor, testModel, leesbareAiFout, getLaatsteFout, wisFout, onthoudFout };

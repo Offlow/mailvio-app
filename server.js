@@ -196,13 +196,20 @@ async function syncMap(accountKey, folder, opties = {}) {
     for (const [uid, v] of vlaggen) mailstore.werkBij(accountKey, folder, uid, v);
   }
 
+  // DE ACHTERSTAND WEGWERKEN. Bij een mailbox van duizenden berichten haalden
+  // we er vroeger 300 per ronde bij, en een ronde liep maar één keer per drie
+  // minuten — negen weken... nee, anderhalf uur voor 9000 mails. Veel te traag.
+  // Nu blijven we doorwerken tot de map VOLLEDIG op schijf staat.
   if (backfill && !mailstore.isVolledig(accountKey, folder)) {
-    const laagste = mailstore.getLaagsteUid(accountKey, folder);
-    if (laagste > 0) {
+    const maxRondes = opties.totVolledig ? 200 : 1;
+    for (let i = 0; i < maxRondes; i++) {
+      const laagste = mailstore.getLaagsteUid(accountKey, folder);
+      if (laagste <= 0) break;
       const ouder = await mailbox.fetchOudereMails(folder, laagste, backfill);
       if (ouder.mails && ouder.mails.length) mailstore.bewaarMails(accountKey, folder, ouder.mails, data.uidValidity);
-      if (ouder.klaar) mailstore.markeerVolledig(accountKey, folder);
       if (folder === "INBOX") backfillResterend = ouder.resterend || 0;
+      if (ouder.klaar) { mailstore.markeerVolledig(accountKey, folder); break; }
+      if (!ouder.mails || !ouder.mails.length) break;
     }
   }
   return mailstore.getMails(accountKey, folder);
@@ -1365,7 +1372,16 @@ async function achtergrondRonde() {
     // paar rondes volledig doorgenomen in plaats van pas terwijl jij zit te
     // wachten.
     const accountKey0 = settingsStore.getConfig().imapUser || "default";
-    // Eerst de mailbox bijwerken.
+    // Eerst de mailbox bijwerken — en de achterstand in één keer wegwerken,
+    // zodat ALLE mails op de schijf van de server komen te staan.
+    const accountKeyVoor = settingsStore.getConfig().imapUser || "default";
+    try {
+      await syncMap(accountKeyVoor, "INBOX", { totVolledig: true });
+    } catch (e) {
+      console.error("Inbox volledig binnenhalen mislukt:", e.message);
+    }
+    cache.at = 0;
+    envelopeCache = { at: 0, mails: [], total: 0, capped: false };
     await getMails(true);
 
     // Dan de achterstand van de AI-beoordeling wegwerken, portie per portie.
@@ -1394,7 +1410,7 @@ async function achtergrondRonde() {
         if (mapBezig.has(f.path)) continue;
         mapBezig.add(f.path);
         try {
-          await syncMap(accountKey, f.path);
+          await syncMap(accountKey, f.path, { totVolledig: true });
         } catch (e) {
           console.error(`Map ${f.path} bijwerken mislukt:`, e.message);
         } finally {
