@@ -47,7 +47,11 @@ de datum, zodat je kan terugzien wat er wanneer veranderd is.
 - [x] Mails groeiden eindeloos door: het venster mat zichzelf en werd daardoor
       steeds hoger *(02-09)*
 - [x] Lange gesprekken staan ingeklapt achter "Vorige berichten tonen" *(02-09)*
-- [ ] Het inladen van álle oude mails duurt nog lang (stond op 5%)
+- [x] Het inladen brak af zodra jij iets deed — en omdat je de app gebruikt,
+      kwam het nooit verder dan een paar procent. Nu wacht het even en gaat het
+      daarna verder. Gemeten: 7% → 100% in 90 seconden druk klikken *(02-09)*
+- [x] Het inladen stond helemaal achteraan de grote achtergrondronde en kwam
+      amper aan de beurt; het heeft nu zijn eigen ritme *(02-09)*
 
 ---
 
@@ -76,6 +80,131 @@ de datum, zodat je kan terugzien wat er wanneer veranderd is.
       meteen uit de lijst *(02-09)*
 - [x] Verplaatsen naar je eigen mappen op de mailserver *(02-09)*
 - [x] Je springt niet meer terug naar de inbox na een actie *(02-09)*
+
+### 11. HET VOORSTEL MOET KLAARSTAAN VOOR JE DE MAIL OPENT
+Silvio heeft dit tien keer gevraagd. Wat er stond en wat er nu is:
+
+Wat er mis was:
+- Het klaarzetten van de voorstellen liep mee helemaal ACHTERAAN de grote
+  achtergrondronde: eerst alle mappen binnenhalen, dan honderden mails laten
+  beoordelen, en dan pas dit. In de praktijk kwam het amper aan de beurt.
+- Het brak bovendien af zodra jij iets deed in de app.
+- Het voorstel werd enkel in het geheugen gehouden en bij elke verversing
+  weggegooid, dus stond het er de volgende keer weer niet.
+- Het voorstel haalde de mail opnieuw van de mailserver in plaats van uit de
+  eigen cache.
+
+De oplossing (03-09):
+- [x] Het klaarzetten heeft nu een EIGEN motor die elke 30 seconden draait, los
+      van al de rest.
+- [x] Het wacht tot jij klaar bent in plaats van af te breken.
+- [x] Voorstellen worden op schijf bewaard (voorstellen.json) en overleven een
+      verversing en een herstart.
+- [x] Het gebruikt de bewaarde mailinhoud, niet de mailserver.
+- [x] 12 per beurt, voor de recentste 250 mails die een antwoord vragen.
+
+Gemeten (klaar-test.js): 148 antwoorden stonden klaar zonder dat er iemand een
+mail opende. Een voorstel ophalen duurt 3 tot 4 milliseconden, met actie,
+urgentie en een verstuurbaar antwoord erbij.
+
+### 12. Afbeeldingen en logo's
+- [x] Afbeeldingen in mails laden nu meteen, ook logo's en iconen. De balk
+      "afbeeldingen geblokkeerd" is weg. Uit te zetten bij Instellingen. *(03-09)*
+
+### 13. Zijn de mails nu gecached?
+Ja. Gemeten op de live server, drie keer met een half uur ertussen:
+0% → 22% → 41%, ongeveer 1% per minuut. Het lukte al die tijd niet omdat de
+mailserver de verbinding weigerde (AUTHENTICATIONFAILED); er kón niets
+ingeladen worden. Sinds het wachtwoord goed staat, loopt het door.
+
+---
+
+### 14. ZO WEINIG MOGELIJK CREDITS (03-09)
+Silvio: er ging al meer dan $5 op. Wat er nu gebeurt:
+- [x] Voorstellen worden ALLEEN nog klaargezet bij aanvragen — nergens anders.
+      Open je een gewone mail, dan staat er een knop "Toch een antwoord laten
+      schrijven"; er gebeurt niets zonder dat jij het vraagt.
+- [x] Het goedkope model schrijft de voorstellen op de achtergrond. Enkel als
+      JIJ op "Maak een nieuw antwoord" duwt, komt het dure model eraan te pas.
+- [x] Van een lange mail gaat hoogstens 6.000 tekens naar de AI in plaats van
+      het hele gesprek.
+- [x] Vier voorstellen per halve minuut in plaats van twaalf.
+- [x] Alleen post van de laatste 45 dagen.
+- [x] Een teller die per dag bijhoudt wat het kost, met een DAGGRENS van $1. Is
+      die bereikt, dan ligt het achtergrondwerk stil tot morgen; wat jij zelf
+      aanklikt gaat altijd door.
+- [x] Bij Instellingen staat wat de AI vandaag gekost heeft.
+- [x] "AI herschrijven" blijft gewoon bestaan.
+
+### 15. Inspreken loopt niet door (03-09)
+- [x] De browser kapte de herkenning af bij elke stilte, waardoor je bericht
+      half uitgetypt bleef. Nu loopt het door tot JIJ op de knop duwt, en zie je
+      de tekst meelopen terwijl je praat.
+
+---
+
+## LATER — pas oppakken als er tijd over is
+Silvio: deze zijn minder belangrijk dan "het voorstel moet klaarstaan".
+Niet aan beginnen zolang er iets dringenders is, tenzij hij er zelf om vraagt.
+
+### A. Het blok "Is dit reclame?"
+- [ ] Reageert supertraag en gaat niet vooruit
+- [ ] "Bekijken" aanklikken werkt meestal niet
+- [ ] Rechtsklikken werkt daar ook niet
+- [ ] De knop "Echte mail" moet GROEN zijn. Groen en rood in dat blok, nooit blauw
+
+### B. Aanvragen zijn er veel te veel (4.097) — OPGELOST (03-09)
+- [x] De AI beslist nu zelf per mail of het een ECHTE aanvraag is, in dezelfde
+      oproep waarin ze de mail toch al beoordeelt. Kost dus geen cent extra.
+- [x] In de opdracht aan de AI staan de gevallen die eruit moeten: bevestigingen
+      van formulieren die hij zelf invulde, "je 3D-model is klaar", logins en
+      registratiemails, meldingen van programma's, alles van de boekhouding, en
+      offertes die een leverancier hém stuurt.
+- [x] Boekhouding, bank en overheid komen sowieso niet meer in de lijst.
+- [x] Bij twijfel blijft het er wel in — liever eentje te veel dan een gemiste klant.
+- [x] Mails die al beoordeeld waren voordat dit bestond, verdwijnen niet: daar
+      geldt de strenge vuistregel tot ze opnieuw beoordeeld worden.
+
+### C. "Vandaag te beantwoorden" staat vol met dingen die geen antwoord vragen
+- [x] De AI zet nu per mail "antwoordNodig": zit er een MENS op een antwoord te
+      wachten, of is het een automatische melding, bevestiging, factuur,
+      documentmelding of login? *(03-09)*
+- [ ] Nog te doen: die vlag ook gebruiken om de lijst "vandaag te beantwoorden"
+      op te schonen
+
+### E. Mails van jezelf aan jezelf
+- [ ] Mail van info@daklo.be naar info@daklo.be zijn je eigen to-do's — die
+      horen in de BESTAANDE to-domap, geen nieuw scherm of nieuwe regel
+
+### F. Zien waarop je al geantwoord hebt
+- [ ] Een groen vinkje naast mails waarop al geantwoord is. Nu kan je wel
+      afvinken, maar je ziet niet of er al een antwoord vertrokken is
+- [ ] Zulke mails horen niet meer bij Aanvragen te staan
+
+### G. Knop "Nieuwe mail"
+- [ ] Ander icoontje, duidelijker en groter
+
+### H. "Mogelijk te verwijderen"
+- [ ] Er mag veel meer in komen, vooral oude mails, zodat de mailbox echt kan
+      opruimen
+- [ ] Logisch gesorteerd van nieuw naar oud, en omgekeerd te zetten
+
+### D. LUCY (boekhouding)
+- [x] Alles van de boekhouding krijgt "aanvraag: false" en "antwoordNodig: false"
+      en verdwijnt uit de aanvragen *(03-09)*
+- [ ] Nog te doen: automatisch naar een boekhoudmap verplaatsen
+
+---
+
+### 9. Twee mailboxen
+- [ ] De twee mailboxen mogen NOOIT verdwijnen en mogen niet verwijderbaar zijn
+- [ ] Ze moeten goed samenwerken; mails van allebei samen in één inbox mag
+- [x] De foutmelding zegt nu wélke mailbox geweigerd wordt *(02-09)*
+
+### 10. Mailserver (Combell)
+- [x] Melding op het scherm wanneer je mailserver de verbinding weigert *(02-09)*
+- [x] Knop "Verbinding testen" bij de mailinstellingen *(02-09)*
+- [ ] LOPEND: IMAP wordt geweigerd (AUTHENTICATIONFAILED) terwijl webmail werkt
 
 ### 8. Spraak
 - [x] Spraakknop op het dashboard *(02-09)*

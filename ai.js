@@ -2,6 +2,7 @@
 const Anthropic = require("@anthropic-ai/sdk");
 const settings = require("./settings");
 const mailbox = require("./mailbox");
+const tegoed = require("./tegoed");
 
 function isConfigured() {
   return !!settings.getConfig().anthropicApiKey;
@@ -129,11 +130,38 @@ Komt een mail binnen via het contact- of offerteformulier van zijn website, dan 
 Herken dat aan zaken als: een afzender of onderwerp met "daklo", "dakwairker", "dakwAIrker", "contactformulier", "offerteaanvraag", "nieuw bericht via de website", "aanvraag via website", "aanvragen wachten op je", een automatische formuliermail met velden zoals naam/telefoon/adres/bericht, of een verzendend systeem (WordPress, noreply, wpforms, formulier).
 Zet dan "viaWebsite" op true, "categorie" op "dringend", "vanType" op "klant" en "belangrijk" op true. Nooit "geen_actie". Anders "viaWebsite": false.
 
+IS DIT EEN ECHTE AANVRAAG? — het veld "aanvraag"
+Zet "aanvraag" op true ALLEEN als het gaat om nieuw werk dat AAN HEM gericht is
+en waar hij op moet reageren: iemand die een offerte, een prijs, een raming of
+een bestek vraagt, of een concrete vraag om werk uit te voeren. Ook een aanvraag
+via zijn website of via dakwAIrker telt altijd mee.
+
+Zet "aanvraag" op FALSE bij al de rest. Let vooral op deze gevallen, want die
+kwamen er ten onrechte tussen:
+- Een BEVESTIGING van een formulier dat HIJZELF ergens invulde ("bedankt voor je
+  aanvraag", "we hebben je bericht goed ontvangen", "je aanvraag is geregistreerd").
+- Een bericht van een dienst of programma dat iets meldt: "je 3D-model is klaar",
+  "je documenten staan klaar", een login- of registratiemail, een wachtwoord, een
+  bevestiging van een account, een melding van een meetprogramma of portaal.
+- Alles van de boekhouding (Lucy, SD Worx, een accountant): facturen en documenten
+  vragen geen antwoord van hem. Zet daar "aanvraag" op false en "actieLabel" op "".
+- Een leverancier die een offerte STUURT die hij zelf gevraagd heeft, of een
+  bestelbevestiging: dat is geen nieuwe aanvraag.
+- Reclame, nieuwsbrieven, phishing en privépost: nooit een aanvraag.
+Twijfel je echt tussen wel of niet, dan mag "aanvraag" true zijn — liever eentje
+te veel dan een gemiste klant.
+
+MOET HIJ HIER ECHT OP ANTWOORDEN? — het veld "antwoordNodig"
+Zet "antwoordNodig" op true als er een mens op een antwoord van hem zit te wachten.
+Zet het op false bij automatische meldingen, bevestigingen, facturen,
+documentmeldingen, logins, nieuwsbrieven en alles wat enkel ter kennisgeving is —
+ook als de mail verder belangrijk is om te lezen.
+
 RECLAME BIJ TWIJFEL:
 Ben je er niet zeker van of iets reclame is dan wel een echte mail die een antwoord verdient — bijvoorbeeld een leverancier die zowel nieuws als een aanbieding stuurt — zet dan "reclameTwijfel" op true. Bij duidelijke gevallen (overduidelijke nieuwsbrief, of overduidelijk een echte klantvraag) zet je "reclameTwijfel" op false.
 
 Antwoord ALLEEN met geldige JSON, een array van objecten:
-[{"uid": <uid>, "categorie": "...", "reden": "korte reden in het Vlaams, max 12 woorden", "vanType": "...", "actieLabel": "...", "soort": "...", "belangrijk": true, "viaWebsite": false, "reclameTwijfel": false}]
+[{"uid": <uid>, "categorie": "...", "reden": "korte reden in het Vlaams, max 12 woorden", "vanType": "...", "actieLabel": "...", "soort": "...", "belangrijk": true, "viaWebsite": false, "reclameTwijfel": false, "aanvraag": false, "antwoordNodig": false}]
 Geen andere tekst.`;
 
 async function classifyMails(mails) {
@@ -161,6 +189,7 @@ async function classifyMails(mails) {
     messages: [{ role: "user", content: JSON.stringify(input) }],
   });
 
+  tegoed.boek("snel", "mails beoordelen", resp.usage);
   const text = resp.content.map((b) => (b.type === "text" ? b.text : "")).join("");
   const uitslag = extractJson(text, null);
 
@@ -207,7 +236,11 @@ Antwoord ALLEEN met geldige JSON in dit formaat, geen andere tekst:
 }`;
 }
 
-async function suggestReply(mail) {
+// opties.snel = gebruik het goedkope model. Dat doen we voor alles wat op de
+// achtergrond klaargezet wordt: een antwoord op een gewone klantenmail heeft
+// het dure model niet nodig. Vraag JIJ zelf om een nieuw antwoord, dan mag het
+// dure model erop.
+async function suggestReply(mail, opties) {
   if (!isConfigured()) {
     throw new Error("De AI is nog niet ingesteld.");
   }
@@ -215,17 +248,26 @@ async function suggestReply(mail) {
   const toon = config.aiToon || "Vlaams, kort en professioneel";
   const handtekening = config.aiHandtekening || config.displayName?.split(" ")[0] || "Silvio";
   const anthropic = client();
+  // NIET DE HELE MAIL MEESTUREN.
+  // Een mail met een lang gesprek eronder kan tienduizenden woorden bevatten.
+  // Die allemaal naar de AI sturen kost geld zonder dat het antwoord er beter
+  // van wordt: wat je nodig hebt staat vooraan. Vandaar deze grens.
+  const MAX_TEKENS = 6000;
+  const ruw = String(mail.text || mail.snippet || "");
+  const inhoud = ruw.length > MAX_TEKENS ? ruw.slice(0, MAX_TEKENS) + "\n\n[...rest van het bericht weggelaten...]" : ruw;
+  const snel = !!(opties && opties.snel);
   const resp = await anthropic.messages.create({
-    model: modelSlim(),
+    model: snel ? modelSnel() : modelSlim(),
     max_tokens: 1024,
     system: suggestSystem(toon, handtekening),
     messages: [
       {
         role: "user",
-        content: `Van: ${mail.from} <${mail.fromAddress}>\nOnderwerp: ${mail.subject}\n\n${mail.text || mail.snippet || ""}`,
+        content: `Van: ${mail.from} <${mail.fromAddress}>\nOnderwerp: ${mail.subject}\n\n${inhoud}`,
       },
     ],
   });
+  tegoed.boek(snel ? "snel" : "slim", "antwoord voorstellen", resp.usage);
   const text = resp.content.map((b) => (b.type === "text" ? b.text : "")).join("");
   return extractJson(text, {
     type: "",

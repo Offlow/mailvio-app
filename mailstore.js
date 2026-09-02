@@ -122,14 +122,42 @@ function naarSchijf(accountKey, folder, data) {
   }
 }
 
+// DEZELFDE SCHRIJFBEURT, MAAR DAN ZONDER DE APP STIL TE LEGGEN.
+// Bij 11.000 mails is dit bestand tientallen megabytes. Dat in één keer
+// omzetten en wegschrijven hield de server seconden bezig — en dan wacht jouw
+// klik. Nu gebeurt het omzetten in stukken en het schrijven zelf achter de
+// schermen, met een adempauze tussenin.
+async function naarSchijfRustig(accountKey, folder, data) {
+  try {
+    const leeg = !data || !data.mails || Object.keys(data.mails).length === 0;
+    if (leeg) {
+      try {
+        const bestaand = fs.statSync(bestandVoor(accountKey, folder));
+        if (bestaand.size > 200) return;
+      } catch (e) { /* er staat nog niets */ }
+    }
+    if (!fs.existsSync(CACHE_DIR)) await fs.promises.mkdir(CACHE_DIR, { recursive: true });
+    const doel = bestandVoor(accountKey, folder);
+    const tijdelijk = doel + ".tmp";
+    const tekst = JSON.stringify(data);
+    await new Promise((r) => setImmediate(r));
+    await fs.promises.writeFile(tijdelijk, tekst, "utf8");
+    await fs.promises.rename(tijdelijk, doel);
+  } catch (e) {
+    console.error("Kon de mailcache niet wegschrijven:", e.message);
+  }
+}
+
 function schrijf(accountKey, folder, data) {
   const sleutel = sleutelVan(accountKey, folder);
   onthoud(sleutel, data);
   if (nogTeSchrijven.has(sleutel)) return; // er komt al een schrijfbeurt aan
+  // Drie seconden in plaats van één: tijdens het binnenhalen van duizenden
+  // mails werd dit bestand anders elke seconde volledig herschreven.
   const timer = setTimeout(() => {
     nogTeSchrijven.delete(sleutel);
-    naarSchijf(accountKey, folder, geheugen.get(sleutel) || data);
-  }, 1000);
+    naarSchijfRustig(accountKey, folder, geheugen.get(sleutel) || data);
+  }, 3000);
   if (timer.unref) timer.unref(); // mag het afsluiten van de app niet tegenhouden
   nogTeSchrijven.set(sleutel, { timer, accountKey, folder });
 }
@@ -157,7 +185,16 @@ for (const sein of ["exit", "SIGINT", "SIGTERM"]) {
 function getMails(accountKey, folder) {
   const data = lees(accountKey, folder);
   if (data._gesorteerd && data._gesorteerdOp === data.bijgewerkt) return data._gesorteerd;
-  const lijst = Object.values(data.mails || {}).sort((a, b) => new Date(b.date) - new Date(a.date));
+  // De datum één keer omzetten in plaats van bij elke vergelijking opnieuw.
+  // Bij 11.000 mails scheelt dat honderdduizenden omzettingen per sortering —
+  // en dat was mee de reden dat de server af en toe seconden stilstond.
+  const lijst = Object.values(data.mails || {});
+  const tijden = new Map();
+  for (const m of lijst) {
+    const t = m && m.date ? Date.parse(m.date) : 0;
+    tijden.set(m, Number.isFinite(t) ? t : 0);
+  }
+  lijst.sort((a, b) => tijden.get(b) - tijden.get(a));
   // Niet-opsombaar, zodat deze hulplijst nooit mee naar schijf geschreven wordt.
   Object.defineProperty(data, "_gesorteerd", { value: lijst, writable: true, configurable: true, enumerable: false });
   Object.defineProperty(data, "_gesorteerdOp", { value: data.bijgewerkt, writable: true, configurable: true, enumerable: false });

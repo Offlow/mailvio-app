@@ -79,6 +79,15 @@ function setMany(accountKey, entries) {
       belangrijk: !!e.belangrijk,
       viaWebsite: !!e.viaWebsite,
       reclameTwijfel: !!e.reclameTwijfel,
+      // Is dit nieuw werk dat aan hem gericht is, en zit er iemand op een
+      // antwoord te wachten? De AI beslist dat mee in dezelfde oproep, dus het
+      // kost geen extra tegoed.
+      // Bewust NIET altijd op false zetten: mails die vroeger beoordeeld zijn
+      // kennen dit veld nog niet, en die willen we niet in één klap allemaal
+      // uit je aanvragenlijst gooien. Onbekend blijft onbekend, en daar geldt
+      // dan de strenge vuistregel.
+      aanvraag: e.aanvraag === undefined ? existing.aanvraag : !!e.aanvraag,
+      antwoordNodig: e.antwoordNodig === undefined ? existing.antwoordNodig : !!e.antwoordNodig,
       snippet: e.snippet || "",
       classifiedAt: Date.now(),
       // Hoe vaak we al geprobeerd hebben. Lukt het na een paar pogingen nog

@@ -700,6 +700,9 @@
     </div>
     <div id="handtekeningVoorbeeld" class="hint" style="margin:6px 0 0"></div>
 
+    <div class="sectionLabel">Wat je AI vandaag gekost heeft</div>
+    <p class="hint" style="margin:-2px 0 8px" id="tegoedUitleg">Bezig met nakijken...</p>
+
     <div class="sectionLabel">AI-instellingen</div>
     <p class="hint" style="margin:-2px 0 8px">Bepaalt hoe Mailvio AI je antwoorden opstelt en herschrijft. Ondertekenen doet de AI niet meer zelf — daar zorgt je handtekening hierboven voor.</p>
     <div class="fieldList">
@@ -2371,8 +2374,15 @@ function koppelSpraak(veld, knopId, hintId, klaar) {
 
   let herkenner = null;
   let luistert = false;
+  // Jij bepaalt wanneer het stopt, niet je adempauze. De browser kapt de
+  // herkenning namelijk af bij elke stilte; dan stond je bericht half uitgetypt.
+  // Zolang jij niet op de knop duwt, starten we gewoon opnieuw en loopt de
+  // tekst door.
+  let zelfGestopt = false;
+  let tekstTotNu = "";
 
   const stop = () => {
+    zelfGestopt = true;
     luistert = false;
     knop.classList.remove("luistert");
     if (hint) hint.hidden = true;
@@ -2390,6 +2400,8 @@ function koppelSpraak(veld, knopId, hintId, klaar) {
     // bij vaktermen en eigennamen.
     herkenner.maxAlternatives = 3;
 
+    zelfGestopt = false;
+    tekstTotNu = veld.value;
     const beginTekst = veld.value;
     herkenner.addEventListener("result", (e) => {
       let vast = "";
@@ -2404,8 +2416,12 @@ function koppelSpraak(veld, knopId, hintId, klaar) {
         if (res.isFinal) vast += beste.transcript;
         else bezig += beste.transcript;
       }
-      const samen = (beginTekst ? beginTekst + " " : "") + (vast + bezig).trim();
+      const samen = (tekstTotNu ? tekstTotNu + " " : "") + (vast + bezig).trim();
       veld.value = samen.replace(/\s+/g, " ").trim();
+      // Meelopen met wat je zegt: de cursor achteraan zetten zodat je het veld
+      // ziet meebewegen terwijl je praat.
+      try { veld.setSelectionRange(veld.value.length, veld.value.length); } catch (err) { /* geen tekstveld */ }
+      veld.scrollLeft = veld.scrollWidth;
       state._taakTekst = veld.value;
       if (hint) {
         hint.hidden = false;
@@ -2420,21 +2436,31 @@ function koppelSpraak(veld, knopId, hintId, klaar) {
         : "Inspreken lukte niet: " + e.error);
     });
     herkenner.addEventListener("end", () => {
+      // De browser stopt vanzelf bij een stilte. Ben JIJ niet gestopt, dan
+      // starten we meteen opnieuw: zo kan je rustig nadenken midden in een zin
+      // zonder dat je bericht half blijft staan.
+      if (!zelfGestopt && luistert) {
+        tekstTotNu = veld.value;
+        try {
+          herkenner.start();
+          return;
+        } catch (e) { /* lukt het niet, dan stoppen we netjes */ }
+      }
       const had = luistert;
       stop();
-      // Klaar met praten? De taak staat nu in het veld — je kan nog aanpassen
-      // en dan zelf op Enter of Toevoegen duwen.
       if (had && veld.value.trim() && hint) {
         hint.hidden = false;
         hint.textContent = 'Klopt het? Pas gerust aan en druk op Enter.';
       }
+      if (had && typeof klaar === "function" && veld.value.trim()) klaar(veld.value.trim());
     });
 
     try {
       herkenner.start();
       luistert = true;
       knop.classList.add("luistert");
-      if (hint) { hint.hidden = false; hint.textContent = "Aan het luisteren... klik nog eens op de microfoon als je klaar bent."; }
+      if (hint) { hint.hidden = false; hint.textContent = "Aan het luisteren — neem gerust je tijd. Klik nog eens op de microfoon als je klaar bent."; }
+      knop.title = "Klik als je klaar bent met praten";
     } catch (e) {
       showToast("Inspreken lukte niet: " + e.message);
     }
@@ -2542,20 +2568,28 @@ const EIGEN_AANVRAAG = /bedankt voor (je|uw) (aanvraag|bericht|interesse|inschri
 // of de overheid sturen je geen offerteaanvraag.
 const AANVRAAG_VAN = ["klant", "platform", "onbekend"];
 
+// Is dit een aanvraag — iets waar geld aan hangt en waar een antwoord op moet?
+// Dit bepaalt of Mailvio er vooraf een antwoord voor klaarzet.
+function isAanvraag(m) {
+  if (!m) return false;
+  if (m.soort === "reclame" || m.soort === "phishing") return false;
+  // Is de mail al beoordeeld, dan telt het oordeel van de AI. Die weet het
+  // verschil tussen "geef mij een prijs" en "je 3D-model staat klaar".
+  if (m.aanvraag !== undefined) return !!m.aanvraag;
+  // Nog niet beoordeeld? Dan houden we het streng: enkel wat via je website of
+  // via dakwAIrker binnenkomt, of waar letterlijk om een offerte gevraagd wordt.
+  if (m.viaWebsite || m.vanType === "platform") return true;
+  return /\boffert|prijsvraag|prijsaanvraag|prijsopgave|bestek|raming\b/i.test(`${m.subject || ""}`);
+}
+
 function aanvraagLijst() {
-  const woorden = /offerte|offert|prijsvraag|prijsaanvraag|prijs aanvra|contactformulier|contact formulier|nieuwe aanvraag|aanvraag voor|nieuw bericht via|bestek|raming|prijsopgave/i;
   return (state.mails || [])
-    .filter((m) => !m.resolved && !m.genegeerd && m.soort !== "reclame" && m.soort !== "phishing" && m.vanType !== "prive")
-    // Bevestigingen van je eigen ingevulde formulieren horen hier niet.
+    .filter((m) => !m.resolved && !m.genegeerd && m.vanType !== "prive")
+    // Bevestigingen van formulieren die je zelf invulde horen hier niet.
     .filter((m) => !EIGEN_AANVRAAG.test(`${m.subject || ""} ${m.snippet || ""}`))
-    .filter((m) => {
-      // Via je eigen website of via dakwAIrker: altijd een echte aanvraag.
-      if (m.viaWebsite || m.vanType === "platform") return true;
-      // Anders moet het van een klant (of iemand die we nog niet kennen) komen.
-      if (!AANVRAAG_VAN.includes(m.vanType || "onbekend")) return false;
-      if (m.soort === "offerte") return true;
-      return woorden.test(`${m.subject || ""} ${m.from || ""} ${m.fromAddress || ""}`);
-    })
+    // Boekhouding, bank en overheid sturen geen offerteaanvragen.
+    .filter((m) => !["boekhouding", "bank", "overheid"].includes(m.vanType))
+    .filter(isAanvraag)
     .sort((a, b) => new Date(b.date) - new Date(a.date));
 }
 
@@ -4385,6 +4419,23 @@ async function loadSuggestion(uid, m, force) {
   if (!force && state.suggestion[uid]) {
     return renderSuggestion(uid, m, state.suggestion[uid]);
   }
+  // ALLEEN BIJ AANVRAGEN VANZELF EEN ANTWOORD SCHRIJVEN.
+  // Elke AI-oproep kost geld. Bij een aanvraag — een offerte- of prijsvraag —
+  // is het antwoord meteen nuttig, dus daar staat het klaar. Bij alle andere
+  // mails wachten we tot JIJ erom vraagt; dan gebeurt er niets zonder dat je
+  // het gevraagd hebt.
+  if (!force && !isAanvraag(m)) {
+    panel.innerHTML = `
+      <div class="aiSuggest">
+        <div class="row" style="color:var(--ink-soft)">Er staat geen antwoord klaar voor deze mail — die wordt alleen vooraf geschreven bij offerte- en prijsvragen, om je AI-tegoed te sparen.</div>
+      </div>
+      <div class="antwoordKnoppen">
+        <button class="primair" id="maakAntwoordToch">✎ Toch een antwoord laten schrijven</button>
+      </div>`;
+    const knop = document.getElementById("maakAntwoordToch");
+    if (knop) knop.addEventListener("click", () => loadSuggestion(uid, m, true));
+    return;
+  }
   panel.innerHTML = `<div class="empty">Bezig met analyseren...</div>`;
   try {
     const url = `/api/mails/${uid}/suggestion` + (force ? "?force=1" : "");
@@ -4663,6 +4714,7 @@ async function openSettings() {
     document.getElementById("setSmtpPort").value = data.smtpPort || "587";
     document.getElementById("setSmtpPassword").placeholder = data.hasSmtpPassword ? "•••••• (al ingesteld, laat leeg om te behouden)" : "";
     document.getElementById("setApiKey").placeholder = data.hasApiKey ? "•••••• (al ingesteld, laat leeg om te behouden)" : "sk-ant-...";
+    toonTegoed();
     document.getElementById("setPassword").value = "";
     document.getElementById("setSmtpPassword").value = "";
     document.getElementById("setApiKey").value = "";
@@ -4876,6 +4928,23 @@ if (mailTestKnop) mailTestKnop.addEventListener("click", async () => {
     mailTestKnop.disabled = false;
   }
 });
+
+// Wat de AI vandaag gekost heeft, in gewone taal. Het klaarzetten op de
+// achtergrond stopt vanzelf zodra de daggrens bereikt is; wat jij zelf
+// aanklikt gaat altijd door.
+function toonTegoed() {
+  const el = document.getElementById("tegoedUitleg");
+  if (!el) return;
+  const v = (state.status || {}).aiVerbruik;
+  if (!v) { el.textContent = "Nog niets verbruikt vandaag."; return; }
+  const per = Object.entries(v.perSoort || {})
+    .map(([wat, r]) => `${wat}: $${(r.dollar || 0).toFixed(2)}`)
+    .join(" · ");
+  el.innerHTML = `Vandaag <b>$${(v.dollar || 0).toFixed(2)}</b> in ${v.oproepen || 0} oproepen. ` +
+    `Het klaarzetten op de achtergrond stopt vanzelf bij $${v.grens} per dag; wat je zelf aanklikt gaat altijd door.` +
+    (per ? `<br><span style="opacity:.8">${escapeHtml(per)}</span>` : "") +
+    (v.magNog ? "" : '<br><b style="color:#b3261e">De daggrens is bereikt — de achtergrond ligt stil tot morgen.</b>');
+}
 
 document.getElementById("zijbalkNieuweMail").addEventListener("click", () => openCompose());
 

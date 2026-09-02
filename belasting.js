@@ -49,6 +49,26 @@ async function wachtOpRust(maxMs = 20000) {
   }
 }
 
+// Hoe zwaar stond de server de laatste minuut stil? Op een gedeelde processor
+// knijpt Fly de machine af zodra je te lang aan één stuk doorwerkt: dan staat
+// alles er ineens seconden bij stil, ook al doet onze code niets verkeerd.
+// Hiermee kan het achtergrondwerk dat voelen en gas terugnemen.
+function recenteBlokkade() {
+  const grens = Date.now() - 60000;
+  let ergste = 0;
+  for (const b of ergste_lijst()) {
+    if (new Date(b.op).getTime() >= grens && b.ms > ergste) ergste = b.ms;
+  }
+  return ergste;
+}
+function ergste_lijst() { return ergste; }
+
+// Wordt de machine afgeknepen? Dan is dit geen moment om er nog werk bij te
+// nemen, hoeveel geduld het inladen ook heeft.
+function afgeknepen() {
+  return recenteBlokkade() > 2000;
+}
+
 function overzicht() {
   return {
     vertragingNu: vertraging,
@@ -56,6 +76,8 @@ function overzicht() {
     geheugenMb: Math.round(process.memoryUsage().heapUsed / 1048576),
     geheugenTotaalMb: Math.round(process.memoryUsage().rss / 1048576),
     draaitAlSeconden: Math.round(process.uptime()),
+    afgeknepen: afgeknepen(),
+    recenteBlokkadeMs: recenteBlokkade(),
     ergsteBlokkades: ergste,
   };
 }
@@ -84,8 +106,10 @@ function anoniemOverzicht() {
     geheugenMb: o.geheugenMb,
     geheugenTotaalMb: o.geheugenTotaalMb,
     draaitAlSeconden: o.draaitAlSeconden,
+    afgeknepen: o.afgeknepen,
+    recenteBlokkadeMs: o.recenteBlokkadeMs,
     ergsteBlokkades: o.ergsteBlokkades.map((b) => ({ ms: b.ms, bezigMet: soortVan(b.bezigMet), op: b.op })),
   };
 }
 
-module.exports = { zetBezig, drukbezet, wachtOpRust, overzicht, anoniemOverzicht };
+module.exports = { zetBezig, drukbezet, afgeknepen, recenteBlokkade, wachtOpRust, overzicht, anoniemOverzicht };

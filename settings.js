@@ -112,7 +112,12 @@ function getConfig() {
     // Reclame en nieuwsbrieven zien er pas uit zoals ze bedoeld zijn als de
     // afbeeldingen mee geladen worden. Standaard uit (dan weet een afzender
     // niet dat je zijn mail geopend hebt), maar je kan het aanzetten.
-    toonAfbeeldingen: stored.toonAfbeeldingen === true,
+    // AFBEELDINGEN STAAN STANDAARD AAN.
+    // Logo's en beelden horen bij een mail; zonder die beelden is een
+    // nieuwsbrief of een offerte met foto's niet te lezen. Wie liever niet
+    // heeft dat een afzender ziet dat de mail geopend is, kan dit uitzetten
+    // bij Instellingen.
+    toonAfbeeldingen: stored.toonAfbeeldingen !== false,
     // Hoe Mailvio JOU aanspreekt. Los van de mailboxnaam: die kan
     // "info@daklo.be" of "boekhouding" zijn, maar jij blijft dezelfde persoon.
     aanspreektitel: stored.aanspreektitel || "",

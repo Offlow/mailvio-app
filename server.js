@@ -9,6 +9,7 @@ const classifications = require("./classifications");
 const mailstore = require("./mailstore");
 const belasting = require("./belasting");
 const voorstellen = require("./voorstellen");
+const tegoed = require("./tegoed");
 const auth = require("./auth");
 const afzenders = require("./afzenders");
 const bijlagen = require("./bijlagen");
@@ -368,6 +369,8 @@ async function beoordeelPortie(accountKey, unclassified) {
       belangrijk: !!byUid[m.uid]?.belangrijk,
       viaWebsite: !!byUid[m.uid]?.viaWebsite,
       reclameTwijfel: !!byUid[m.uid]?.reclameTwijfel,
+      aanvraag: byUid[m.uid]?.aanvraag,
+      antwoordNodig: byUid[m.uid]?.antwoordNodig,
       snippet: m.snippet,
     }));
     if (results && results.length) ai.wisFout();
@@ -390,7 +393,10 @@ async function beoordeelPortie(accountKey, unclassified) {
 // meer. Daarom maakt Mailvio het voorstel al klaar zodra een mail binnen is,
 // voor de recentste berichten waar effectief een antwoord op moet.
 const VOORSTEL_MAILS = 250;   // hoe ver terug we voorstellen klaarzetten
-const VOORSTEL_PER_RONDE = 8; // hoeveel er per ronde bijkomen
+// Bewust klein: elk voorstel kost een AI-oproep, en die kosten geld. Vier per
+// halve minuut is ruim 400 per uur — meer dan genoeg om je recentste post
+// klaar te hebben staan, zonder je tegoed op te eten.
+const VOORSTEL_PER_RONDE = 4;
 let voorstelBezig = false;
 
 async function maakVoorstellenKlaar(accountKey) {
@@ -398,22 +404,44 @@ async function maakVoorstellenKlaar(accountKey) {
   voorstelBezig = true;
   try {
     const data = await getMails(false);
+    // Alleen waar het echt over gaat: verse post die om een antwoord vraagt.
+    // Een antwoord klaarzetten voor een mail van twee jaar geleden kost geld en
+    // levert niets op.
+    const grens = Date.now() - 45 * 86400000;
     const kandidaten = (data.mails || [])
       .slice(0, VOORSTEL_MAILS)
       .filter((m) => !m.resolved && !m.genegeerd)
       .filter((m) => m.soort !== "reclame" && m.soort !== "phishing")
+      // ENKEL BIJ AANVRAGEN. Dat is waar een klaarstaand antwoord je tijd
+      // bespaart; overal elders kost het enkel tegoed.
+      .filter((m) => m.aanvraag && m.antwoordNodig !== false)
       .filter((m) => m.categorie && m.categorie !== "geen_actie" && m.categorie !== "onbekend")
+      .filter((m) => {
+        const t = m.date ? Date.parse(m.date) : 0;
+        return !Number.isFinite(t) || t >= grens;
+      })
       .filter((m) => !voorstellen.heeft(accountKey, m.uid));
 
     let gemaakt = 0;
     for (const m of kandidaten) {
       if (gemaakt >= VOORSTEL_PER_RONDE) break;
-      if (mailbox.gebruikerBezig() || belasting.drukbezet()) break;
+      if (!tegoed.magNog()) {
+        console.log("Daggrens voor het AI-tegoed bereikt — vanaf nu enkel nog wat je zelf aanklikt.");
+        break;
+      }
+      // Wacht tot jij klaar bent in plaats van te stoppen — anders komt het er
+      // nooit van, want jij gebruikt de app nu eenmaal.
+      await mailbox.wachtOpRust();
+      await belasting.wachtOpRust();
+      if (mailbox.gebruikerBezig() || belasting.afgeknepen()) break;
       belasting.zetBezig("antwoord klaarzetten");
       try {
         const body = await haalMailOp(accountKey, m.uid, "INBOX");
         if (!body) continue;
-        const voorstel = await ai.suggestReply({ ...m, ...body });
+        // Op de achtergrond met het goedkope model — dat scheelt een veelvoud
+        // in kosten en het verschil merk je nauwelijks. Vraag jij zelf om een
+        // nieuw antwoord, dan gaat het dure model eraan te pas.
+        const voorstel = await ai.suggestReply({ ...m, ...body }, { snel: true });
         if (voorstel && voorstel.antwoord) {
           voorstellen.bewaar(accountKey, m.uid, voorstel);
           gemaakt++;
@@ -565,6 +593,8 @@ async function getMails(forceRefresh) {
       belangrijk: !!c?.belangrijk,
       viaWebsite: !!c?.viaWebsite,
       reclameTwijfel: !!c?.reclameTwijfel,
+      aanvraag: c ? c.aanvraag : undefined,
+      antwoordNodig: c ? c.antwoordNodig : undefined,
       resolved: !!c?.resolved,
       genegeerd: !!c?.genegeerd,
     };
@@ -664,7 +694,9 @@ function inlaadVoortgang() {
     const store = classifications.getAll(accountKey);
     beoordeeld = Object.values(store).filter((c) => c.categorie && c.categorie !== "onbekend").length;
   } catch (e) { /* nog niets */ }
-  voortgangCache = { op: Date.now(), klaar: v.klaar, totaal: v.totaal, beoordeeld };
+  let antwoordenKlaar = 0;
+  try { antwoordenKlaar = voorstellen.aantal(accountKey); } catch (e) { /* nog niets */ }
+  voortgangCache = { op: Date.now(), klaar: v.klaar, totaal: v.totaal, beoordeeld, antwoordenKlaar };
   return voortgangCache;
 }
 
@@ -677,6 +709,8 @@ app.get("/api/snelheid", (req, res) => {
   const pct = (n) => (v.totaal ? Math.round((n / v.totaal) * 100) : 0);
   o.inhoudIngeladenPercent = pct(v.klaar);
   o.beoordeeldPercent = pct(v.beoordeeld);
+  o.antwoordenKlaar = v.antwoordenKlaar;
+  o.aiVerbruikVandaag = tegoed.vandaagVerbruik();
   res.json({
     ...o,
     uitleg: o.ergsteBlokkades.length
@@ -707,6 +741,8 @@ app.get("/api/status", (req, res) => {
     aiConfigured: ai.isConfigured(),
     // Weigert je mailserver de verbinding of je wachtwoord, dan moet dat op je
     // scherm staan. Vroeger bleef de app gewoon leeg zonder een woord uitleg.
+    // Wat je AI-tegoed vandaag gekost heeft, zodat je het gewoon ziet.
+    aiVerbruik: tegoed.vandaagVerbruik(),
     // De klacht over de mailbox die je nu bekijkt...
     mailFout: (mailbox.getVerbindingsFout && mailbox.getVerbindingsFout()) || null,
     // ...en die over je andere mailbox, zodat je die niet over het hoofd ziet.
@@ -977,7 +1013,7 @@ app.get("/api/mails/:uid/suggestion", async (req, res) => {
     // seconden per mail.
     const body = await haalMailOp(accountKey, uid, "INBOX");
     if (!body) return res.status(404).json({ error: "Mail niet gevonden." });
-    const suggestion = await ai.suggestReply({ ...meta, ...body });
+    const suggestion = await ai.suggestReply({ ...meta, ...body }, { snel: !opnieuw });
     suggestionCache.set(uid, suggestion);
     voorstellen.bewaar(accountKey, uid, suggestion);
     res.json(suggestion);
@@ -1760,7 +1796,7 @@ async function achtergrondRonde() {
   if (!mailbox.isConfigured()) return;
   // Loopt de server al achter op zichzelf? Dan is dit geen moment om er werk
   // bij te nemen. We komen straks gewoon terug.
-  if (belasting.drukbezet()) {
+  if (belasting.drukbezet() || belasting.afgeknepen()) {
     console.log("Achtergrondronde overgeslagen: de server heeft het te druk.");
     return;
   }
@@ -1825,9 +1861,9 @@ async function achtergrondRonde() {
     }
     cache.at = 0;
 
-    // De antwoorden voor je recentste mails alvast klaarzetten, zodat je nooit
-    // meer op de AI moet wachten als je een mail opent.
-    await maakVoorstellenKlaar(accountKey0);
+    // Het klaarzetten van de antwoorden gebeurt NIET meer hier. Het stond
+    // achteraan deze ronde en kwam daardoor amper aan de beurt. Het heeft nu
+    // zijn eigen ritme, verderop in dit bestand.
 
     // Het inladen van de mailinhoud gebeurt NIET meer hier. Het stond helemaal
     // achteraan deze ronde, achter het binnenhalen van alle mappen en het
@@ -1887,8 +1923,17 @@ const INLAAD_PORTIES = 20;
 async function inlaadBeurt() {
   if (!mailbox.isConfigured()) return;
   const accountKey = settingsStore.getConfig().imapUser || "default";
+  // GAS TERUGNEMEN ALS DE MACHINE AFGEKNEPEN WORDT.
+  // Je server deelt zijn processor met anderen. Werkt Mailvio te lang aan één
+  // stuk door, dan knijpt Fly de machine af en staat ALLES seconden stil — ook
+  // jouw klik. Dat voelen we aan onze eigen klok, en dan doen we het rustiger
+  // aan. Het inladen duurt dan wat langer, maar je app blijft bruikbaar.
+  const porties = belasting.afgeknepen() ? 2 : INLAAD_PORTIES;
+  if (belasting.afgeknepen()) {
+    console.log(`Machine wordt afgeknepen (${Math.round(belasting.recenteBlokkade() / 100) / 10}s stil) — rustiger inladen.`);
+  }
   try {
-    await laadVoorafIn(accountKey, INLAAD_PORTIES);
+    await laadVoorafIn(accountKey, porties);
   } catch (e) {
     console.error("Inladen op de achtergrond mislukt:", e.message);
   }
@@ -1898,6 +1943,37 @@ setTimeout(() => {
   inlaadBeurt();
   setInterval(inlaadBeurt, INLAAD_INTERVAL_MS);
 }, EERSTE_START_MS + 5000);
+
+// ---------------------------------------------------------------------------
+// HET VOORGESTELDE ANTWOORD HEEFT OOK ZIJN EIGEN RITME
+// ---------------------------------------------------------------------------
+// Dit is waar het om draait: als jij een mail opent, moet er AL staan wat er
+// moet gebeuren, hoe dringend het is, en een antwoord dat je kan versturen.
+// Niet pas beginnen rekenen op het moment dat jij zit te kijken.
+// Het klaarzetten liep tot nu mee achteraan de grote ronde en kwam daardoor
+// amper aan de beurt. Nu draait het apart, elke halve minuut, en het wijkt
+// vanzelf zodra jij iets doet.
+const VOORSTEL_INTERVAL_MS = 30000;
+
+async function voorstelBeurt() {
+  if (!mailbox.isConfigured() || !ai.isConfigured()) return;
+  if (belasting.afgeknepen()) return;
+  // DE REM OP JE TEGOED. Antwoorden klaarzetten kost geld. Is de daggrens
+  // bereikt, dan stopt het werk op de achtergrond tot morgen. Wat JIJ zelf
+  // aanklikt gaat altijd door.
+  if (!tegoed.magNog()) return;
+  const accountKey = settingsStore.getConfig().imapUser || "default";
+  try {
+    await maakVoorstellenKlaar(accountKey);
+  } catch (e) {
+    console.error("Antwoorden klaarzetten mislukt:", e.message);
+  }
+}
+
+setTimeout(() => {
+  voorstelBeurt();
+  setInterval(voorstelBeurt, VOORSTEL_INTERVAL_MS);
+}, EERSTE_START_MS + 12000);
 
 // Laatste vangnet: een onvoorziene fout mag Mailvio nooit helemaal platleggen.
 // Beter een gelogde fout en een app die blijft draaien, dan een mailbox die
