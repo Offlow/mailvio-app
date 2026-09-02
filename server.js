@@ -156,7 +156,10 @@ let envelopeCache = { at: 0, mails: [], total: 0, capped: false };
 const SCAN_BATCH_SIZE = 30;
 // Hoeveel mails we per portie volledig inladen. Ze gaan over één verbinding, en
 // de achtergrondronde blijft porties halen tot je HELE mailbox binnen is.
-const VOORAF_PER_RONDE = 60;
+// Hoeveel mails er per keer op de achtergrond binnengehaald worden. Bewust
+// klein: de server heeft één processor, en het ontleden van echte mails kost
+// rekenkracht. Liever een uur rustig doorwerken dan jou laten wachten.
+const VOORAF_PER_RONDE = 30;
 let cache = { at: 0, mails: [], total: 0, capped: false, scanned: 0, scanning: false };
 const suggestionCache = new Map(); // uid -> voorstel, leegt mee met de mail-cache
 let folderCache = { at: 0, folders: [] };
@@ -380,10 +383,10 @@ async function laadVoorafIn(accountKey, maxRondes) {
       });
       if (!bewaard) break; // lukt het niet, dan stoppen we deze ronde
       console.log(`${bewaard} mails ingeladen (portie ${i + 1}).`);
-      // Even de app laten ademen tussen twee porties. Zonder deze adempauze
-      // draait het inladen honderd porties na elkaar af zonder ooit een klik
-      // van jou te behandelen.
-      await new Promise((r) => setImmediate(r));
+      // Een echte pauze tussen twee porties. Het inladen op de achtergrond
+      // heeft geen haast; jouw kliks wel. Zo blijft er altijd rekenkracht over
+      // voor het scherm waar jij op zit te kijken.
+      await new Promise((r) => setTimeout(r, 1500));
     }
   } catch (e) {
     console.error("Vooraf inladen mislukt:", e.message);

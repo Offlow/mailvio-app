@@ -455,6 +455,12 @@ async function _fetchMailBodies(uids, folder, opVoortgang) {
         } catch (e) {
           console.error(`Mail ${msg.uid} verwerken mislukt:`, e.message);
         }
+        // NA ELKE MAIL DE APP LATEN ADEMEN.
+        // Een echte mail ontleden kost rekenkracht, en de server heeft maar één
+        // processor. Zonder deze pauze werkt hij zestig mails na elkaar af en
+        // krijgt jouw klik ondertussen geen enkele kans — dat waren de achttien
+        // seconden wachten die je zag. Nu komt jouw aanvraag ertussen.
+        await new Promise((r) => setImmediate(r));
       }
     } finally {
       lock.release();
