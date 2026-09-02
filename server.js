@@ -252,24 +252,10 @@ async function getLightMails(forceRefresh) {
   return { configured: true, mails, total: mails.length, capped: false };
 }
 
-async function getMails(forceRefresh) {
-  const fresh = !forceRefresh && Date.now() - cache.at < CACHE_TTL_MS && cache.mails.length > 0 && !cache.scanning;
-  if (fresh) return cache;
-
-  const { configured, mails: light, total, capped } = await getLightMails(forceRefresh);
-  if (!configured) {
-    cache = { at: Date.now(), mails: [], total: 0, capped: false, scanned: 0, scanning: false };
-    return cache;
-  }
-
-  const accountKey = settingsStore.getConfig().imapUser || "default";
-  const store = classifications.getAll(accountKey);
-  // Let op: "categorie" ontbreken is de echte maatstaf voor "nog niet gescand"
-  // — een mail kan al een store-record hebben omdat ze al als afgehandeld is
-  // gemarkeerd (via setResolved) vóór de AI-classificatie ooit liep.
-  const unclassified = light.filter((m) => !store[m.uid] || store[m.uid].categorie === undefined);
-
-  if (unclassified.length) {
+// Beoordeelt een portie nog niet gescande mails met de AI. Draait op de
+// achtergrond: niemand zit erop te wachten.
+let beoordeelBezig = false;
+async function beoordeelPortie(accountKey, unclassified) {
     // Nieuwste onbeoordeelde mails eerst (meest relevant), de rest van de
     // achterstand volgt automatisch in de volgende ververs-rondes.
     const batch = unclassified.slice(0, SCAN_BATCH_SIZE);
@@ -309,6 +295,38 @@ async function getMails(forceRefresh) {
     }));
     if (results && results.length) ai.wisFout();
     classifications.setMany(accountKey, toStore);
+  
+  // De cache verversen zodat de nieuwe beoordelingen meteen meekomen.
+  cache.at = 0;
+}
+
+async function getMails(forceRefresh) {
+  const fresh = !forceRefresh && Date.now() - cache.at < CACHE_TTL_MS && cache.mails.length > 0 && !cache.scanning;
+  if (fresh) return cache;
+
+  const { configured, mails: light, total, capped } = await getLightMails(forceRefresh);
+  if (!configured) {
+    cache = { at: Date.now(), mails: [], total: 0, capped: false, scanned: 0, scanning: false };
+    return cache;
+  }
+
+  const accountKey = settingsStore.getConfig().imapUser || "default";
+  const store = classifications.getAll(accountKey);
+  // Let op: "categorie" ontbreken is de echte maatstaf voor "nog niet gescand"
+  // — een mail kan al een store-record hebben omdat ze al als afgehandeld is
+  // gemarkeerd (via setResolved) vóór de AI-classificatie ooit liep.
+  const unclassified = light.filter((m) => !store[m.uid] || store[m.uid].categorie === undefined);
+
+  // NIET WACHTEN OP DE AI. Vroeger werd hier eerst een portie mails door Claude
+  // beoordeeld voordat de server antwoordde — inclusief het ophalen van de
+  // fragmenten over IMAP. Dat kon tientallen seconden duren, elke keer dat je de
+  // app opende. Nu vertrekt het antwoord meteen en gebeurt de beoordeling op de
+  // achtergrond; het lampje in de zijbalk toont de voortgang.
+  if (unclassified.length && !beoordeelBezig) {
+    beoordeelBezig = true;
+    beoordeelPortie(accountKey, unclassified)
+      .catch((e) => console.error("Beoordelen mislukt:", e.message))
+      .finally(() => { beoordeelBezig = false; });
   }
 
   const finalStore = classifications.getAll(accountKey);
@@ -1346,12 +1364,23 @@ async function achtergrondRonde() {
     // zijn, doen we meteen een volgende portie — zo is de mailbox binnen een
     // paar rondes volledig doorgenomen in plaats van pas terwijl jij zit te
     // wachten.
-    let data = await getMails(true);
-    let rondes = 0;
-    while (data.scanning && rondes < 25) {
-      data = await getMails(true);
-      rondes++;
+    const accountKey0 = settingsStore.getConfig().imapUser || "default";
+    // Eerst de mailbox bijwerken.
+    await getMails(true);
+
+    // Dan de achterstand van de AI-beoordeling wegwerken, portie per portie.
+    // Dit gebeurt hier, op de achtergrond, en niet terwijl jij op je scherm wacht.
+    for (let ronde = 0; ronde < 25; ronde++) {
+      const licht = mailstore.getMails(accountKey0, "INBOX");
+      const store = classifications.getAll(accountKey0);
+      const teDoen = licht.filter((m) => !store[m.uid] || store[m.uid].categorie === undefined);
+      if (!teDoen.length) break;
+      await beoordeelPortie(accountKey0, teDoen);
+      // Blijft het mislukken (bv. een sleutel die niet aanvaard wordt), dan
+      // stoppen we deze ronde in plaats van 25 keer dezelfde fout te maken.
+      if (ai.getLaatsteFout()) break;
     }
+    cache.at = 0;
 
     // Ook de andere mappen bijhouden — Verzonden, Archief, Prullenmand en je
     // eigen mappen. Zo staat ALLES op de schijf van de server en hoeft er nooit
