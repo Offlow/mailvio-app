@@ -51,17 +51,44 @@ function sleutelVan(accountKey, folder) {
   return `${veiligeNaam(accountKey)}__${veiligeNaam(folder)}`;
 }
 
+// HOEVEEL MAPPEN ER TEGELIJK IN HET GEHEUGEN MOGEN STAAN.
+// Dit was mijn eigen fout: ik zette élke map die ooit aangeraakt werd voorgoed
+// in het geheugen. Op een servertje met 512 MB — met een inbox van duizenden
+// mails plus Verzonden, Archief en Prullenmand — loopt dat vol. En een server
+// die geheugen tekort komt, is nóg trager dan een server die van schijf leest.
+// Twee mappen volstaan: je kijkt naar één map en de achtergrond werkt er één
+// bij. De rest gaat gewoon terug naar schijf.
+const MAX_MAPPEN_IN_GEHEUGEN = 2;
+
+function onthoud(sleutel, data) {
+  // Wie het laatst gebruikt is, komt achteraan te staan.
+  geheugen.delete(sleutel);
+  geheugen.set(sleutel, data);
+  while (geheugen.size > MAX_MAPPEN_IN_GEHEUGEN) {
+    const oudste = geheugen.keys().next().value;
+    if (oudste === sleutel) break;
+    // Eerst nog wegschrijven wat in de wacht stond, anders raakt er iets kwijt.
+    const wacht = nogTeSchrijven.get(oudste);
+    if (wacht) {
+      clearTimeout(wacht.timer);
+      nogTeSchrijven.delete(oudste);
+      naarSchijf(wacht.accountKey, wacht.folder, geheugen.get(oudste));
+    }
+    geheugen.delete(oudste);
+  }
+}
+
 function lees(accountKey, folder) {
   const sleutel = sleutelVan(accountKey, folder);
   const bestaand = geheugen.get(sleutel);
-  if (bestaand) return bestaand;
+  if (bestaand) { onthoud(sleutel, bestaand); return bestaand; }
   let data;
   try {
     data = JSON.parse(fs.readFileSync(bestandVoor(accountKey, folder), "utf8"));
   } catch (e) {
     data = { uidValidity: null, mails: {}, bodies: {}, bijgewerkt: 0 };
   }
-  geheugen.set(sleutel, data);
+  onthoud(sleutel, data);
   return data;
 }
 
@@ -81,7 +108,7 @@ function naarSchijf(accountKey, folder, data) {
 
 function schrijf(accountKey, folder, data) {
   const sleutel = sleutelVan(accountKey, folder);
-  geheugen.set(sleutel, data);
+  onthoud(sleutel, data);
   if (nogTeSchrijven.has(sleutel)) return; // er komt al een schrijfbeurt aan
   const timer = setTimeout(() => {
     nogTeSchrijven.delete(sleutel);
