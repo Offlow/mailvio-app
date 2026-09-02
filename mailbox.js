@@ -114,6 +114,7 @@ async function haalVerbinding() {
   await imap.connect();
   imap.on("close", () => { if (verbinding === imap) verbinding = null; });
   verbinding = imap;
+  wisVerbindingsFout(); // aanmelden gelukt: eventuele oude klacht mag weg
   verbindingOp = Date.now();
   return imap;
 }
@@ -128,6 +129,7 @@ async function metVerbinding(werk) {
       return await werk(imap);
     } catch (e) {
       const bericht = leesbareImapFout(e);
+      onthoudVerbindingsFout(e);
       // Een verbinding die stuk is, gooien we weg en proberen we één keer
       // opnieuw. Een echte fout (map bestaat niet) niet.
       const stuk = !imap || !imap.usable || /connection|closed|timeout|socket|ECONN/i.test(bericht);
@@ -136,6 +138,33 @@ async function metVerbinding(werk) {
       throw e;
     }
   }
+}
+
+// DE LAATSTE FOUT VAN JE MAILSERVER ONTHOUDEN.
+// Weigert je mailserver het wachtwoord, dan bleef Mailvio gewoon leeg staan
+// zonder te zeggen waarom. Nu wordt de fout bewaard en op je scherm getoond.
+let laatsteVerbindingsFout = null;
+function onthoudVerbindingsFout(e) {
+  const tekst = leesbareImapFout(e);
+  let uitleg = tekst;
+  let soort = "onbekend";
+  if (/AUTHENTICATIONFAILED|Authentication failed|invalid credentials|LOGIN failed/i.test(tekst)) {
+    soort = "wachtwoord";
+    uitleg = "Je mailserver weigert je e-mailwachtwoord. Vul het opnieuw in bij Instellingen — en kijk na of je provider een apart 'app-wachtwoord' vraagt.";
+  } else if (/too many|rate|limit|throttl/i.test(tekst)) {
+    soort = "limiet";
+    uitleg = "Je mailserver laat even geen verbindingen meer toe. Mailvio probeert het straks opnieuw.";
+  } else if (/ENOTFOUND|EAI_AGAIN|ECONNREFUSED|timeout|ETIMEDOUT/i.test(tekst)) {
+    soort = "bereikbaar";
+    uitleg = "Je mailserver is niet bereikbaar. Kijk het adres na bij Instellingen.";
+  }
+  laatsteVerbindingsFout = { soort, uitleg, technisch: tekst, op: Date.now() };
+}
+function getVerbindingsFout() {
+  return laatsteVerbindingsFout;
+}
+function wisVerbindingsFout() {
+  laatsteVerbindingsFout = null;
 }
 
 // imapflow zegt bij een geweigerd commando enkel "Command failed". Wat de
@@ -1126,6 +1155,8 @@ async function searchAlleMailboxen(query, limitPerBox = 15) {
 
 module.exports = {
   leesbareImapFout,
+  getVerbindingsFout,
+  wisVerbindingsFout,
   gebruikerBezig,
   metVoorrang,
   wachtOpRust,

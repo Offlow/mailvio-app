@@ -671,6 +671,8 @@ function inlaadVoortgang() {
 // Zonder aanmelden: enkel snelheid, niets over je mail.
 app.get("/api/snelheid", (req, res) => {
   const o = belasting.anoniemOverzicht();
+  const mf = mailbox.getVerbindingsFout && mailbox.getVerbindingsFout();
+  o.mailserver = mf ? mf.soort : "in orde";
   const v = inlaadVoortgang();
   const pct = (n) => (v.totaal ? Math.round((n / v.totaal) * 100) : 0);
   o.inhoudIngeladenPercent = pct(v.klaar);
@@ -703,6 +705,9 @@ app.get("/api/status", (req, res) => {
     imapConfigured: mailbox.isConfigured(),
     smtpConfigured: mailer.isConfigured(),
     aiConfigured: ai.isConfigured(),
+    // Weigert je mailserver de verbinding of je wachtwoord, dan moet dat op je
+    // scherm staan. Vroeger bleef de app gewoon leeg zonder een woord uitleg.
+    mailFout: (mailbox.getVerbindingsFout && mailbox.getVerbindingsFout()) || null,
   });
 });
 

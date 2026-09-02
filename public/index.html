@@ -75,6 +75,8 @@
   /* ---- Content shell ---- */
   .content{flex:1 1 auto;display:flex;flex-direction:column;overflow:hidden;position:relative}
   .banner{background:var(--yellow-soft);border-bottom:1px solid var(--yellow);color:#6b5a12;padding:10px 24px;font-size:13px;line-height:1.6;flex:0 0 auto}
+  .banner.ernstig{background:#fdecea;border-bottom-color:#f3b8b2;color:#8c1d13}
+  .banner.ernstig a{color:#8c1d13;text-decoration:underline;cursor:pointer;font-weight:800}
   .banner a{font-weight:700;text-decoration:underline;cursor:pointer}
   .banner[hidden]{display:none}
   .toast{position:fixed;bottom:22px;right:22px;background:var(--ink);color:#fff;padding:10px 16px;border-radius:9px;font-size:13px;box-shadow:0 8px 24px rgba(0,0,0,.2);z-index:100;opacity:0;transform:translateY(6px);transition:opacity .2s,transform .2s;pointer-events:none}
@@ -904,7 +906,11 @@ function tijdOfDatum(iso) {
 
 function daysAgo(iso) {
   if (!iso) return 0;
-  return Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 86400000));
+  // Een mail met een kapotte datum gaf "NaN" op je scherm ("wacht NaN mnd").
+  // Zo'n mail behandelen we gewoon als van vandaag.
+  const t = new Date(iso).getTime();
+  if (!Number.isFinite(t)) return 0;
+  return Math.max(0, Math.floor((Date.now() - t) / 86400000));
 }
 function showToast(text) {
   const t = document.getElementById("toast");
@@ -1279,6 +1285,11 @@ function renderAiStatus() {
   const tekst = document.getElementById("aiStatusTekst");
   if (!lamp || !tekst) return;
   const st = state.status || {};
+  if (st.mailFout && st.imapConfigured) {
+    lamp.className = "lampje rood";
+    tekst.textContent = "Mailbox onbereikbaar — klik voor uitleg";
+    return;
+  }
   if (!st.aiConfigured) {
     lamp.className = "lampje";
     tekst.textContent = "AI niet ingesteld — vul je API-sleutel in";
@@ -1302,7 +1313,14 @@ function renderBanner() {
   const el = document.getElementById("banner");
   const s = state.status;
   let html = "";
-  if (!s.imapConfigured) {
+  let rood = false;
+  // WEIGERT JE MAILSERVER? DAN STAAT DAT HIER, GROOT.
+  // Zonder dit bleef Mailvio gewoon leeg staan terwijl je mailserver het
+  // wachtwoord weigerde — en dan zit je te zoeken waarom er niets binnenkomt.
+  if (s.mailFout && s.imapConfigured) {
+    rood = true;
+    html = `<b>Je mailbox is niet bereikbaar.</b> ${escapeHtml(s.mailFout.uitleg)} <a id="bnrLink">Naar instellingen</a>.`;
+  } else if (!s.imapConfigured) {
     html = 'De mailbox is nog niet gekoppeld. <a id="bnrLink">Vul je mailgegevens in</a>.';
   } else if (!s.smtpConfigured) {
     html = 'De uitgaande server (SMTP) is nog niet ingesteld. <a id="bnrLink">Vul die in</a>.';
@@ -1311,10 +1329,13 @@ function renderBanner() {
   }
   if (html) {
     el.innerHTML = html;
+    el.classList.toggle("ernstig", rood);
     el.hidden = false;
-    document.getElementById("bnrLink").addEventListener("click", openSettings);
+    const link = document.getElementById("bnrLink");
+    if (link) link.addEventListener("click", openSettings);
   } else {
     el.hidden = true;
+    el.classList.remove("ernstig");
   }
 }
 
@@ -2525,7 +2546,9 @@ function aanvraagLijst() {
 }
 
 function wachtTekst(d) {
-  return d === 0 ? "vandaag" : d === 1 ? "wacht 1 dag" : d < 31 ? `wacht ${d} dagen` : `wacht ${Math.round(d / 30)} mnd`;
+  const n = Number(d);
+  if (!Number.isFinite(n) || n <= 0) return "vandaag";
+  return n === 1 ? "wacht 1 dag" : n < 31 ? `wacht ${n} dagen` : `wacht ${Math.round(n / 30)} mnd`;
 }
 
 function renderAanvragen() {
@@ -4812,6 +4835,11 @@ document.getElementById("zijbalkNieuweMail").addEventListener("click", () => ope
 
 document.getElementById("aiStatus").addEventListener("click", () => {
   const st = state.status || {};
+  if (st.mailFout && st.imapConfigured) {
+    alert("Je mailbox is niet bereikbaar:\n\n" + st.mailFout.uitleg +
+      "\n\nWat je mailserver letterlijk antwoordt:\n" + (st.mailFout.technisch || ""));
+    return;
+  }
   if (st.aiFout) {
     alert("De AI werkt op dit moment niet:\n\n" + st.aiFout);
     return;
