@@ -97,6 +97,9 @@
   .pill.vandaag{background:var(--orange-soft);color:var(--orange)}
   .pill.binnenkort{background:var(--yellow-soft);color:var(--yellow)}
   .pill.geen_actie{background:var(--green-soft);color:var(--green)}
+  /* Er is een antwoord vertrokken: duidelijk groen, niet te verwarren met
+     "afgevinkt" (dat betekent enkel dat je er niets meer mee moet). */
+  .pill.beantwoord{background:var(--green-soft,#e6f4ec);color:var(--green,#1e7f4f);font-weight:800;border:1px solid rgba(30,127,79,.25)}
   .pill.onbekend{background:var(--surface-2);color:var(--ink-faint)}
 
   /* ---- Vandaag ---- */
@@ -178,8 +181,11 @@
   .extraLinks{display:flex;gap:16px;flex-wrap:wrap;margin-top:12px}
   .extraLinks button{border:none;background:none;padding:0;font-family:inherit;font-size:12.5px;font-weight:800;color:var(--accent-ink);cursor:pointer}
   .extraLinks button:hover{text-decoration:underline}
-  .nieuweMailKnop{display:flex;align-items:center;gap:11px;width:100%;border:none;border-radius:11px;background:var(--accent);color:#fff;font-family:inherit;font-size:14.5px;font-weight:800;padding:13px 14px;cursor:pointer;margin-bottom:10px;box-shadow:0 2px 8px rgba(0,0,0,.08);text-align:left}
-  .nieuweMailKnop .ico{font-size:19px;line-height:1;flex:0 0 auto}
+  /* De belangrijkste knop van de app: een nieuwe mail beginnen. Die mag je niet
+     moeten zoeken — groter, met een duidelijker icoon en meer lucht eromheen. */
+  .nieuweMailKnop{display:flex;align-items:center;justify-content:center;gap:12px;width:100%;border:none;border-radius:13px;background:var(--accent);color:#fff;font-family:inherit;font-size:16px;font-weight:800;padding:17px 16px;cursor:pointer;margin-bottom:14px;box-shadow:0 3px 12px rgba(0,0,0,.14);text-align:center;letter-spacing:.01em}
+  .nieuweMailKnop .ico{font-size:22px;line-height:1;flex:0 0 auto}
+  .nieuweMailKnop:active{transform:translateY(1px)}
   .nieuweMailKnop:hover{filter:brightness(1.06)}
   /* De mappenlijst van de mailserver klapt open en dicht, en staat standaard
      dicht: je werkt normaal met de slimme lijsten, niet met die mappen. */
@@ -379,6 +385,12 @@
   .miniCard .title .dotmark{width:7px;height:7px;border-radius:50%}
   .miniCard .body{font-size:12.5px;color:var(--ink-soft);line-height:1.6}
   .miniCard a{font-weight:700;font-size:12.5px;color:var(--accent-ink);text-decoration:none;display:inline-block;margin-top:6px;cursor:pointer}
+  /* De kolom rechts stond vol met tekstblokjes waar je niks mee kon. Nu staan
+     er dingen die je kán aanklikken: vragen die Mailvio meteen voor je uitzoekt. */
+  .suggestieKop{font-size:11px;text-transform:uppercase;letter-spacing:.05em;font-weight:800;color:var(--ink-faint);margin:18px 0 8px}
+  .suggesties{display:flex;flex-direction:column;gap:6px}
+  .suggestie{text-align:left;border:1px solid var(--border);background:var(--surface);border-radius:9px;padding:9px 11px;font-family:inherit;font-size:12.5px;line-height:1.45;color:var(--ink);cursor:pointer}
+  .suggestie:hover{border-color:var(--accent);background:var(--accent-soft);color:var(--accent-ink)}
   .empty{color:var(--ink-faint);font-size:13.5px;padding:16px 0}
 
   /* ---- Inbox ---- */
@@ -454,6 +466,14 @@
   .bijlageSamenvatting{font-size:12.5px;line-height:1.55;color:var(--ink-soft);padding:0 12px 10px;margin:0}
   .bijlageSamenvatting.laadt{color:var(--ink-faint);font-style:italic}
   .bijlagenLijst.kolom{flex-direction:column;gap:10px}
+  /* Veel bijlagen: kleine kaartjes naast elkaar in plaats van een lange lijst. */
+  .bijlagenLijst.compact{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:8px}
+  .bijlageKaart.klein .bijlage{padding:7px 10px;gap:7px}
+  .bijlageKaart.klein .bijlageNaam{font-size:12.5px;max-width:100%}
+  .bijlageKaart.klein .bijlageMaat{margin-left:auto}
+  .bijlageVraag{display:block;width:100%;border:none;border-top:1px solid var(--border);background:transparent;font-family:inherit;font-size:11.5px;font-weight:700;color:var(--accent-ink,var(--accent));padding:6px 10px;cursor:pointer;text-align:left}
+  .bijlageVraag:hover{background:var(--surface-2)}
+  .bijlageAlles{font-weight:700;text-transform:none;letter-spacing:0;font-size:11.5px;margin-left:4px}
 
   /* Antwoordbalk direct onder de mail — zoals in een gewone mailbox. */
   .replyBar{display:flex;gap:8px;flex-wrap:wrap;margin-top:22px;padding-top:16px;border-top:1px solid var(--border)}
@@ -593,7 +613,7 @@
       <div class="acctMenu" id="acctMenu" hidden></div>
     </div>
 
-    <button class="nieuweMailKnop" id="zijbalkNieuweMail"><span class="ico">✉</span> Nieuwe mail</button>
+    <button class="nieuweMailKnop" id="zijbalkNieuweMail" title="Een nieuwe mail schrijven"><span class="ico">✏️</span> Nieuwe mail</button>
 
     <button class="navHome" data-nav="vandaag">
       <span class="navHomeIcoon">⌂</span>
@@ -874,6 +894,20 @@ function opmaak(tekst) {
   sluitAlinea();
   sluitLijst();
   return uit.join("");
+}
+
+// Soms geeft de AI haar antwoord terug in ruwe vorm (met accolades en
+// aanhalingstekens). Dat hoort niemand op zijn scherm te zien. Zit er zoiets in,
+// dan halen we er de leesbare zin uit.
+function leesbaarAntwoord(tekst) {
+  const t = String(tekst || "").trim();
+  if (!(t.startsWith("{") && t.endsWith("}"))) return t;
+  try {
+    const j = JSON.parse(t);
+    const delen = [j.samenvatting, j.antwoord, j.korte, j.uitleg, j.tekst].filter((x) => typeof x === "string" && x.trim());
+    if (delen.length) return delen.join("\n\n");
+  } catch (e) { /* geen geldige JSON, dan tonen we het gewoon */ }
+  return t;
 }
 
 // Dezelfde tekst, maar dan ZONDER die tekens — voor in een mail, waar
@@ -1606,32 +1640,50 @@ function renderOpruimen() {
       <span class="wanneer">${tijdOfDatum(m.date)}</span>
     </div>`;
 
-  const reclame = lijst.filter((m) => m.groep === "reclame");
-  const oud = lijst.filter((m) => m.groep === "oud");
+  // Sorteren: nieuwste eerst, of net omgekeerd. Bij het opruimen van een oude
+  // mailbox wil je meestal met de oudste beginnen.
+  const omgekeerd = state.opruimOudsteEerst === true;
+  const gesorteerd = lijst.slice().sort((a, b) => {
+    const va = Date.parse(a.date) || 0;
+    const vb = Date.parse(b.date) || 0;
+    return omgekeerd ? va - vb : vb - va;
+  });
+  const reclame = gesorteerd.filter((m) => m.groep === "reclame");
+  const phishing = gesorteerd.filter((m) => m.groep === "phishing");
+  const meldingen = gesorteerd.filter((m) => m.groep === "melding");
 
   mount.innerHTML = `
     <div class="opruimView">
       <h1 style="margin:0 0 4px;font-size:22px">Mogelijk te verwijderen</h1>
-      <div class="sub" style="margin-bottom:8px">Enkel wat duidelijk weg mag: oude reclame waar je nooit iets mee deed, en mails van meer dan vier jaar oud die al afgehandeld zijn. Bij twijfel staat een mail hier niet bij. Ze gaan naar je prullenmand, dus je kan ze altijd nog terughalen.</div>
+      <div class="sub" style="margin-bottom:8px">Enkel wat veilig weg kan: oude reclame waar je nooit iets mee deed, vermoedelijke oplichting, en automatische meldingen van meer dan een jaar oud die nooit een antwoord vroegen. Een gewone mail van een klant staat hier nooit bij, hoe oud ook — die kan nog altijd een offerte of een garantie zijn. Alles gaat naar je prullenmand, dus je kan het terughalen.</div>
 
-      ${lijst.length ? `
+      ${gesorteerd.length ? `
       <div class="opruimBalk">
-        <span class="tel" id="opruimTel">${state.opruimGekozen.size} van ${lijst.length} aangevinkt</span>
+        <span class="tel" id="opruimTel">${state.opruimGekozen.size} van ${gesorteerd.length} aangevinkt</span>
+        <button class="btn btn-ghost" id="opruimSorteer">${omgekeerd ? "Oudste eerst ↑" : "Nieuwste eerst ↓"}</button>
         <button class="btn btn-ghost" id="kiesAlles">Alles aanvinken</button>
-        <button class="btn btn-ghost" id="kiesReclame">Enkel de reclame (${reclame.length})</button>
+        ${reclame.length ? `<button class="btn btn-ghost" id="kiesReclame">Enkel de reclame (${reclame.length})</button>` : ""}
         <button class="btn btn-ghost" id="kiesNiets">Niets</button>
         <button class="btn btn-primary" id="opruimStart">🗑 Verwijder aangevinkte</button>
       </div>
 
       ${reclame.length ? `<div class="opruimGroep">Oude reclame — ${reclame.length}</div>${reclame.map(rij).join("")}` : ""}
-      ${oud.length ? `<div class="opruimGroep">Ouder dan vier jaar — ${oud.length}</div>${oud.map(rij).join("")}` : ""}
+      ${phishing.length ? `<div class="opruimGroep">Vermoedelijke oplichting — ${phishing.length}</div>${phishing.map(rij).join("")}` : ""}
+      ${meldingen.length ? `<div class="opruimGroep">Oude automatische meldingen — ${meldingen.length}</div>${meldingen.map(rij).join("")}` : ""}
       ` : '<div class="empty">Er staat niets klaar om op te ruimen. Je mailbox is netjes.</div>'}
     </div>`;
 
   if (!lijst.length) return;
 
+  const sorteerKnop = document.getElementById("opruimSorteer");
+  if (sorteerKnop) sorteerKnop.addEventListener("click", () => {
+    state.opruimOudsteEerst = !state.opruimOudsteEerst;
+    renderOpruimen();
+  });
+
   const werkTelBij = () => {
-    document.getElementById("opruimTel").textContent = `${state.opruimGekozen.size} van ${lijst.length} aangevinkt`;
+    const el = document.getElementById("opruimTel");
+    if (el) el.textContent = `${state.opruimGekozen.size} van ${lijst.length} aangevinkt`;
   };
   const wissel = (uid, aan) => {
     if (aan) state.opruimGekozen.add(uid); else state.opruimGekozen.delete(uid);
@@ -1652,7 +1704,8 @@ function renderOpruimen() {
   document.getElementById("kiesAlles").addEventListener("click", () => {
     lijst.forEach((m) => wissel(m.uid, true));
   });
-  document.getElementById("kiesReclame").addEventListener("click", () => {
+  const kiesReclameKnop = document.getElementById("kiesReclame");
+  if (kiesReclameKnop) kiesReclameKnop.addEventListener("click", () => {
     lijst.forEach((m) => wissel(m.uid, m.groep === "reclame"));
   });
   document.getElementById("kiesNiets").addEventListener("click", () => {
@@ -2570,6 +2623,25 @@ const AANVRAAG_VAN = ["klant", "platform", "onbekend"];
 
 // Is dit een aanvraag — iets waar geld aan hangt en waar een antwoord op moet?
 // Dit bepaalt of Mailvio er vooraf een antwoord voor klaarzet.
+// Wat je Mailvio allemaal kan vragen. Bewust concreet en in gewone taal, en
+// waar het kan met de cijfers van JOUW mailbox erin, zodat je meteen ziet wat
+// er te halen valt. Klikken vult de vraag in en stuurt ze door.
+function inboxSuggesties(dringend, open) {
+  const lijst = [];
+  if (dringend) lijst.push(`Vat de ${dringend} dringende mails samen in een paar zinnen`);
+  lijst.push("Welke offertes moet ik opvolgen?");
+  lijst.push("Wie wacht het langst op een antwoord van mij?");
+  lijst.push("Welke facturen moeten er nog betaald worden?");
+  lijst.push("Zijn er afspraken gemaakt die nog niet in mijn agenda staan?");
+  lijst.push("Welke klanten hebben al twee keer gemaild zonder antwoord?");
+  if (open) lijst.push(`Zet de ${open} openstaande zaken op volgorde van belangrijkheid`);
+  lijst.push("Welke mails kan ik gerust laten liggen?");
+  lijst.push("Van welke leveranciers krijg ik het meeste post?");
+  lijst.push("Staat er iets tussen dat verdacht is of op oplichting lijkt?");
+  lijst.push("Wat moet ik deze week zeker niet vergeten?");
+  return lijst.slice(0, 10);
+}
+
 function isAanvraag(m) {
   if (!m) return false;
   if (m.soort === "reclame" || m.soort === "phishing") return false;
@@ -2874,7 +2946,7 @@ async function askVandaag(question) {
   try {
     const res = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: q }) });
     const data = await res.json();
-    state.chatAntwoord = data.answer || data.error || "Geen antwoord ontvangen.";
+    state.chatAntwoord = leesbaarAntwoord(data.answer || data.error || "Geen antwoord ontvangen.");
   } catch (e) {
     state.chatAntwoord = "Er ging iets mis: " + e.message;
   } finally {
@@ -2888,6 +2960,8 @@ async function askVandaag(question) {
 // Inbox
 // ---------------------------------------------------------------------------
 function statusPill(m) {
+  // Er is écht een antwoord vertrokken — dat wil je in één oogopslag zien.
+  if (m.beantwoord) return { text: "✓ Beantwoord", cls: "beantwoord" };
   if (m.resolved) return { text: "Afgehandeld", cls: "geen_actie" };
   if (!m.categorie || m.categorie === "geen_actie" || m.categorie === "onbekend") return null;
   const d = daysAgo(m.date);
@@ -3139,14 +3213,6 @@ function renderInbox() {
       </div>
       <aside class="aiPanel">
         <div class="panelTitle">Mailvio AI</div>
-        <div class="miniCard" style="margin-bottom:10px">
-          <div class="title"><span class="dotmark" style="background:var(--red)"></span> Vandaag — ${dCount} acties</div>
-          <div class="body">${dCount ? dCount + " mail(s) met hoge urgentie" : "Niets dringend vandaag"}</div>
-        </div>
-        <div class="miniCard">
-          <div class="title"><span class="dotmark" style="background:var(--orange)"></span> Nog open — ${openCount}</div>
-          <div class="body">Klik op ★ AI-filter om enkel actie-mails te zien.</div>
-        </div>
         <div class="aiChatBox">
           <div style="font-size:12.5px;color:var(--ink-soft)">Stel gerust een vraag over je inbox.</div>
           <div style="display:flex;gap:6px;align-items:stretch">
@@ -3157,6 +3223,10 @@ function renderInbox() {
             <button class="antwoordSluit" id="inboxAnswerSluit" title="Wegklikken">&times;</button>
             <div id="inboxAnswerInhoud"></div>
           </div>
+        </div>
+        <div class="suggestieKop">Dit kan je vragen</div>
+        <div class="suggesties">
+          ${inboxSuggesties(dCount, openCount).map((v) => `<button class="suggestie" data-vraag="${escapeHtml(v)}">${escapeHtml(v)}</button>`).join("")}
         </div>
       </aside>
     </div>
@@ -3204,7 +3274,7 @@ function renderInbox() {
     try {
       const res = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: q }) });
       const data = await res.json();
-      inhoud.innerHTML = opmaak(data.answer || data.error || "Geen antwoord ontvangen.");
+      inhoud.innerHTML = opmaak(leesbaarAntwoord(data.answer || data.error || "Geen antwoord ontvangen."));
     } catch (err) {
       inhoud.innerHTML = opmaak("Er ging iets mis: " + err.message);
     } finally {
@@ -3215,6 +3285,11 @@ function renderInbox() {
     if (e.key !== "Enter") return;
     vraagInbox(e.target.value.trim());
   });
+  mount.querySelectorAll(".suggestie").forEach((b) => b.addEventListener("click", () => {
+    const veld = document.getElementById("inboxAsk");
+    if (veld) veld.value = b.dataset.vraag;
+    vraagInbox(b.dataset.vraag);
+  }));
   const inboxSluit = document.getElementById("inboxAnswerSluit");
   if (inboxSluit) inboxSluit.addEventListener("click", () => { document.getElementById("inboxAnswer").hidden = true; });
   koppelSpraak(document.getElementById("inboxAsk"), "inboxMic", null, () => {
@@ -3671,22 +3746,36 @@ function bijlageIcoon(type, naam) {
   return "📎";
 }
 
+// COMPACT. Een mail met twaalf bijlagen gaf twaalf kaarten onder elkaar, elk
+// met een samenvatting eronder — je zat een half scherm te scrollen voor je aan
+// de mail zelf toekwam. Nu staan ze naast elkaar als kleine kaartjes, en lees je
+// een samenvatting pas als je erom vraagt (dat spaart meteen je AI-tegoed, want
+// elke samenvatting is een oproep).
+// Bij één of twee bijlagen staat de samenvatting er wel meteen onder: daar is
+// ze het nuttigst en kost ze bijna niets.
+const BIJLAGEN_VANZELF_SAMENVATTEN = 2;
+
 function bijlagenHtml(uid, m) {
   const lijst = m.attachments || [];
   if (!lijst.length) return "";
   const folder = state.currentFolder && state.currentFolder !== "INBOX" ? "?folder=" + encodeURIComponent(state.currentFolder) : "";
+  const vanzelf = lijst.length <= BIJLAGEN_VANZELF_SAMENVATTEN;
+  const totaal = lijst.reduce((n, a) => n + (a.size || 0), 0);
   return `
     <div class="bijlagen boven">
-      <div class="bijlagenKop">${lijst.length} bijlage${lijst.length === 1 ? "" : "n"}</div>
-      <div class="bijlagenLijst kolom">
+      <div class="bijlagenKop">${lijst.length} bijlage${lijst.length === 1 ? "" : "n"}${totaal ? " · " + leesbareGrootte(totaal) : ""}</div>
+      <div class="bijlagenLijst ${vanzelf ? "kolom" : "compact"}">
         ${lijst.map((a) => `
-          <div class="bijlageKaart">
-            <a class="bijlage" href="/api/mails/${uid}/bijlage/${a.index}${folder}" target="_blank" rel="noopener">
+          <div class="bijlageKaart ${vanzelf ? "" : "klein"}">
+            <a class="bijlage" href="/api/mails/${uid}/bijlage/${a.index}${folder}" target="_blank" rel="noopener" title="${escapeHtml(a.filename)}">
               <span class="bijlageIcoon">${bijlageIcoon(a.contentType, a.filename)}</span>
               <span class="bijlageNaam">${escapeHtml(a.filename)}</span>
               <span class="bijlageMaat">${leesbareGrootte(a.size)}</span>
             </a>
-            <p class="bijlageSamenvatting laadt" data-samenvatting="${a.index}">Mailvio leest de bijlage...</p>
+            ${vanzelf
+              ? `<p class="bijlageSamenvatting laadt" data-samenvatting="${a.index}">Mailvio leest de bijlage...</p>`
+              : `<button class="bijlageVraag" data-vatsamen="${a.index}" title="Laat Mailvio kort zeggen wat er in deze bijlage staat">Wat staat erin?</button>
+                 <p class="bijlageSamenvatting" data-samenvatting="${a.index}" hidden></p>`}
           </div>
         `).join("")}
       </div>
@@ -3701,6 +3790,36 @@ async function laadBijlageSamenvattingen(uid, m) {
   const lijst = m.attachments || [];
   if (!lijst.length) return;
   const folder = state.currentFolder && state.currentFolder !== "INBOX" ? "?folder=" + encodeURIComponent(state.currentFolder) : "";
+
+  // Veel bijlagen? Dan gebeurt er niets vanzelf — je vraagt het per bijlage.
+  // Zo blijft het scherm kort en je tegoed gespaard.
+  if (lijst.length > BIJLAGEN_VANZELF_SAMENVATTEN) {
+    document.querySelectorAll("[data-vatsamen]").forEach((knop) => {
+      knop.addEventListener("click", async () => {
+        const idx = knop.dataset.vatsamen;
+        const veld = document.querySelector(`[data-samenvatting="${idx}"]`);
+        if (!veld) return;
+        knop.disabled = true;
+        veld.hidden = false;
+        veld.classList.add("laadt");
+        veld.textContent = "Mailvio leest de bijlage...";
+        try {
+          const r = await fetch(`/api/mails/${uid}/bijlage/${idx}/samenvatting${folder}`);
+          const data = await r.json();
+          const tekst = (data.samenvatting || "").trim();
+          veld.classList.remove("laadt");
+          veld.textContent = tekst || "Hier kon Mailvio niets uit halen.";
+          knop.remove();
+        } catch (e) {
+          veld.classList.remove("laadt");
+          veld.textContent = "Kon de bijlage niet lezen.";
+          knop.disabled = false;
+        }
+      });
+    });
+    return;
+  }
+
   for (const a of lijst) {
     const veld = document.querySelector(`[data-samenvatting="${a.index}"]`);
     if (!veld) continue;
@@ -3860,9 +3979,22 @@ function vulHtmlMail(m) {
   const bouwDoc = (metAfbeeldingen) => `<!doctype html><html><head><meta charset="utf-8">
 <style>
   html,body{height:auto;overflow:visible}
-  body{margin:0;padding:2px 0;font-family:'Manrope',system-ui,-apple-system,sans-serif;font-size:14px;line-height:1.65;color:#1a1a1a;word-wrap:break-word;overflow-wrap:break-word}
-  img{max-width:100%;height:auto}
-  table{max-width:100%!important}
+  body{margin:0;padding:2px 0;font-family:'Manrope',system-ui,-apple-system,sans-serif;font-size:14px;line-height:1.65;color:#1a1a1a;word-wrap:break-word;overflow-wrap:break-word;background:#fff}
+  /* AFBEELDINGEN DEFTIG TONEN.
+     Mails uit een nieuwsbrief zetten hun beelden vaak op een vaste breedte van
+     600 of 800 pixels. In een smaller venster werd dat weggesneden of piepklein.
+     Nu schaalt elk beeld netjes mee, blijft de verhouding kloppen, en krijgt een
+     beeld dat nog niet geladen is geen ineengezakt hoekje. */
+  img{max-width:100%!important;height:auto!important;display:inline-block;vertical-align:middle;image-rendering:auto}
+  img[width]{width:auto!important}
+  /* Een logo of icoontje mag klein blijven; alleen echte beelden schalen op. */
+  img[src]:not([width]):not([height]){max-width:100%}
+  figure{margin:8px 0;max-width:100%}
+  table{max-width:100%!important;width:auto!important;table-layout:auto!important}
+  td,th{max-width:100%;word-break:break-word}
+  /* Sommige mails zetten hun tekst op 10 of 11 pixels; dat is niet te lezen. */
+  body, body *{min-font-size:0}
+  [style*="font-size:9"],[style*="font-size:10"],[style*="font-size: 9"],[style*="font-size: 10"]{font-size:13px!important}
   a{color:#2f5fd8}
   blockquote{margin:8px 0 8px 10px;padding-left:12px;border-left:3px solid #ddd;color:#555}
   pre{white-space:pre-wrap;word-break:break-word}

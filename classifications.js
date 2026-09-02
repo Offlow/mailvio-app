@@ -106,6 +106,21 @@ function setMany(accountKey, entries) {
 // er via Mailvio effectief op geantwoord is — nooit door een herscan, een
 // cache-ververs of het verstrijken van tijd. Zo verdwijnt een openstaande
 // zaak nooit uit zichzelf.
+// Je hebt er ECHT op geantwoord — via Mailvio verstuurd. Dat is iets anders dan
+// "afgevinkt": afvinken zegt "hier moet ik niets meer mee", beantwoorden zegt
+// "er is een antwoord vertrokken". Dat verschil wil je op je scherm zien.
+function setBeantwoord(accountKey, uid) {
+  if (!accountKey) return null;
+  const store = readStore();
+  const forAccount = store[accountKey] || {};
+  const existing = forAccount[uid] || {};
+  const entry = { ...existing, beantwoord: true, beantwoordOp: Date.now(), resolved: true, resolvedAt: existing.resolvedAt || Date.now() };
+  forAccount[uid] = entry;
+  store[accountKey] = forAccount;
+  writeStore(store);
+  return entry;
+}
+
 function setResolved(accountKey, uid, resolved) {
   if (!accountKey) return null;
   const store = readStore();
@@ -142,7 +157,7 @@ function wisBeoordelingen(accountKey) {
   let aantal = 0;
   for (const uid of Object.keys(forAccount)) {
     const e = forAccount[uid];
-    const bewaard = { resolved: e.resolved, resolvedAt: e.resolvedAt, genegeerd: e.genegeerd };
+    const bewaard = { resolved: e.resolved, resolvedAt: e.resolvedAt, genegeerd: e.genegeerd, beantwoord: e.beantwoord, beantwoordOp: e.beantwoordOp };
     forAccount[uid] = Object.fromEntries(Object.entries(bewaard).filter(([, v]) => v !== undefined));
     aantal++;
   }
@@ -167,4 +182,4 @@ function telPoging(accountKey, uids) {
   writeStore(store);
 }
 
-module.exports = { flush, getAll, setMany, setResolved, setGenegeerd, wisBeoordelingen, telPoging };
+module.exports = { flush, getAll, setMany, setBeantwoord, setResolved, setGenegeerd, wisBeoordelingen, telPoging };

@@ -178,6 +178,11 @@ const BEOORDEEL_MAX_OUD_MS = 550 * 86400000; // ongeveer anderhalf jaar
 // klein: de server heeft één processor, en het ontleden van echte mails kost
 // rekenkracht. Liever een uur rustig doorwerken dan jou laten wachten.
 const VOORAF_PER_RONDE = 60;
+// En hoeveel er per keer gehaald wordt TERWIJL jij aan het werken bent. Vroeger
+// werd er dan helemaal niets gehaald — en omdat jij de app nu eenmaal gebruikt,
+// bleef het inladen dus staan waar het stond. Je klik gaat sowieso vooraan in
+// de wachtrij, dus het mag gerust doorlopen; alleen in kleinere hapjes.
+const VOORAF_PER_RONDE_DRUK = 10;
 let cache = { at: 0, mails: [], total: 0, capped: false, scanned: 0, scanning: false };
 const suggestionCache = new Map(); // uid -> voorstel, leegt mee met de mail-cache
 let folderCache = { at: 0, folders: [] };
@@ -410,6 +415,35 @@ const VOORSTEL_MAILS = 250;   // hoe ver terug we voorstellen klaarzetten
 const VOORSTEL_PER_RONDE = 4;
 let voorstelBezig = false;
 
+// MAIL VAN JEZELF AAN JEZELF IS EEN TO-DO.
+// Stuur je vanuit je gsm een mailtje naar je eigen adres, dan is dat een
+// geheugensteuntje. Dat hoort in je to-dolijst te staan, niet ergens in je
+// inbox te verdwijnen. Het gebeurt één keer per mail: wat je daarna met die
+// taak doet, blijft van jou.
+function eigenMailsNaarTaken(accountKey, mails) {
+  const eigenAdres = String(settingsStore.getConfig().imapUser || "").toLowerCase();
+  if (!eigenAdres) return 0;
+  const bestaande = new Set();
+  for (const t of taken.getAlle(accountKey)) {
+    for (const m of t.mails || []) bestaande.add(`${m.folder || "INBOX"}:${m.uid}`);
+  }
+  let gemaakt = 0;
+  for (const m of mails) {
+    if (String(m.fromAddress || "").toLowerCase() !== eigenAdres) continue;
+    if (bestaande.has(`INBOX:${m.uid}`)) continue;
+    const titel = (m.subject && m.subject !== "(geen onderwerp)") ? m.subject : (m.snippet || "Nota voor mezelf");
+    const taak = taken.voegToe(accountKey, String(titel).slice(0, 160), { notitie: m.snippet || "" });
+    if (taak) {
+      taken.koppelMail(accountKey, taak.id, { uid: m.uid, folder: "INBOX", subject: m.subject, from: m.from, fromAddress: m.fromAddress, date: m.date });
+      classifications.setGenegeerd(accountKey, m.uid, true);
+      gemaakt++;
+    }
+    if (gemaakt >= 25) break; // niet in één klap honderden taken maken
+  }
+  if (gemaakt) console.log(`${gemaakt} mail(s) van jezelf aan jezelf op je to-dolijst gezet.`);
+  return gemaakt;
+}
+
 async function maakVoorstellenKlaar(accountKey) {
   if (voorstelBezig || !ai.isConfigured()) return;
   voorstelBezig = true;
@@ -492,8 +526,12 @@ async function laadVoorafIn(accountKey, maxRondes) {
     // binnengehaald is, opent daarna meteen. We blijven porties halen tot je
     // hele mailbox binnen is.
     const rondes = maxRondes || 1;
-    let overgeslagen = 0;
     for (let i = 0; i < rondes; i++) {
+      // Ben jij aan het werken, of hijgt de server? Dan halen we een kleiner
+      // hapje — maar we halen WEL iets. Anders staat het inladen stil zolang
+      // jij de app gebruikt, en dat is precies wat er misging.
+      const drukte = mailbox.gebruikerBezig() || belasting.drukbezet();
+      const perRonde = drukte ? VOORAF_PER_RONDE_DRUK : VOORAF_PER_RONDE;
       const alle = mailstore.getMails(accountKey, "INBOX");
       const teDoen = [];
       for (const m of alle) {
@@ -501,27 +539,15 @@ async function laadVoorafIn(accountKey, maxRondes) {
         // "wat moet er nog?" trager naarmate er meer ingeladen is.
         if (mailstore.heeftBody(accountKey, "INBOX", m.uid)) continue;
         teDoen.push(m.uid);
-        if (teDoen.length >= VOORAF_PER_RONDE) break;
+        if (teDoen.length >= perRonde) break;
       }
       if (!teDoen.length) break;
 
-      // Eerst wachten tot jij niets aan het doen bent. Een mailserver laat maar
-      // een paar verbindingen toe; zonder deze pauze moest jouw klik wachten op
-      // het inladen op de achtergrond.
-      // Wachten tot jij niets aan het doen bent, en tot de server weer bijbeen
-      // is. STOPPEN doen we niet meer: dat was de fout. Zodra jij ook maar iets
-      // deed, brak het inladen af — en omdat jij de app gebruikt, kwam het dus
-      // nooit verder dan een paar procent. Nu wachten we gewoon even en gaan we
-      // daarna verder waar we gebleven waren.
-      await mailbox.wachtOpRust();
-      await belasting.wachtOpRust();
-      if (mailbox.gebruikerBezig() || belasting.drukbezet()) {
-        await new Promise((r) => setTimeout(r, 1500));
-        i--;              // deze portie telt niet mee, we proberen ze straks
-        if (++overgeslagen > 40) break;   // blijft het maar druk, dan stoppen we
-        continue;
-      }
-      overgeslagen = 0;
+      // Even ademen als de machine zelf stilstaat. Op JOU wachten we niet meer:
+      // je klik krijgt sowieso voorrang in de wachtrij naar de mailserver, en na
+      // élke mail wordt de app losgelaten. Wachten tot jij helemaal niets doet
+      // betekende in de praktijk: nooit.
+      await belasting.wachtOpRust(5000);
 
       // In één keer over ÉÉN verbinding. Per mail apart verbinden kost een halve
       // seconde aan aanmelden alleen al — bij duizenden mails is dat uren.
@@ -620,6 +646,7 @@ async function getMails(forceRefresh) {
       aanvraag: c ? c.aanvraag : undefined,
       antwoordNodig: c ? c.antwoordNodig : undefined,
       resolved: !!c?.resolved,
+      beantwoord: !!c?.beantwoord,
       genegeerd: !!c?.genegeerd,
     };
 
@@ -709,7 +736,10 @@ async function getMails(forceRefresh) {
 // kost even, dus het antwoord blijft een minuut geldig.
 let voortgangCache = { op: 0, klaar: 0, totaal: 0, beoordeeld: 0 };
 function inlaadVoortgang() {
-  if (Date.now() - voortgangCache.op < 60000) return voortgangCache;
+  // Hoogstens één keer per tien seconden natellen. Stond op een minuut, en dan
+  // bleef het cijfer op je scherm minutenlang stilstaan terwijl er ondertussen
+  // honderden mails bijkwamen — dat las als "er gebeurt niets".
+  if (Date.now() - voortgangCache.op < 10000) return voortgangCache;
   const accountKey = settingsStore.getConfig().imapUser || "default";
   let v = { totaal: 0, klaar: 0 };
   try { v = mailstore.inhoudVoortgang(accountKey, "INBOX"); } catch (e) { /* nog niets */ }
@@ -732,6 +762,11 @@ app.get("/api/snelheid", (req, res) => {
   const v = inlaadVoortgang();
   const pct = (n) => (v.totaal ? Math.round((n / v.totaal) * 100) : 0);
   o.inhoudIngeladenPercent = pct(v.klaar);
+  // Ook de kale aantallen. Het percentage alleen zegt niets zolang er nog
+  // koppen binnenkomen: dan groeit de noemer even hard mee en lijkt het alsof
+  // er niets vordert, terwijl er wel degelijk mails bijgezet worden.
+  o.inhoudKlaar = v.klaar;
+  o.inhoudTotaal = v.totaal;
   o.beoordeeldPercent = pct(v.beoordeeld);
   o.antwoordenKlaar = v.antwoordenKlaar;
   o.aiVerbruikVandaag = tegoed.vandaagVerbruik();
@@ -971,22 +1006,33 @@ function bewaarInhoud(accountKey, map, uid, body, vorige) {
 async function haalMailOp(accountKey, uid, folder, volledig) {
   const map = folder || "INBOX";
   const bewaard = mailstore.getBody(accountKey, map, uid);
-  // Bij het vooraf inladen halen we van grote mails alleen het begin op (de
-  // tekst), niet de bijlagen. Open jij zo'n mail echt, dan halen we ze alsnog
-  // in haar geheel — één keer, en daarna staat ze compleet in de cache.
-  if (volledig && bewaard && bewaard.afgekapt) {
-    const heel = await mailbox.fetchMailBody(uid, map === "INBOX" ? undefined : map);
-    if (leesbaar(heel)) {
-      mailstore.bewaarBody(accountKey, map, uid, heel);
-      return heel;
+  // JOU NOOIT LATEN WACHTEN.
+  // Van grote mails halen we bij het inladen alleen het begin op — de tekst,
+  // niet de bijlagen. Vroeger ging Mailvio zo'n mail bij het OPENEN alsnog
+  // volledig van je mailserver halen, en dan stond jij tien seconden te kijken.
+  // Nu krijg je meteen wat er is, en wordt de rest achter je rug bijgehaald.
+  // De volgende keer staat ze compleet klaar, en een bijlage werkt sowieso —
+  // die wordt apart opgehaald als je erop klikt.
+  if (leesbaar(bewaard)) {
+    if (volledig && bewaard.afgekapt && !haalMailOp._bezig.has(uid)) {
+      haalMailOp._bezig.add(uid);
+      (async () => {
+        try {
+          const heel = await mailbox.fetchMailBody(uid, map === "INBOX" ? undefined : map);
+          if (leesbaar(heel)) mailstore.bewaarBody(accountKey, map, uid, heel);
+        } catch (e) { /* volgende keer opnieuw */ }
+        finally { haalMailOp._bezig.delete(uid); }
+      })();
     }
+    return bewaard;
   }
-  if (leesbaar(bewaard)) return bewaard;
   if (bewaard && (bewaard.leegPogingen || 0) >= LEEG_MAX) return bewaard;
   const body = await mailbox.fetchMailBody(uid, map === "INBOX" ? undefined : map);
   bewaarInhoud(accountKey, map, uid, body, bewaard);
   return body || bewaard;
 }
+// Welke mails er op dit moment op de achtergrond volledig opgehaald worden.
+haalMailOp._bezig = new Set();
 
 app.get("/api/mails/:uid", async (req, res) => {
   try {
@@ -1371,6 +1417,8 @@ app.post("/api/mails/:uid/move", async (req, res) => {
 // hebben. Enkel reclame.
 // Niets wordt automatisch verwijderd: jij vinkt aan en drukt op de knop.
 const OPRUIM_RECLAME_DAGEN = 60;
+// Automatische meldingen die nooit een antwoord vroegen: pas na een jaar.
+const OPRUIM_MELDING_DAGEN = 365;
 const OPRUIM_OUD_JAREN = 4;
 
 function opruimVoorstellen(mails, accountKey) {
@@ -1395,11 +1443,33 @@ function opruimVoorstellen(mails, accountKey) {
       voorstellen.push({ ...m, reden: `Reclame van ${Math.round(ouderdom)} dagen oud, nooit iets mee gedaan.`, groep: "reclame" });
       continue;
     }
-    // Bewust GEEN oude gewone mails meer voorstellen. Een mail van vier jaar
-    // geleden kan nog altijd een offerte of een garantie zijn die je nodig hebt.
-    // Enkel reclame mag hier in.
+
+    // MEER MAG WEG, MAAR ALLEEN WAT ECHT VEILIG IS.
+    // Een gewone mail van vier jaar geleden kan nog altijd een offerte of een
+    // garantie zijn — die blijft. Maar deze twee soorten kan je gerust missen:
+
+    // 1. Phishing. Die hoef je niet te bewaren, hoe oud ook.
+    if (m.soort === "phishing" && !openZaak) {
+      voorstellen.push({ ...m, reden: "Vermoedelijke oplichting — die hoef je niet te bewaren.", groep: "phishing" });
+      continue;
+    }
+
+    // 2. Automatische meldingen die niets vragen en waar je nooit iets mee
+    //    gedaan hebt: bevestigingen, "je documenten staan klaar", nieuwsbrieven
+    //    zonder vraag. Enkel als ze ouder zijn dan een jaar én afgehandeld of
+    //    nooit een actie waren.
+    const geenActie = !openZaak && m.antwoordNodig === false && !m.aanvraag;
+    if (geenActie && ouderdom > OPRUIM_MELDING_DAGEN && m.vanType !== "klant" && m.soort !== "offerte" && m.soort !== "factuur") {
+      voorstellen.push({
+        ...m,
+        reden: `Automatische melding van ${Math.round(ouderdom / 30)} maanden oud die geen antwoord vroeg.`,
+        groep: "melding",
+      });
+      continue;
+    }
   }
-  voorstellen.sort((a, b) => new Date(a.date) - new Date(b.date));
+  // Nieuwste eerst; in het scherm kan je omdraaien naar oudste eerst.
+  voorstellen.sort((a, b) => new Date(b.date) - new Date(a.date));
   return voorstellen;
 }
 
@@ -1779,7 +1849,8 @@ app.post("/api/send", async (req, res) => {
     if (resolveUid && regels.aanstaat(taakAccount(), "antwoord_afhandelen")) {
       const uid = Number(resolveUid);
       const accountKey = settingsStore.getConfig().imapUser || "default";
-      classifications.setResolved(accountKey, uid, true);
+      // Er is echt een antwoord vertrokken — dat is meer dan "afgevinkt".
+      classifications.setBeantwoord(accountKey, uid);
       cache.mails = (cache.mails || []).map((m) => (m.uid === uid ? { ...m, resolved: true } : m));
     }
     res.json({ ok: true });
@@ -1843,28 +1914,9 @@ async function achtergrondRonde() {
     envelopeCache = { at: 0, mails: [], total: 0, capped: false };
     await getMails(true);
 
-    // EERST alle andere mappen binnenhalen — Verzonden, Concepten, Archief,
-    // Prullenmand, Ongewenst. Die stonden vroeger achteraan de rij, ná het
-    // beoordelen van duizenden mails, en waren daardoor uren later pas
-    // beschikbaar. Ze horen er meteen te staan.
-    try {
-      const mappen0 = folderCache.folders.length ? folderCache.folders : ((await mailbox.listFolders()).folders || []);
-      if (mappen0.length) folderCache = { at: Date.now(), folders: mappen0 };
-      for (const f of mappenVoorAchtergrond(mappen0)) {
-        if (!f.path || f.path.toUpperCase() === "INBOX") continue;
-        if (mapBezig.has(f.path)) continue;
-        mapBezig.add(f.path);
-        try {
-          await syncMap(accountKeyVoor, f.path, { totVolledig: true });
-        } catch (e) {
-          console.error(`Map ${f.path} binnenhalen mislukt:`, mailbox.leesbareImapFout(e));
-        } finally {
-          mapBezig.delete(f.path);
-        }
-      }
-    } catch (e) {
-      console.error("Mappen binnenhalen mislukt:", mailbox.leesbareImapFout(e));
-    }
+    // Je mappen worden NIET meer hier binnengehaald. Ze hebben hun eigen ritme
+    // (zie mapBeurt verderop), zodat Verzonden en Prullenmand er meteen staan
+    // in plaats van achter het beoordelen van honderden mails te moeten wachten.
 
     // Dan de achterstand van de AI-beoordeling wegwerken, portie per portie.
     // Dit gebeurt hier, op de achtergrond, en niet terwijl jij op je scherm wacht.
@@ -1894,6 +1946,13 @@ async function achtergrondRonde() {
       if (ai.getLaatsteFout()) break;
     }
     cache.at = 0;
+
+    // Mailtjes die je naar jezelf stuurde, op je to-dolijst zetten.
+    try {
+      eigenMailsNaarTaken(accountKey0, (await getMails(false)).mails || []);
+    } catch (e) {
+      console.error("Eigen mails naar to-do zetten mislukt:", e.message);
+    }
 
     // Het klaarzetten van de antwoorden gebeurt NIET meer hier. Het stond
     // achteraan deze ronde en kwam daardoor amper aan de beurt. Het heeft nu
@@ -1942,6 +2001,76 @@ setTimeout(() => {
   achtergrondRonde();
   setInterval(achtergrondRonde, ACHTERGROND_MS);
 }, EERSTE_START_MS);
+
+// ---------------------------------------------------------------------------
+// JE MAPPEN STAAN ER METEEN
+// ---------------------------------------------------------------------------
+// Verzonden, Concepten, Archief, Prullenmand en Ongewenst werden pas
+// binnengehaald aan het EIND van de grote achtergrondronde — achter het
+// bijwerken van de inbox en het beoordelen van honderden mails aan. In de
+// praktijk kwam dat amper aan de beurt, en dus stond je te wachten zodra je op
+// Verzonden klikte.
+// Nu halen ze zichzelf binnen, vlak na het opstarten, één map per beurt, en ze
+// gaan vanzelf opzij zodra jij iets doet. Wat één keer binnen is, blijft staan.
+const MAP_INTERVAL_MS = 20000;
+const MAP_ROLLEN_EERST = ["verzonden", "concepten", "archief", "prullenmand", "spam"];
+let mapBeurtBezig = false;
+
+async function mapBeurt() {
+  if (mapBeurtBezig || !mailbox.isConfigured()) return;
+  if (belasting.afgeknepen()) return;
+  mapBeurtBezig = true;
+  try {
+    const accountKey = settingsStore.getConfig().imapUser || "default";
+    let mappen = folderCache.folders;
+    if (!mappen.length) {
+      belasting.zetBezig("mappenlijst ophalen");
+      const data = await mailbox.listFolders();
+      mappen = data.folders || [];
+      if (mappen.length) folderCache = { at: Date.now(), folders: mappen };
+    }
+
+    // Eerst je standaardmappen, in de volgorde waarin je ze gebruikt.
+    const teDoen = mappen
+      .filter((f) => f.path && f.path.toUpperCase() !== "INBOX")
+      .filter((f) => MAP_ROLLEN_EERST.includes(f.rol))
+      .sort((a, b) => MAP_ROLLEN_EERST.indexOf(a.rol) - MAP_ROLLEN_EERST.indexOf(b.rol));
+
+    for (const f of teDoen) {
+      if (mapBezig.has(f.path)) continue;
+      // Nog nooit opgehaald, of nog niet volledig? Dan is die aan de beurt.
+      const heeftAl = mailstore.getMails(accountKey, f.path).length;
+      const volledig = mailstore.isVolledig(accountKey, f.path);
+      if (heeftAl && volledig) continue;
+
+      await mailbox.wachtOpRust();
+      await belasting.wachtOpRust();
+      if (mailbox.gebruikerBezig() || belasting.afgeknepen()) break;
+
+      mapBezig.add(f.path);
+      belasting.zetBezig(`map ${f.path} binnenhalen`);
+      try {
+        await syncMap(accountKey, f.path, { totVolledig: true });
+        console.log(`Map ${f.path} staat klaar (${mailstore.getMails(accountKey, f.path).length} berichten).`);
+      } catch (e) {
+        console.error(`Map ${f.path} binnenhalen mislukt:`, mailbox.leesbareImapFout(e));
+      } finally {
+        mapBezig.delete(f.path);
+      }
+      break; // één map per beurt: zo blijft de app ondertussen vlot
+    }
+  } catch (e) {
+    console.error("Mappen binnenhalen mislukt:", mailbox.leesbareImapFout(e));
+  } finally {
+    mapBeurtBezig = false;
+    belasting.zetBezig("niets");
+  }
+}
+
+setTimeout(() => {
+  mapBeurt();
+  setInterval(mapBeurt, MAP_INTERVAL_MS);
+}, EERSTE_START_MS + 2000);
 
 // ---------------------------------------------------------------------------
 // HET INLADEN VAN DE MAILINHOUD HEEFT ZIJN EIGEN RITME

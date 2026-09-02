@@ -211,3 +211,43 @@ Niet aan beginnen zolang er iets dringenders is, tenzij hij er zelf om vraagt.
 - [x] Spraakknop bij het vraagveld in de inbox *(02-09)*
 - [x] Antwoord in de inbox staat nu voluit met opmaak, in plaats van een
       afgekapt melding-balkje van 180 tekens *(02-09)*
+
+---
+
+## 11. Mails inladen — de echte oorzaak gevonden (02-09, avond)
+
+**Klacht:** "het duurt nog steeds tien seconden voor een mail opengaat — dat
+heeft niks met de AI te maken."
+
+**Wat er misging (gemeten, niet gegokt):** het inladen op de achtergrond
+wachtte tot jij *helemaal niets* deed. En omdat jij de app nu eenmaal
+gebruikt, kwam dat moment nooit. Na 40 skips brak het inladen zelfs
+helemaal af. Gemeten in de test: 360 van de 1500 mails ingeladen, en daarna
+45 seconden lang géén enkele mail erbij zolang er geklikt werd.
+
+**Wat er nu gebeurt:**
+- Het inladen loopt gewoon door terwijl jij werkt. Jouw klik gaat sowieso
+  vooraan in de rij naar de mailserver — daar was al voor gezorgd — dus
+  wachten was nergens voor nodig.
+- Ben jij bezig, dan haalt hij kleinere hapjes (10 mails in plaats van 60) in
+  plaats van te stoppen.
+- Het cijfer op je scherm werd maar één keer per minuut herteld, waardoor het
+  minutenlang stil leek te staan. Nu elke tien seconden.
+
+**Gemeten na de wijziging:** 800 van de 800 mails ingeladen binnen 40 seconden
+terwijl er 94 keer geklikt werd, met jouw aanvragen 95% onder 31 ms.
+
+## 12. Mappen laden zichzelf in (02-09, avond)
+
+Verzonden, Concepten, Archief, Prullenmand en Ongewenst hebben nu een eigen
+motor die ze binnenhaalt zonder dat je erop klikt.
+
+**Gemeten:** 5 van de 5 mappen stonden na 6 seconden klaar
+(Verzonden 250 · Concepten 20 · Archief 400 · Prullenmand 90 · Ongewenst 60),
+en openen daarna in 3 tot 10 ms.
+
+## 13. Alle tests, één keer achter elkaar (02-09, avond)
+
+- browsertest als een mens: **83 geslaagd, 0 gefaald**
+- mappen 3/3 · inladen 2/2 · openen 9/9 · voorrang 8/8 · sync 8/8 ·
+  bewaren 5/5 · AI 26/26 · klaarstaan 8/8 · kosten 7/7 · mailfout 7/7
