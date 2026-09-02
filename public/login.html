@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mailvio — aanmelden</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#f6f3ee; --surface:#fffdfa; --surface-2:#f1ede6;
+    --ink:#1f1d1a; --ink-soft:#544f47; --ink-faint:#8a8378;
+    --border:#e3ded4; --accent:#2f5fd8; --accent-soft:#e8edfb; --red:#c8382f; --green:#3d8760;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#17150f; --surface:#201d17; --surface-2:#2a261e;
+      --ink:#f0ece3; --ink-soft:#c3bcaf; --ink-faint:#a09a8d;
+      --border:#353026; --accent:#8aa9f5; --accent-soft:#1e2740; --red:#e8756a; --green:#74b992;
+    }
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0;font-family:'Manrope',system-ui,-apple-system,sans-serif;
+    background:var(--bg);color:var(--ink);
+    display:flex;align-items:center;justify-content:center;padding:24px;
+  }
+  .kaart{
+    width:100%;max-width:400px;background:var(--surface);
+    border:1px solid var(--border);border-radius:16px;padding:30px 28px;
+    box-shadow:0 10px 40px rgba(0,0,0,.07);
+  }
+  .merk{display:flex;align-items:center;gap:9px;margin-bottom:22px}
+  .merk .dot{width:11px;height:11px;border-radius:50%;background:var(--accent)}
+  .merk h1{font-size:19px;margin:0;font-weight:800;letter-spacing:-.01em}
+  h2{font-size:16px;margin:0 0 6px;font-weight:800}
+  p.uitleg{margin:0 0 20px;font-size:13.5px;line-height:1.55;color:var(--ink-soft)}
+  label{display:block;font-size:12px;font-weight:700;color:var(--ink-soft);margin:0 0 6px}
+  input{
+    width:100%;border:1px solid var(--border);background:var(--surface-2);
+    border-radius:10px;padding:11px 13px;font-size:14.5px;font-family:inherit;
+    color:var(--ink);outline:none;margin-bottom:14px;
+  }
+  input:focus{border-color:var(--accent);background:var(--surface)}
+  button{
+    width:100%;border:none;background:var(--accent);color:#fff;
+    border-radius:10px;padding:12px;font-size:14.5px;font-weight:800;
+    font-family:inherit;cursor:pointer;
+  }
+  button:hover{filter:brightness(1.06)}
+  button[disabled]{opacity:.6;cursor:default}
+  .melding{margin-top:14px;font-size:13px;line-height:1.5;min-height:19px}
+  .melding.fout{color:var(--red);font-weight:700}
+  .melding.ok{color:var(--green);font-weight:700}
+  .tip{margin-top:18px;padding-top:16px;border-top:1px solid var(--border);font-size:12px;color:var(--ink-faint);line-height:1.55}
+</style>
+</head>
+<body>
+  <div class="kaart">
+    <div class="merk"><span class="dot"></span><h1>Mailvio</h1></div>
+
+    <div id="scherm">
+      <h2>Bezig met laden…</h2>
+    </div>
+
+    <div class="melding" id="melding"></div>
+  </div>
+
+<script>
+const scherm = document.getElementById("scherm");
+const melding = document.getElementById("melding");
+
+function toon(tekst, soort) {
+  melding.textContent = tekst || "";
+  melding.className = "melding" + (soort ? " " + soort : "");
+}
+
+function toonInloggen() {
+  scherm.innerHTML = `
+    <h2>Aanmelden</h2>
+    <p class="uitleg">Je mailbox is afgeschermd. Vul je Mailvio-wachtwoord in om verder te gaan.</p>
+    <label for="ww">Wachtwoord</label>
+    <input id="ww" type="password" autocomplete="current-password" autofocus>
+    <button id="knop">Aanmelden</button>
+  `;
+  koppel("/api/auth/login", () => ({ wachtwoord: document.getElementById("ww").value }));
+}
+
+function toonInstellen() {
+  scherm.innerHTML = `
+    <h2>Kies een wachtwoord</h2>
+    <p class="uitleg">Mailvio is nog niet beveiligd. Kies nu een wachtwoord — daarna is je mailbox enkel voor jou toegankelijk. Minstens 8 tekens.</p>
+    <label for="ww">Nieuw wachtwoord</label>
+    <input id="ww" type="password" autocomplete="new-password" autofocus>
+    <label for="ww2">Nog eens ter controle</label>
+    <input id="ww2" type="password" autocomplete="new-password">
+    <button id="knop">Wachtwoord instellen</button>
+    <div class="tip">Kies iets dat je niet elders gebruikt. Ben je het kwijt, dan kan het opnieuw ingesteld worden via de server.</div>
+  `;
+  koppel("/api/auth/setup", () => {
+    const a = document.getElementById("ww").value;
+    const b = document.getElementById("ww2").value;
+    if (a !== b) { toon("De twee wachtwoorden zijn niet gelijk.", "fout"); return null; }
+    if (a.length < 8) { toon("Kies een wachtwoord van minstens 8 tekens.", "fout"); return null; }
+    return { wachtwoord: a };
+  });
+}
+
+function koppel(url, maakBody) {
+  const knop = document.getElementById("knop");
+  const verstuur = async () => {
+    const body = maakBody();
+    if (!body) return;
+    knop.disabled = true;
+    toon("Even geduld…");
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Er ging iets mis.");
+      toon("Gelukt — je wordt doorgestuurd…", "ok");
+      window.location.href = "/";
+    } catch (e) {
+      toon(e.message, "fout");
+      knop.disabled = false;
+    }
+  };
+  knop.addEventListener("click", verstuur);
+  scherm.querySelectorAll("input").forEach((i) =>
+    i.addEventListener("keydown", (e) => { if (e.key === "Enter") verstuur(); })
+  );
+}
+
+(async function start() {
+  try {
+    const s = await (await fetch("/api/auth/status")).json();
+    if (s.ingelogd) { window.location.href = "/"; return; }
+    if (s.ingesteld) toonInloggen();
+    else toonInstellen();
+  } catch (e) {
+    scherm.innerHTML = "<h2>Geen verbinding</h2><p class='uitleg'>Mailvio is even niet bereikbaar. Probeer het zo opnieuw.</p>";
+  }
+})();
+</script>
+</body>
+</html>

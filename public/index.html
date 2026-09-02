@@ -367,6 +367,18 @@
       <div class="fieldRow"><label for="setAiToon">Schrijfstijl</label><input id="setAiToon" type="text" placeholder="Vlaams, kort en professioneel" autocomplete="off"></div>
     </div>
 
+    <div class="sectionLabel">Beveiliging</div>
+    <p class="hint" style="margin:-2px 0 8px">Mailvio staat op het internet, dus je mailbox zit achter een wachtwoord. Hier kan je het wijzigen.</p>
+    <div class="fieldList">
+      <div class="fieldRow"><label for="setWwOud">Huidig</label><input id="setWwOud" type="password" autocomplete="current-password" placeholder="huidig wachtwoord"></div>
+      <div class="fieldRow"><label for="setWwNieuw">Nieuw</label><input id="setWwNieuw" type="password" autocomplete="new-password" placeholder="minstens 8 tekens"></div>
+    </div>
+    <div style="display:flex;gap:8px;margin:8px 0 4px">
+      <button class="btn btn-ghost" id="setWwOpslaan">Wachtwoord wijzigen</button>
+      <button class="btn btn-ghost" id="setAfmelden">Afmelden</button>
+    </div>
+    <div id="wwMelding" class="settingsMsg"></div>
+
     <div class="sectionLabel">Meer mailboxen</div>
     <p class="hint" style="margin:-2px 0 8px">Bijvoorbeeld boekhouding@daklo.be naast info@daklo.be. Elke mailbox heeft eigen mappen en een eigen handtekening; je Claude-sleutel en schrijfstijl zijn gedeeld.</p>
     <button class="btn btn-ghost" id="setExtraAccount" style="margin-bottom:4px">＋ Extra mailbox toevoegen</button>
@@ -2241,6 +2253,52 @@ async function saveSettings() {
 }
 
 document.getElementById("setExtraAccount").addEventListener("click", () => nieuweMailbox());
+
+document.getElementById("setAfmelden").addEventListener("click", async () => {
+  try { await fetch("/api/auth/logout", { method: "POST" }); } catch (e) { /* toch doorgaan */ }
+  window.location.href = "/login.html";
+});
+
+document.getElementById("setWwOpslaan").addEventListener("click", async () => {
+  const oud = document.getElementById("setWwOud").value;
+  const nieuw = document.getElementById("setWwNieuw").value;
+  const msg = document.getElementById("wwMelding");
+  if (!nieuw || nieuw.length < 8) {
+    msg.textContent = "Kies een nieuw wachtwoord van minstens 8 tekens.";
+    msg.className = "settingsMsg err";
+    return;
+  }
+  msg.textContent = "Bezig...";
+  msg.className = "settingsMsg";
+  try {
+    const res = await fetch("/api/auth/wachtwoord", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ oud, nieuw }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Wijzigen mislukt.");
+    document.getElementById("setWwOud").value = "";
+    document.getElementById("setWwNieuw").value = "";
+    msg.textContent = "Wachtwoord gewijzigd. Andere apparaten zijn afgemeld.";
+    msg.className = "settingsMsg ok";
+  } catch (e) {
+    msg.textContent = e.message;
+    msg.className = "settingsMsg err";
+  }
+});
+
+// Sessie verlopen? Dan meteen naar het inlogscherm in plaats van een lege app.
+(function bewaakSessie() {
+  const origineel = window.fetch;
+  window.fetch = async function (...args) {
+    const res = await origineel.apply(this, args);
+    if (res.status === 401 && !String(args[0]).includes("/api/auth/")) {
+      window.location.href = "/login.html";
+    }
+    return res;
+  };
+})();
 
 // Laat meteen zien of je handtekening als opmaak of als platte tekst
 // verstuurd wordt, zodat je niet hoeft te gokken.

@@ -7,12 +7,108 @@ const mailer = require("./mailer");
 const settingsStore = require("./settings");
 const classifications = require("./classifications");
 const mailstore = require("./mailstore");
+const auth = require("./auth");
 
 const app = express();
 // Ruimer dan standaard: bijlagen (offerte-pdf, dakfoto's) worden als tekst
 // meegestuurd in de aanvraag en zijn daardoor ongeveer een derde groter.
 app.use(express.json({ limit: "25mb" }));
+
+// ---------------------------------------------------------------------------
+// Beveiliging: zonder inloggen komt niemand aan je mail
+// ---------------------------------------------------------------------------
+// Alles zit achter een slot, behalve het inlogscherm zelf en de paar routes
+// die het nodig heeft. Zo kan niemand die het webadres kent zomaar meelezen.
+const OPEN_ROUTES = new Set(["/api/auth/status", "/api/auth/login", "/api/auth/setup"]);
+
+app.use((req, res, next) => {
+  // Het inlogscherm en zijn eigen bestanden moeten uiteraard bereikbaar zijn.
+  if (req.path === "/login.html" || req.path === "/favicon.ico") return next();
+  if (OPEN_ROUTES.has(req.path)) return next();
+
+  const ingelogd = auth.sessieGeldig(auth.tokenUitVerzoek(req));
+  if (ingelogd) return next();
+
+  // Nog geen wachtwoord ingesteld? Dan sturen we naar het inlogscherm, waar je
+  // er meteen eentje kiest.
+  if (req.path.startsWith("/api/")) {
+    return res.status(401).json({ error: "Niet ingelogd.", login: true });
+  }
+  return res.redirect("/login.html");
+});
+
 app.use(express.static(path.join(__dirname, "public")));
+
+// --- Inloggen ---------------------------------------------------------------
+app.get("/api/auth/status", (req, res) => {
+  res.json({
+    ingesteld: auth.isIngesteld(),
+    ingelogd: auth.sessieGeldig(auth.tokenUitVerzoek(req)),
+  });
+});
+
+// De allereerste keer: zelf een wachtwoord kiezen. Kan maar één keer — daarna
+// verloopt het via "wachtwoord wijzigen", waarvoor je het oude nodig hebt.
+app.post("/api/auth/setup", (req, res) => {
+  if (auth.isIngesteld()) {
+    return res.status(400).json({ error: "Er is al een wachtwoord ingesteld." });
+  }
+  try {
+    auth.stelWachtwoordIn(req.body?.wachtwoord);
+    const s = auth.nieuweSessie();
+    auth.zetCookie(res, s.token, s.verlooptOp);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+// Eenvoudige rem op raden: na te veel foute pogingen even wachten.
+const pogingen = new Map();
+const MAX_POGINGEN = 8;
+const REM_MS = 10 * 60 * 1000;
+
+app.post("/api/auth/login", (req, res) => {
+  const ip = req.headers["fly-client-ip"] || req.ip || "onbekend";
+  const staat = pogingen.get(ip) || { aantal: 0, tot: 0 };
+  if (staat.tot > Date.now()) {
+    const minuten = Math.ceil((staat.tot - Date.now()) / 60000);
+    return res.status(429).json({ error: `Te veel pogingen. Probeer het over ${minuten} minuten opnieuw.` });
+  }
+  if (!auth.isIngesteld()) {
+    return res.status(400).json({ error: "Er is nog geen wachtwoord ingesteld.", setup: true });
+  }
+  if (!auth.klopt(req.body?.wachtwoord)) {
+    staat.aantal += 1;
+    if (staat.aantal >= MAX_POGINGEN) {
+      staat.tot = Date.now() + REM_MS;
+      staat.aantal = 0;
+    }
+    pogingen.set(ip, staat);
+    return res.status(401).json({ error: "Wachtwoord klopt niet." });
+  }
+  pogingen.delete(ip);
+  const s = auth.nieuweSessie();
+  auth.zetCookie(res, s.token, s.verlooptOp);
+  res.json({ ok: true });
+});
+
+app.post("/api/auth/logout", (req, res) => {
+  auth.beeindigSessie(auth.tokenUitVerzoek(req));
+  auth.wisCookie(res);
+  res.json({ ok: true });
+});
+
+app.post("/api/auth/wachtwoord", (req, res) => {
+  try {
+    auth.wijzigWachtwoord(req.body?.oud, req.body?.nieuw);
+    const s = auth.nieuweSessie();
+    auth.zetCookie(res, s.token, s.verlooptOp);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
 
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minuten — houdt AI-kosten laag
 // De lichte envelope-lijst (uid/van/onderwerp/datum) wordt apart en iets korter
