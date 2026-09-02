@@ -161,7 +161,7 @@ RECLAME BIJ TWIJFEL:
 Ben je er niet zeker van of iets reclame is dan wel een echte mail die een antwoord verdient — bijvoorbeeld een leverancier die zowel nieuws als een aanbieding stuurt — zet dan "reclameTwijfel" op true. Bij duidelijke gevallen (overduidelijke nieuwsbrief, of overduidelijk een echte klantvraag) zet je "reclameTwijfel" op false.
 
 Antwoord ALLEEN met geldige JSON, een array van objecten:
-[{"uid": <uid>, "categorie": "...", "reden": "korte reden in het Vlaams, max 12 woorden", "vanType": "...", "actieLabel": "...", "soort": "...", "belangrijk": true, "viaWebsite": false, "reclameTwijfel": false, "aanvraag": false, "antwoordNodig": false}]
+[{"uid": <uid>, "categorie": "...", "reden": "korte reden in het Vlaams, max 7 woorden", "vanType": "...", "actieLabel": "...", "soort": "...", "belangrijk": true, "viaWebsite": false, "reclameTwijfel": false, "aanvraag": false, "antwoordNodig": false}]
 Geen andere tekst.`;
 
 async function classifyMails(mails) {

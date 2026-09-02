@@ -161,6 +161,14 @@ let envelopeCache = { at: 0, mails: [], total: 0, capped: false };
 // Hoeveel mails de AI per ronde beoordeelt. Groter = de achterstand van een
 // grote mailbox is sneller weggewerkt; te groot maakt één oproep traag en duur.
 const SCAN_BATCH_SIZE = 30;
+
+// HOEVER TERUG LATEN WE DE AI KIJKEN?
+// Elke beoordeling kost geld: op de echte mailbox ongeveer 3 cent per portie
+// van 30 mails. Voor 11.000 mails is dat een tientje. Je recentste post is wat
+// telt; een mail van drie jaar geleden staat niet op je dashboard en vraagt
+// geen antwoord meer.
+const BEOORDEEL_MAX_MAILS = 2500;
+const BEOORDEEL_MAX_OUD_MS = 550 * 86400000; // ongeveer anderhalf jaar
 // Hoeveel mails we per portie volledig inladen. Ze gaan over één verbinding, en
 // de achtergrondronde blijft porties halen tot je HELE mailbox binnen is.
 // Hoeveel mails er per keer op de achtergrond binnengehaald worden. Bewust
@@ -560,7 +568,20 @@ async function getMails(forceRefresh) {
   // Een oordeel dat er eenmaal staat, blijft staan: dat wordt NOOIT opnieuw
   // gedaan (behalve als jij zelf op "Mailbox opnieuw beoordelen" duwt).
   const MAX_POGINGEN = 3;
-  const unclassified = light.filter((m) => {
+  // HOEVER TERUG BEOORDELEN WE?
+  // Elke beoordeling kost geld. Gemeten op de echte mailbox: ongeveer 3 cent
+  // per portie van 30 mails. Voor 11.000 mails is dat een tientje — en voor een
+  // mail van drie jaar geleden heb je dat oordeel niet nodig; die staat niet op
+  // je dashboard en vraagt geen antwoord meer.
+  // Daarom: enkel je recentste post, en niets ouder dan anderhalf jaar. Een
+  // oude mail die je toch nodig hebt, kan je altijd zelf laten beoordelen met
+  // de knop "Mailbox opnieuw beoordelen".
+  const oudsteGrens = Date.now() - BEOORDEEL_MAX_OUD_MS;
+  const teBeoordelen = light.slice(0, BEOORDEEL_MAX_MAILS).filter((m) => {
+    const t = m.date ? Date.parse(m.date) : 0;
+    return !Number.isFinite(t) || t >= oudsteGrens;
+  });
+  const unclassified = teBeoordelen.filter((m) => {
     const c = store[m.uid];
     if (!c) return true;
     if ((c.pogingen || 0) >= MAX_POGINGEN) return false;
@@ -1845,15 +1866,25 @@ async function achtergrondRonde() {
     // Dan de achterstand van de AI-beoordeling wegwerken, portie per portie.
     // Dit gebeurt hier, op de achtergrond, en niet terwijl jij op je scherm wacht.
     for (let ronde = 0; ronde < 25; ronde++) {
-      const licht = mailstore.getMails(accountKey0, "INBOX");
+      // Ook hier: enkel je recentste post beoordelen. Een oordeel over een mail
+      // van drie jaar geleden kost geld en levert niets op.
+      const licht = mailstore.getMails(accountKey0, "INBOX").slice(0, BEOORDEEL_MAX_MAILS);
+      const grensOud = Date.now() - BEOORDEEL_MAX_OUD_MS;
       const store = classifications.getAll(accountKey0);
       const teDoen = licht.filter((m) => {
+        const t = m.date ? Date.parse(m.date) : 0;
+        if (Number.isFinite(t) && t < grensOud) return false;
         const c = store[m.uid];
         if (!c) return true;
         if ((c.pogingen || 0) >= 3) return false;
         return c.categorie === undefined || c.categorie === "onbekend";
       });
       if (!teDoen.length) break;
+      // En stoppen zodra de daggrens voor je tegoed bereikt is.
+      if (!tegoed.magNog()) {
+        console.log("Daggrens voor het AI-tegoed bereikt — beoordelen gaat morgen verder.");
+        break;
+      }
       await beoordeelPortie(accountKey0, teDoen);
       // Blijft het mislukken (bv. een sleutel die niet aanvaard wordt), dan
       // stoppen we deze ronde in plaats van 25 keer dezelfde fout te maken.
