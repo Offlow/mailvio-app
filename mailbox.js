@@ -398,7 +398,10 @@ async function fetchVlaggen(folder, uids) {
 async function _fetchVlaggen(folder, uids) {
   if (!isConfigured() || !uids || !uids.length) return new Map();
   const out = new Map();
-  return metVerbinding(async (imap) => {
+  // Hier stond "return metVerbinding(...)" met daaronder "return out" — die
+  // tweede regel werd dus nooit bereikt en de gelezen-status kwam nooit terug.
+  // Nu wachten we op het ophalen en geven we het resultaat wél terug.
+  await metVerbinding(async (imap) => {
     const lock = await imap.getMailboxLock(folder || "INBOX");
     try {
       for await (const msg of imap.fetch(uids, { flags: true }, { uid: true })) {

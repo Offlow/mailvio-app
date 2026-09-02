@@ -4915,7 +4915,11 @@ async function openSettings() {
     document.getElementById("setApiKey").value = "";
     document.getElementById("setAiToon").value = data.aiToon || "";
     document.getElementById("setSignature").value = data.handtekening || "";
-    document.getElementById("setAfbeeldingen").checked = !!data.toonAfbeeldingen;
+    // Afbeeldingen staan AAN tenzij je ze zelf uitzet. Stond hier "!!", en dan
+    // was het vakje leeg zolang de server dat veld nog niet meestuurde — sloeg
+    // je dan een heel ander instelling op, dan werden je afbeeldingen zonder
+    // dat je het doorhad uitgezet. Zo is dat gebeurd.
+    document.getElementById("setAfbeeldingen").checked = data.toonAfbeeldingen !== false;
     document.getElementById("setAanspreek").value = data.aanspreektitel || "";
     document.getElementById("setWorkspace").value = data.anthropicWorkspaceId || "";
     document.getElementById("apiKeyHint").textContent = data.apiKeyHint || "nog geen sleutel — vul er hierboven een in";

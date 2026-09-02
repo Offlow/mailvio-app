@@ -224,7 +224,10 @@ async function syncMap(accountKey, folder, opties = {}) {
   if (recent.length) {
     belasting.zetBezig(`gelezen/ongelezen nakijken in ${folder}`);
     const vlaggen = await mailbox.fetchVlaggen(folder, recent);
-    for (const [uid, v] of vlaggen) mailstore.werkBij(accountKey, folder, uid, v);
+    // In één keer bijwerken. Per mail apart betekende per mail een lees- en
+    // schrijfbeurt op de hele map — en dat is waar de server seconden op stond
+    // te wachten.
+    if (vlaggen && vlaggen.size) mailstore.werkBijVeel(accountKey, folder, [...vlaggen]);
   }
 
   // DE ACHTERSTAND WEGWERKEN. Bij een mailbox van duizenden berichten haalden

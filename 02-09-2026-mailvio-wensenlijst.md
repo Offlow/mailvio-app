@@ -287,3 +287,47 @@ zonder opmaak krijgt precies dezelfde marge.
   hertekening)
 - openen 9/9 · voorrang 8/8 · sync 8/8 · bewaren 5/5 · AI 26/26 · kosten 7/7 ·
   mappen 3/3
+
+---
+
+## 16. De haperingen van 16 seconden — oorzaak gevonden (03-09, nacht)
+
+Op de LIVE server gemeten, niet in een test: de server stond geregeld
+**16,7 seconden** volledig stil tijdens "nieuwe mails ophalen" en
+"gelezen-status nakijken". Zo lang staat dan ALLES stil, ook je klik. Toen ik
+in je browser een nieuwsbrief opendeed, bleef het venster leeg en reageerde de
+pagina zelfs helemaal niet meer.
+
+**De oorzaak.** Er pasten maar twee mappen tegelijk in het geheugen van de
+server, en op de achtergrond lopen je 102 mappen één voor één langs. Je INBOX
+werd daardoor telkens weer uit het geheugen gegooid en moest bij het
+eerstvolgende gebruik opnieuw van schijf gelezen en ontleed worden — een
+bestand met 11.688 mails. Bij het nakijken van de gelezen-status gebeurde dat
+zestig keer na elkaar.
+
+**Wat er nu gebeurt:**
+- De inbox blijft altijd in het geheugen staan. Die wordt nooit meer
+  weggegooid voor een achtergrondmap.
+- De gelezen-status wordt in één keer bijgewerkt in plaats van zestig keer
+  apart.
+- En een echte fout gevonden: het ophalen van de gelezen-status gaf door een
+  verkeerd geplaatste `return` NOOIT iets terug. Gelezen/ongelezen werd dus in
+  feite nooit bijgewerkt.
+
+## 17. Afbeeldingen stonden uit door een ander vinkje (03-09, nacht)
+
+De instelling "afbeeldingen altijd laden" stond op je account op UIT. Niet
+omdat je dat gekozen had: het vakje in de instellingen werd leeg getoond zolang
+de server dat veld nog niet meestuurde, en sloeg je dan een heel andere
+instelling op, dan werd het als "uit" mee weggeschreven. Dat vakje staat nu
+standaard aangevinkt, en ik heb het op je account weer aangezet.
+
+## 18. Tests na deze ronde (03-09, nacht)
+
+- browsertest als een mens: **91 geslaagd, 0 gefaald**. Nieuw erbij: een
+  nieuwsbrief zoals ze écht gemaakt worden (alles in tabellen, opmaak in de
+  head, verborgen voorproefje vooraan) wordt nu binnenin het venster nagekeken:
+  staat er tekst, staan de tabellen er, staan de beelden er, en is het venster
+  even hoog als de mail.
+- openen 9/9 · voorrang 8/8 · sync 8/8 · bewaren 5/5 · AI 26/26 · kosten 7/7 ·
+  mappen 3/3

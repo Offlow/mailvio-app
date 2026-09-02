@@ -58,15 +58,28 @@ function sleutelVan(accountKey, folder) {
 // die geheugen tekort komt, is nóg trager dan een server die van schijf leest.
 // Twee mappen volstaan: je kijkt naar één map en de achtergrond werkt er één
 // bij. De rest gaat gewoon terug naar schijf.
-const MAX_MAPPEN_IN_GEHEUGEN = 2;
+const MAX_MAPPEN_IN_GEHEUGEN = 3;
+
+// DE INBOX BLIJFT ALTIJD IN HET GEHEUGEN STAAN.
+// Dit was een dure fout. Er pasten maar twee mappen tegelijk in het geheugen,
+// en op de achtergrond lopen je 102 mappen één voor één langs. Daardoor werd
+// je INBOX er telkens weer uitgegooid, en moest die bij het eerstvolgende
+// gebruik opnieuw van schijf gelezen en ontleed worden — een bestand met
+// 11.688 mails. Bij het nakijken van de gelezen-status gebeurde dat zestig
+// keer na elkaar: zestien seconden waarin de hele server stilstond. Dat zijn
+// precies de haperingen die je voelde. De inbox is de map waar je altijd in
+// zit; die blijft nu staan.
+function isInbox(sleutel) {
+  return /__INBOX$/i.test(sleutel);
+}
 
 function onthoud(sleutel, data) {
   // Wie het laatst gebruikt is, komt achteraan te staan.
   geheugen.delete(sleutel);
   geheugen.set(sleutel, data);
   while (geheugen.size > MAX_MAPPEN_IN_GEHEUGEN) {
-    const oudste = geheugen.keys().next().value;
-    if (oudste === sleutel) break;
+    const oudste = [...geheugen.keys()].find((k) => k !== sleutel && !isInbox(k));
+    if (!oudste) break;
     // Eerst nog wegschrijven wat in de wacht stond, anders raakt er iets kwijt.
     const wacht = nogTeSchrijven.get(oudste);
     if (wacht) {
@@ -251,6 +264,24 @@ function werkBij(accountKey, folder, uid, velden) {
   data.mails[uid] = { ...data.mails[uid], ...velden };
   data.bijgewerkt = Date.now();
   schrijf(accountKey, folder, data);
+}
+
+// Hetzelfde, maar voor een hele reeks tegelijk: ÉÉN keer lezen, ÉÉN keer
+// wegschrijven. Het nakijken van de gelezen-status deed dit zestig keer na
+// elkaar per mail, en elke keer kon dat een volledige map van schijf halen.
+function werkBijVeel(accountKey, folder, paren) {
+  if (!paren || !paren.length) return 0;
+  const data = lees(accountKey, folder);
+  let aantal = 0;
+  for (const [uid, velden] of paren) {
+    if (!data.mails[uid]) continue;
+    data.mails[uid] = { ...data.mails[uid], ...velden };
+    aantal++;
+  }
+  if (!aantal) return 0;
+  data.bijgewerkt = Date.now();
+  schrijf(accountKey, folder, data);
+  return aantal;
 }
 
 // Mails die op de server niet meer bestaan (verplaatst of verwijderd) ook
@@ -466,6 +497,7 @@ module.exports = {
   markeerVolledig,
   bewaarMails,
   werkBij,
+  werkBijVeel,
   verwijderOntbrekende,
   verwijderMail,
   bewaarBody,
