@@ -109,6 +109,10 @@ function getConfig() {
     anthropicApiKey: stored.anthropicApiKey || process.env.ANTHROPIC_API_KEY || "",
     aiToon: stored.aiToon || process.env.AI_TOON || "Vlaams, kort en professioneel",
     aiHandtekening: stored.aiHandtekening || process.env.AI_HANDTEKENING || "",
+    // Reclame en nieuwsbrieven zien er pas uit zoals ze bedoeld zijn als de
+    // afbeeldingen mee geladen worden. Standaard uit (dan weet een afzender
+    // niet dat je zijn mail geopend hebt), maar je kan het aanzetten.
+    toonAfbeeldingen: stored.toonAfbeeldingen === true,
   };
 }
 
@@ -183,6 +187,7 @@ function getPublicConfig() {
     hasApiKey: !!config.anthropicApiKey,
     aiToon: config.aiToon,
     aiHandtekening: config.aiHandtekening,
+    toonAfbeeldingen: config.toonAfbeeldingen,
     handtekening: config.handtekening,
     accounts: getAccounts(),
     actief: getActiveIndex(),
@@ -230,6 +235,7 @@ function updateSettings(update) {
   }
   if (typeof update.aiToon === "string") stored.aiToon = update.aiToon.trim();
   if (typeof update.aiHandtekening === "string") stored.aiHandtekening = update.aiHandtekening.trim();
+  if (typeof update.toonAfbeeldingen === "boolean") stored.toonAfbeeldingen = update.toonAfbeeldingen;
 
   writeStoredSettings(stored);
   return getPublicConfig();

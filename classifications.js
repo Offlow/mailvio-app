@@ -45,6 +45,8 @@ function setMany(accountKey, entries) {
       actieLabel: e.actieLabel || "",
       soort: e.soort || "overig",
       belangrijk: !!e.belangrijk,
+      viaWebsite: !!e.viaWebsite,
+      reclameTwijfel: !!e.reclameTwijfel,
       snippet: e.snippet || "",
       classifiedAt: Date.now(),
     };

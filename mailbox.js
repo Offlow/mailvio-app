@@ -62,8 +62,12 @@ function schoonHtml(html) {
     .replace(/\son[a-z]+\s*=\s*[^\s>]+/gi, "")
     // javascript:-links
     .replace(/(href|src)\s*=\s*("|')\s*javascript:[^"']*\2/gi, '$1="#"')
-    // externe afbeeldingen pas laden als de gebruiker het vraagt
-    .replace(/<img([^>]*?)\ssrc\s*=/gi, "<img$1 data-src=");
+    // externe afbeeldingen pas laden als de gebruiker het vraagt.
+    // Ook srcset en background meepakken, anders laadt een nieuwsbrief zijn
+    // beelden alsnog langs de achterdeur binnen.
+    .replace(/<img([^>]*?)\ssrc\s*=/gi, "<img$1 data-src=")
+    .replace(/<img([^>]*?)\ssrcset\s*=/gi, "<img$1 data-srcset=")
+    .replace(/<(td|table|div|body)([^>]*?)\sbackground\s*=/gi, "<$1$2 data-background=");
 }
 
 async function extractPlainText(source) {

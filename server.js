@@ -8,6 +8,9 @@ const settingsStore = require("./settings");
 const classifications = require("./classifications");
 const mailstore = require("./mailstore");
 const auth = require("./auth");
+const afzenders = require("./afzenders");
+const bijlagen = require("./bijlagen");
+const taken = require("./taken");
 
 const app = express();
 // Ruimer dan standaard: bijlagen (offerte-pdf, dakfoto's) worden als tekst
@@ -250,6 +253,8 @@ async function getMails(forceRefresh) {
       actieLabel: byUid[m.uid]?.actieLabel || "",
       soort: byUid[m.uid]?.soort || "overig",
       belangrijk: !!byUid[m.uid]?.belangrijk,
+      viaWebsite: !!byUid[m.uid]?.viaWebsite,
+      reclameTwijfel: !!byUid[m.uid]?.reclameTwijfel,
       snippet: m.snippet,
     }));
     classifications.setMany(accountKey, toStore);
@@ -258,7 +263,7 @@ async function getMails(forceRefresh) {
   const finalStore = classifications.getAll(accountKey);
   const merged = light.map((m) => {
     const c = finalStore[m.uid];
-    return {
+    const basis = {
       ...m,
       snippet: c?.snippet || "",
       categorie: c?.categorie || "onbekend",
@@ -267,8 +272,39 @@ async function getMails(forceRefresh) {
       actieLabel: c?.actieLabel || "",
       soort: c?.soort || "overig",
       belangrijk: !!c?.belangrijk,
+      viaWebsite: !!c?.viaWebsite,
+      reclameTwijfel: !!c?.reclameTwijfel,
       resolved: !!c?.resolved,
     };
+
+    // Wat JIJ ooit over deze afzender besliste, weegt zwaarder dan het
+    // oordeel van de AI — en de vraag wordt dan ook niet meer gesteld.
+    const beslist = afzenders.oordeel(accountKey, m.fromAddress);
+    if (beslist) {
+      basis.reclameTwijfel = false;
+      basis.afzenderBeslist = true;
+      if (beslist.reclame) {
+        basis.soort = "reclame";
+        basis.categorie = "geen_actie";
+        basis.actieLabel = "";
+        basis.belangrijk = false;
+      } else if (basis.soort === "reclame") {
+        // Jij zei dat dit géén reclame is: dan blijft het een gewone mail.
+        basis.soort = "overig";
+      }
+    }
+
+    // Een aanvraag via de website is altijd het belangrijkst.
+    if (basis.viaWebsite) {
+      basis.belangrijk = true;
+      basis.vanType = "klant";
+      if (basis.categorie === "geen_actie" || basis.categorie === "onbekend") {
+        basis.categorie = "dringend";
+      }
+      if (!basis.actieLabel) basis.actieLabel = "Beantwoorden";
+    }
+
+    return basis;
   });
 
   const scanned = merged.filter((m) => finalStore[m.uid]).length;
@@ -601,6 +637,97 @@ app.get("/api/mails/:uid/bijlage/:index", async (req, res) => {
   }
 });
 
+// Een bijlage in twee zinnen laten samenvatten. Het resultaat blijft bewaard,
+// zodat dezelfde bijlage nooit twee keer gelezen moet worden.
+app.get("/api/mails/:uid/bijlage/:index/samenvatting", async (req, res) => {
+  try {
+    const uid = Number(req.params.uid);
+    const index = Number(req.params.index);
+    const folder = req.query.folder || "INBOX";
+    const accountKey = settingsStore.getConfig().imapUser || "default";
+
+    const bewaard = bijlagen.get(accountKey, folder, uid, index);
+    if (bewaard) return res.json(bewaard);
+
+    if (!ai.isConfigured()) {
+      return res.json({ samenvatting: "", reden: "De AI is nog niet ingesteld." });
+    }
+    const att = await mailbox.fetchAttachment(uid, index, folder);
+    if (!att) return res.status(404).json({ error: "Bijlage niet gevonden." });
+
+    const resultaat = await ai.vatBijlageSamen(att);
+    bijlagen.bewaar(accountKey, folder, uid, index, resultaat);
+    res.json(resultaat);
+  } catch (e) {
+    console.error("Bijlage samenvatten mislukt:", e.message);
+    res.status(500).json({ error: "Kon de bijlage niet samenvatten.", detail: e.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// To-dolijst
+// ---------------------------------------------------------------------------
+// Taken die je zelf typt én mails die je in de to-domap sleept. Elke taak kan
+// subtaken hebben en afgevinkt worden.
+function taakAccount() {
+  return settingsStore.getConfig().imapUser || "default";
+}
+
+app.get("/api/taken", (req, res) => {
+  res.json({ taken: taken.getAlle(taakAccount()) });
+});
+
+app.post("/api/taken", (req, res) => {
+  const { titel, mail, notitie } = req.body || {};
+  const taak = taken.voegToe(taakAccount(), titel, {
+    notitie,
+    mails: mail ? [{ uid: mail.uid, folder: mail.folder || "INBOX", subject: mail.subject || "", from: mail.from || "", fromAddress: mail.fromAddress || "", date: mail.date || null }] : [],
+  });
+  if (!taak) return res.status(400).json({ error: "Geef een omschrijving voor de taak." });
+  res.json({ taak, taken: taken.getAlle(taakAccount()) });
+});
+
+app.patch("/api/taken/:id", (req, res) => {
+  const taak = taken.wijzig(taakAccount(), req.params.id, req.body || {});
+  if (!taak) return res.status(404).json({ error: "Taak niet gevonden." });
+  res.json({ taak, taken: taken.getAlle(taakAccount()) });
+});
+
+app.delete("/api/taken/:id", (req, res) => {
+  taken.verwijder(taakAccount(), req.params.id);
+  res.json({ ok: true, taken: taken.getAlle(taakAccount()) });
+});
+
+app.post("/api/taken/:id/subtaak", (req, res) => {
+  const taak = taken.voegSubtaakToe(taakAccount(), req.params.id, (req.body || {}).titel);
+  if (!taak) return res.status(400).json({ error: "Kon de subtaak niet toevoegen." });
+  res.json({ taak, taken: taken.getAlle(taakAccount()) });
+});
+
+app.patch("/api/taken/:id/subtaak/:subId", (req, res) => {
+  const taak = taken.wijzigSubtaak(taakAccount(), req.params.id, req.params.subId, req.body || {});
+  if (!taak) return res.status(404).json({ error: "Subtaak niet gevonden." });
+  res.json({ taak, taken: taken.getAlle(taakAccount()) });
+});
+
+app.delete("/api/taken/:id/subtaak/:subId", (req, res) => {
+  const taak = taken.verwijderSubtaak(taakAccount(), req.params.id, req.params.subId);
+  if (!taak) return res.status(404).json({ error: "Taak niet gevonden." });
+  res.json({ taak, taken: taken.getAlle(taakAccount()) });
+});
+
+app.post("/api/taken/:id/mail", (req, res) => {
+  const taak = taken.koppelMail(taakAccount(), req.params.id, req.body || {});
+  if (!taak) return res.status(404).json({ error: "Taak niet gevonden." });
+  res.json({ taak, taken: taken.getAlle(taakAccount()) });
+});
+
+app.delete("/api/taken/:id/mail/:uid", (req, res) => {
+  const taak = taken.ontkoppelMail(taakAccount(), req.params.id, req.params.uid, req.query.folder);
+  if (!taak) return res.status(404).json({ error: "Taak niet gevonden." });
+  res.json({ taak, taken: taken.getAlle(taakAccount()) });
+});
+
 // Gelezen / ongelezen markeren — zoals in elke gewone mailbox.
 app.post("/api/mails/:uid/read", async (req, res) => {
   try {
@@ -633,6 +760,35 @@ app.post("/api/mails/:uid/move", async (req, res) => {
     console.error(e);
     res.status(500).json({ error: "Kon de mail niet verplaatsen.", detail: e.message });
   }
+});
+
+// Jouw beslissing over een afzender bewaren: is dit reclame of niet? Vanaf nu
+// gaat alle post van dat adres automatisch de juiste kant op.
+app.post("/api/afzender/oordeel", (req, res) => {
+  try {
+    const { adres, reclame, heelDomein } = req.body || {};
+    if (!adres) return res.status(400).json({ error: "Geen afzender opgegeven." });
+    const accountKey = settingsStore.getConfig().imapUser || "default";
+    afzenders.beslis(accountKey, adres, !!reclame, !!heelDomein);
+    // Cache leegmaken zodat de lijsten meteen kloppen.
+    cache.at = 0;
+    res.json({ ok: true, adres, reclame: !!reclame });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Kon dit niet bewaren.", detail: e.message });
+  }
+});
+
+app.get("/api/afzender/overzicht", (req, res) => {
+  const accountKey = settingsStore.getConfig().imapUser || "default";
+  res.json({ afzenders: afzenders.overzicht(accountKey) });
+});
+
+app.post("/api/afzender/vergeet", (req, res) => {
+  const accountKey = settingsStore.getConfig().imapUser || "default";
+  afzenders.vergeet(accountKey, req.body?.adres);
+  cache.at = 0;
+  res.json({ ok: true });
 });
 
 app.get("/api/search", async (req, res) => {

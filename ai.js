@@ -41,8 +41,15 @@ Bepaal ook waarover de mail gaat, met "soort" — exact een van:
 
 Zet "belangrijk" op true bij een mail die hij echt niet mag missen: een klacht, een schadegeval, een deadline, een betwisting of een klant die dreigt af te haken. Anders false.
 
+ABSOLUTE VOORRANG — aanvragen via zijn eigen website (daklo.be):
+Komt een mail binnen via het contact- of offerteformulier van zijn website, dan is dat een verse klantaanvraag en die is ALTIJD het belangrijkst. Herken dat aan zaken als: een afzender of onderwerp met "daklo", "contactformulier", "offerteaanvraag", "nieuw bericht via de website", "aanvraag via website", een automatische formuliermail met velden zoals naam/telefoon/adres/bericht, of een verzendend systeem (WordPress, noreply, wpforms, formulier).
+Zet dan "viaWebsite" op true, "categorie" op "dringend", "vanType" op "klant" en "belangrijk" op true. Nooit "geen_actie". Anders "viaWebsite": false.
+
+RECLAME BIJ TWIJFEL:
+Ben je er niet zeker van of iets reclame is dan wel een echte mail die een antwoord verdient — bijvoorbeeld een leverancier die zowel nieuws als een aanbieding stuurt — zet dan "reclameTwijfel" op true. Bij duidelijke gevallen (overduidelijke nieuwsbrief, of overduidelijk een echte klantvraag) zet je "reclameTwijfel" op false.
+
 Antwoord ALLEEN met geldige JSON, een array van objecten:
-[{"uid": <uid>, "categorie": "...", "reden": "korte reden in het Vlaams, max 12 woorden", "vanType": "...", "actieLabel": "...", "soort": "...", "belangrijk": true}]
+[{"uid": <uid>, "categorie": "...", "reden": "korte reden in het Vlaams, max 12 woorden", "vanType": "...", "actieLabel": "...", "soort": "...", "belangrijk": true, "viaWebsite": false, "reclameTwijfel": false}]
 Geen andere tekst.`;
 
 async function classifyMails(mails) {
@@ -145,6 +152,66 @@ async function extractAfspraak(mail) {
   return extractJson(text, { gevonden: false });
 }
 
+// ---------------------------------------------------------------------------
+// Bijlage in twee zinnen samenvatten
+// ---------------------------------------------------------------------------
+// Claude kan een PDF of een foto rechtstreeks lezen. Voor gewone tekstbestanden
+// (txt, csv, ...) sturen we de tekst mee. Voor formaten die we niet kunnen
+// openen (bv. Word of Excel) geven we eerlijk terug dat we ze niet konden lezen,
+// in plaats van iets te verzinnen.
+const BIJLAGE_SYSTEM = `Je bent de assistent van een zelfstandige dakwerker in Vlaanderen.
+Je krijgt één bijlage uit een e-mail. Vat ze samen in PRECIES TWEE zinnen, in het Nederlands (Vlaams, zakelijk, geen jij-vorm nodig).
+Zin 1: wat voor document het is en waarover het gaat.
+Zin 2: het belangrijkste concrete gegeven eruit (bedrag, datum, adres, aantal, wat er gevraagd wordt).
+Regels:
+- Verzin NOOIT gegevens. Staat er geen bedrag of datum in, benoem dan iets anders dat er wel staat.
+- Geen inleiding, geen opsomming, geen kopjes. Enkel de twee zinnen.
+- Bij een foto: beschrijf wat er te zien is en wat dat betekent voor een dakwerker.`;
+
+const TEKST_TYPES = /^(text\/|application\/(json|xml|csv))/i;
+
+async function vatBijlageSamen(bijlage) {
+  if (!isConfigured()) throw new Error("De AI is nog niet ingesteld.");
+  const type = String(bijlage.contentType || "").toLowerCase();
+  const naam = bijlage.filename || "bijlage";
+  const buffer = Buffer.isBuffer(bijlage.content) ? bijlage.content : Buffer.from(bijlage.content || "");
+
+  // Te groot om door te sturen? Dan liever niets dan een halve samenvatting.
+  const MAX_BYTES = 8 * 1024 * 1024;
+  if (buffer.length > MAX_BYTES) {
+    return { samenvatting: "", reden: "Deze bijlage is te groot om automatisch samen te vatten." };
+  }
+
+  let inhoud = null;
+  if (type.startsWith("application/pdf") || /\.pdf$/i.test(naam)) {
+    inhoud = [
+      { type: "document", source: { type: "base64", media_type: "application/pdf", data: buffer.toString("base64") } },
+    ];
+  } else if (/^image\/(png|jpeg|gif|webp)$/.test(type)) {
+    inhoud = [{ type: "image", source: { type: "base64", media_type: type, data: buffer.toString("base64") } }];
+  } else if (TEKST_TYPES.test(type) || /\.(txt|csv|md|json|xml)$/i.test(naam)) {
+    const tekst = buffer.toString("utf8").slice(0, 20000).trim();
+    if (!tekst) return { samenvatting: "", reden: "Deze bijlage is leeg." };
+    inhoud = [{ type: "text", text: tekst }];
+  } else {
+    return { samenvatting: "", reden: "Dit bestandstype kan Mailvio (nog) niet zelf openen." };
+  }
+
+  const resp = await client().messages.create({
+    model: "claude-sonnet-5",
+    max_tokens: 300,
+    system: BIJLAGE_SYSTEM,
+    messages: [
+      {
+        role: "user",
+        content: [...inhoud, { type: "text", text: `Bestandsnaam: ${naam}. Vat deze bijlage samen in twee zinnen.` }],
+      },
+    ],
+  });
+  const tekst = resp.content.map((b) => (b.type === "text" ? b.text : "")).join("").trim();
+  return { samenvatting: tekst, reden: "" };
+}
+
 async function rewriteProfessional(text) {
   if (!isConfigured()) {
     throw new Error("De AI is nog niet ingesteld.");
@@ -244,4 +311,4 @@ async function chat(message, mails) {
   return "Geen antwoord ontvangen.";
 }
 
-module.exports = { classifyMails, suggestReply, rewriteProfessional, chat, isConfigured, extractAfspraak };
+module.exports = { classifyMails, suggestReply, rewriteProfessional, chat, isConfigured, extractAfspraak, vatBijlageSamen };
