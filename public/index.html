@@ -627,7 +627,8 @@
 
     <div class="sectionLabel">Claude AI</div>
     <div class="fieldList">
-      <div class="fieldRow"><label for="setApiKey">API-sleutel</label><input id="setApiKey" type="password" placeholder="sk-ant-..." autocomplete="off"></div>
+      <div class="fieldRow"><label for="setApiKey">API-sleutel</label><input id="setApiKey" type="password" placeholder="sk-ant-..." autocomplete="off" spellcheck="false"></div>
+      <div class="fieldRow"><label>Nu ingesteld</label><span class="hint" id="apiKeyHint" style="flex:1 1 auto">nog geen sleutel</span></div>
       <div class="fieldRow"><label for="setWorkspace">Workspace-id</label><input id="setWorkspace" type="text" placeholder="enkel nodig bij een workspace-sleutel" autocomplete="off" spellcheck="false"></div>
     </div>
 
@@ -3997,6 +3998,7 @@ async function openSettings() {
     document.getElementById("setAfbeeldingen").checked = !!data.toonAfbeeldingen;
     document.getElementById("setAanspreek").value = data.aanspreektitel || "";
     document.getElementById("setWorkspace").value = data.anthropicWorkspaceId || "";
+    document.getElementById("apiKeyHint").textContent = data.apiKeyHint || "nog geen sleutel — vul er hierboven een in";
     document.getElementById("setModelSnel").value = data.aiModelSnel || "";
     document.getElementById("setModelSlim").value = data.aiModelSlim || "";
     toonHandtekeningVoorbeeld();

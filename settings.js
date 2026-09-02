@@ -106,7 +106,7 @@ function getConfig() {
   const actief = stored.accounts[stored.actief] || stored.accounts[0] || {};
   return {
     ...accountConfig(actief),
-    anthropicApiKey: stored.anthropicApiKey || process.env.ANTHROPIC_API_KEY || "",
+    anthropicApiKey: String(stored.anthropicApiKey || process.env.ANTHROPIC_API_KEY || "").trim(),
     aiToon: stored.aiToon || process.env.AI_TOON || "Vlaams, kort en professioneel",
     aiHandtekening: stored.aiHandtekening || process.env.AI_HANDTEKENING || "",
     // Reclame en nieuwsbrieven zien er pas uit zoals ze bedoeld zijn als de
@@ -207,6 +207,10 @@ function getPublicConfig() {
     smtpUser: config.smtpUser,
     hasSmtpPassword: !!config.smtpPassword,
     hasApiKey: !!config.anthropicApiKey,
+    // Genoeg om te herkennen WELKE sleutel er staat, te weinig om ermee te doen.
+    apiKeyHint: config.anthropicApiKey
+      ? `${config.anthropicApiKey.slice(0, 11)}...${config.anthropicApiKey.slice(-4)} (${config.anthropicApiKey.length} tekens)`
+      : "",
     aiToon: config.aiToon,
     aiHandtekening: config.aiHandtekening,
     toonAfbeeldingen: config.toonAfbeeldingen,
@@ -257,14 +261,17 @@ function updateSettings(update) {
   stored.accounts[i] = acc;
 
   // Gedeeld over alle mailboxen:
-  if (typeof update.anthropicApiKey === "string" && update.anthropicApiKey.length > 0) {
-    stored.anthropicApiKey = update.anthropicApiKey;
+  if (typeof update.anthropicApiKey === "string" && update.anthropicApiKey.trim().length > 0) {
+    // Bij het plakken komt er vaak een spatie, een regeleinde of een onzichtbaar
+    // teken mee. De API weigert de sleutel dan met "API key is invalid", terwijl
+    // hij er in het veld perfect uitziet. Daarom hier alles wegpoetsen.
+    stored.anthropicApiKey = update.anthropicApiKey.replace(/[\s\u200b-\u200d\ufeff]/g, "");
   }
   if (typeof update.aiToon === "string") stored.aiToon = update.aiToon.trim();
   if (typeof update.aiHandtekening === "string") stored.aiHandtekening = update.aiHandtekening.trim();
   if (typeof update.toonAfbeeldingen === "boolean") stored.toonAfbeeldingen = update.toonAfbeeldingen;
   if (typeof update.aanspreektitel === "string") stored.aanspreektitel = update.aanspreektitel.trim();
-  if (typeof update.anthropicWorkspaceId === "string") stored.anthropicWorkspaceId = update.anthropicWorkspaceId.trim();
+  if (typeof update.anthropicWorkspaceId === "string") stored.anthropicWorkspaceId = update.anthropicWorkspaceId.replace(/[\s\u200b-\u200d\ufeff]/g, "");
   if (typeof update.aiModelSnel === "string" && update.aiModelSnel.trim()) stored.aiModelSnel = update.aiModelSnel.trim();
   if (typeof update.aiModelSlim === "string" && update.aiModelSlim.trim()) stored.aiModelSlim = update.aiModelSlim.trim();
 
