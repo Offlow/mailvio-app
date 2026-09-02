@@ -19,7 +19,9 @@ const CACHE_DIR = path.join(DATA_DIR, "mailcache");
 
 // Hoeveel geopende mails we bewaren per mailbox. Een mail met bijlagen kan
 // groot zijn; dit houdt de schijf binnen de perken.
-const MAX_BEWAARDE_BERICHTEN = 400;
+// Nu elke mail in een eigen bestand staat, kunnen we er veel meer bewaren
+// zonder dat het de app vertraagt.
+const MAX_BEWAARDE_BERICHTEN = 25000;
 
 function veiligeNaam(tekst) {
   return String(tekst || "onbekend").replace(/[^a-zA-Z0-9._@-]/g, "_").slice(0, 120);
@@ -124,28 +126,68 @@ function verwijderMail(accountKey, folder, uid) {
   const data = lees(accountKey, folder);
   delete data.mails[uid];
   delete data.bodies[uid];
+  try { fs.unlinkSync(inhoudBestand(accountKey, folder, uid)); } catch (e) { /* niet bewaard */ }
   schrijf(accountKey, folder, data);
 }
 
-// De inhoud van een geopende mail bewaren, zodat ze de tweede keer meteen
-// openklapt zonder de server te bevragen.
-function bewaarBody(accountKey, folder, uid, body) {
-  const data = lees(accountKey, folder);
-  data.bodies[uid] = { ...body, bewaardOp: Date.now() };
+// ---------------------------------------------------------------------------
+// De inhoud van mails — ELK IN EEN EIGEN BESTAND
+// ---------------------------------------------------------------------------
+// Bewust NIET samen met de kopregels in één groot bestand. Een mail met
+// bijlagen is al gauw enkele megabytes; honderden daarvan in één JSON-bestand
+// betekent dat de server dat hele bestand moet inlezen en wegschrijven telkens
+// er ook maar één mail bijkomt. Dat maakt de app trager naarmate je hem meer
+// gebruikt — precies het omgekeerde van wat je wil.
+// Eén bestand per mail: openen en bewaren blijft even snel, of je er nu tien of
+// duizend hebt.
+const INHOUD_DIR = path.join(CACHE_DIR, "inhoud");
 
-  // Niet oneindig laten aangroeien: enkel de recentst geopende bewaren.
-  const uids = Object.keys(data.bodies);
-  if (uids.length > MAX_BEWAARDE_BERICHTEN) {
-    uids
-      .sort((a, b) => (data.bodies[a].bewaardOp || 0) - (data.bodies[b].bewaardOp || 0))
-      .slice(0, uids.length - MAX_BEWAARDE_BERICHTEN)
-      .forEach((u) => delete data.bodies[u]);
+function inhoudBestand(accountKey, folder, uid) {
+  return path.join(INHOUD_DIR, `${veiligeNaam(accountKey)}__${veiligeNaam(folder)}__${veiligeNaam(String(uid))}.json`);
+}
+
+function bewaarBody(accountKey, folder, uid, body) {
+  try {
+    if (!fs.existsSync(INHOUD_DIR)) fs.mkdirSync(INHOUD_DIR, { recursive: true });
+    fs.writeFileSync(inhoudBestand(accountKey, folder, uid), JSON.stringify({ ...body, bewaardOp: Date.now() }), "utf8");
+  } catch (e) {
+    console.error("Mailinhoud bewaren mislukt:", e.message);
   }
-  schrijf(accountKey, folder, data);
+  ruimInhoudOp(accountKey);
 }
 
 function getBody(accountKey, folder, uid) {
-  return lees(accountKey, folder).bodies[uid] || null;
+  try {
+    return JSON.parse(fs.readFileSync(inhoudBestand(accountKey, folder, uid), "utf8"));
+  } catch (e) {
+    return null;
+  }
+}
+
+// Niet oneindig laten aangroeien: de oudst bewaarde inhoud valt weg zodra we
+// boven de grens komen. De mail zelf blijft gewoon in je mailbox staan; enkel
+// de bewaarde kopie verdwijnt en wordt bij het openen opnieuw gehaald.
+let laatsteOpruim = 0;
+function ruimInhoudOp(accountKey) {
+  // Hoogstens één keer per minuut, anders kost het opruimen zelf tijd.
+  if (Date.now() - laatsteOpruim < 60000) return;
+  laatsteOpruim = Date.now();
+  try {
+    const voorvoegsel = veiligeNaam(accountKey) + "__";
+    const bestanden = fs.readdirSync(INHOUD_DIR)
+      .filter((n) => n.startsWith(voorvoegsel))
+      .map((n) => {
+        const pad = path.join(INHOUD_DIR, n);
+        let tijd = 0;
+        try { tijd = fs.statSync(pad).mtimeMs; } catch (e) { /* weg is weg */ }
+        return { pad, tijd };
+      });
+    if (bestanden.length <= MAX_BEWAARDE_BERICHTEN) return;
+    bestanden.sort((a, b) => a.tijd - b.tijd);
+    for (const b of bestanden.slice(0, bestanden.length - MAX_BEWAARDE_BERICHTEN)) {
+      try { fs.unlinkSync(b.pad); } catch (e) { /* al weg */ }
+    }
+  } catch (e) { /* map bestaat nog niet */ }
 }
 
 // Alles van een map weggooien — bij een uidValidity-wissel of als de

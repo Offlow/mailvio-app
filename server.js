@@ -154,6 +154,9 @@ let envelopeCache = { at: 0, mails: [], total: 0, capped: false };
 // Hoeveel mails de AI per ronde beoordeelt. Groter = de achterstand van een
 // grote mailbox is sneller weggewerkt; te groot maakt één oproep traag en duur.
 const SCAN_BATCH_SIZE = 30;
+// Hoeveel mails we per portie volledig inladen. Ze gaan over één verbinding, en
+// de achtergrondronde blijft porties halen tot je HELE mailbox binnen is.
+const VOORAF_PER_RONDE = 200;
 let cache = { at: 0, mails: [], total: 0, capped: false, scanned: 0, scanning: false };
 const suggestionCache = new Map(); // uid -> voorstel, leegt mee met de mail-cache
 let folderCache = { at: 0, folders: [] };
@@ -255,6 +258,9 @@ async function getLightMails(forceRefresh) {
         .finally(() => { getLightMails._bezig = false; });
     }
     envelopeCache = { at: Date.now(), mails: bewaard, total: bewaard.length, capped: false };
+    // Alvast de inhoud van de nieuwste mails ophalen, zodat ze meteen openen
+    // wanneer je erop klikt.
+    laadVoorafIn(accountKey);
     return { configured: true, mails: bewaard, total: bewaard.length, capped: false };
   }
 
@@ -325,6 +331,55 @@ async function beoordeelPortie(accountKey, unclassified) {
   
   // De cache verversen zodat de nieuwe beoordelingen meteen meekomen.
   cache.at = 0;
+}
+
+// Haalt op de achtergrond de inhoud op van de mails die je waarschijnlijk gaat
+// openen. Loopt rustig verder en houdt bij wat er al is, zodat er nooit iets
+// dubbel gehaald wordt.
+let voorafBezig = false;
+async function laadVoorafIn(accountKey, maxRondes) {
+  if (!mailbox.isConfigured()) return;
+  // Loopt er al een portie? Bij een gewone aanvraag laten we die met rust; de
+  // achtergrondronde (die alles moet binnenhalen) wacht wel even tot ze klaar
+  // is, anders zou die zichzelf overslaan en nooit verder geraken.
+  if (voorafBezig) {
+    if (!maxRondes) return;
+    for (let w = 0; w < 60 && voorafBezig; w++) {
+      await new Promise((r) => setTimeout(r, 500));
+    }
+    if (voorafBezig) return;
+  }
+  voorafBezig = true;
+  try {
+    // ALLE mails, niet enkel de recentste. Zoals in Outlook: wat één keer
+    // binnengehaald is, opent daarna meteen. We blijven porties halen tot je
+    // hele mailbox binnen is.
+    const rondes = maxRondes || 1;
+    for (let i = 0; i < rondes; i++) {
+      const alle = mailstore.getMails(accountKey, "INBOX");
+      const teDoen = [];
+      for (const m of alle) {
+        if (mailstore.getBody(accountKey, "INBOX", m.uid)) continue;
+        teDoen.push(m.uid);
+        if (teDoen.length >= VOORAF_PER_RONDE) break;
+      }
+      if (!teDoen.length) break;
+
+      // In één keer over ÉÉN verbinding. Per mail apart verbinden kost een halve
+      // seconde aan aanmelden alleen al — bij duizenden mails is dat uren.
+      let bewaard = 0;
+      await mailbox.fetchMailBodies(teDoen, "INBOX", (mail) => {
+        mailstore.bewaarBody(accountKey, "INBOX", mail.uid, mail);
+        bewaard++;
+      });
+      if (!bewaard) break; // lukt het niet, dan stoppen we deze ronde
+      console.log(`${bewaard} mails ingeladen (portie ${i + 1}).`);
+    }
+  } catch (e) {
+    console.error("Vooraf inladen mislukt:", e.message);
+  } finally {
+    voorafBezig = false;
+  }
 }
 
 async function getMails(forceRefresh) {
@@ -624,20 +679,38 @@ app.get("/api/folder-mails", async (req, res) => {
   }
 });
 
+// DE INHOUD VAN EEN GEOPENDE MAIL WORDT BEWAARD.
+// Dit was de grote fout: mailstore had al functies om mailinhoud te bewaren
+// (bewaarBody/getBody), maar ze werden NERGENS gebruikt. Elke keer dat je een
+// mail opende, werd het volledige bericht — inclusief bijlagen — opnieuw van de
+// mailserver gehaald. Vandaar dat openen seconden tot minuten duurde.
+// Nu: eerst kijken of we ze al hebben. Zo ja, dan is het scherm er meteen.
+async function haalMailOp(accountKey, uid, folder) {
+  const map = folder || "INBOX";
+  const bewaard = mailstore.getBody(accountKey, map, uid);
+  if (bewaard) return bewaard;
+  const body = await mailbox.fetchMailBody(uid, map === "INBOX" ? undefined : map);
+  if (body) mailstore.bewaarBody(accountKey, map, uid, body);
+  return body;
+}
+
 app.get("/api/mails/:uid", async (req, res) => {
   try {
     const uid = Number(req.params.uid);
     const folder = req.query.folder;
+    const accountKey = settingsStore.getConfig().imapUser || "default";
+
     // Mail uit een andere map: geen AI-gegevens, gewoon de inhoud tonen.
     if (folder && folder !== "INBOX") {
-      const body = await mailbox.fetchMailBody(uid, folder);
+      const body = await haalMailOp(accountKey, uid, folder);
       if (!body) return res.status(404).json({ error: "Mail niet gevonden." });
       return res.json(body);
     }
-    const data = await getMails(false);
-    const meta = data.mails.find((m) => m.uid === uid) || {};
-    const body = await mailbox.fetchMailBody(uid);
+    const body = await haalMailOp(accountKey, uid, "INBOX");
     if (!body) return res.status(404).json({ error: "Mail niet gevonden." });
+    // De beoordeling erbij halen uit wat we al hebben — zonder de mailserver.
+    const meta = (cache.mails || []).find((m) => m.uid === uid) ||
+      (await getMails(false)).mails.find((m) => m.uid === uid) || {};
     res.json({ ...meta, ...body });
   } catch (e) {
     console.error(e);
@@ -1415,7 +1488,7 @@ const PORT = process.env.PORT || 10000;
 // minuten nieuwe mails op en laat de AI ze meteen beoordelen. Open je daarna de
 // app, dan staat alles er al — geen wachtbalk meer.
 const ACHTERGROND_MS = 3 * 60 * 1000;   // elke drie minuten kijken of er nieuwe post is
-const EERSTE_START_MS = 15 * 1000;      // kort na het opstarten al beginnen
+const EERSTE_START_MS = 4 * 1000;       // meteen na het opstarten beginnen
 let achtergrondBezig = false;
 
 async function achtergrondRonde() {
@@ -1462,6 +1535,10 @@ async function achtergrondRonde() {
     } catch (e) {
       console.error("Mappen binnenhalen mislukt:", e.message);
     }
+
+    // De inhoud van je mails binnenhalen tot ALLES er is. Daarna opent elke
+    // mail meteen, ook een van drie jaar geleden.
+    await laadVoorafIn(accountKeyVoor, 100);
 
     // Dan de achterstand van de AI-beoordeling wegwerken, portie per portie.
     // Dit gebeurt hier, op de achtergrond, en niet terwijl jij op je scherm wacht.

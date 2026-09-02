@@ -314,6 +314,71 @@ async function fetchSnippetsForUids(uids, folder) {
   return out;
 }
 
+// Zet één opgehaald bericht om in wat Mailvio toont. Los gezet zodat we hem
+// zowel voor één mail als voor een hele reeks kunnen gebruiken.
+async function bouwMail(uid, msg) {
+  const parsed = await simpleParser(msg.source).catch(() => null);
+  const text = parsed
+    ? (parsed.text && parsed.text.trim() ? parsed.text.trim() : htmlToText(parsed.html))
+    : await extractPlainText(msg.source);
+  const html = parsed?.html ? schoonHtml(parsed.html) : "";
+  const attachments = (parsed?.attachments || [])
+    .filter((a) => a.contentDisposition !== "inline" || a.filename)
+    .map((a, i) => ({
+      index: i,
+      filename: a.filename || `bijlage-${i + 1}`,
+      contentType: a.contentType || "application/octet-stream",
+      size: a.size || (a.content ? a.content.length : 0),
+    }));
+  const env = msg.envelope || {};
+  const adressen = (lijst) => (lijst || []).map((a) => a.address).filter(Boolean);
+  return {
+    uid,
+    from: env.from?.[0]?.name || env.from?.[0]?.address || "Onbekend",
+    fromAddress: env.from?.[0]?.address || "",
+    to: adressen(env.to),
+    cc: adressen(env.cc),
+    messageId: env.messageId || "",
+    replyTo: env.replyTo?.[0]?.address || "",
+    subject: env.subject || "(geen onderwerp)",
+    date: veiligeDatum(env.date),
+    text,
+    html,
+    attachments,
+  };
+}
+
+// ALLE MAILS SNEL, ZOALS OUTLOOK.
+// Haalt de inhoud van VEEL mails op over ÉÉN verbinding. Vroeger werd er voor
+// elke mail apart verbinding gemaakt met de mailserver — dat kost per mail een
+// halve seconde aan aanmelden alleen al, en bij duizenden mails loopt dat op
+// tot uren. Zo doet Outlook het ook: één verbinding, en dan alles binnenhalen.
+async function fetchMailBodies(uids, folder, opVoortgang) {
+  if (!isConfigured() || !uids.length) return [];
+  const imap = client();
+  await imap.connect();
+  const resultaat = [];
+  try {
+    const lock = await imap.getMailboxLock(folder || "INBOX");
+    try {
+      for await (const msg of imap.fetch(uids, { envelope: true, source: true }, { uid: true })) {
+        try {
+          const mail = await bouwMail(msg.uid, msg);
+          resultaat.push(mail);
+          if (opVoortgang) opVoortgang(mail);
+        } catch (e) {
+          console.error(`Mail ${msg.uid} verwerken mislukt:`, e.message);
+        }
+      }
+    } finally {
+      lock.release();
+    }
+  } finally {
+    await imap.logout().catch(() => {});
+  }
+  return resultaat;
+}
+
 async function fetchMailBody(uid, folder) {
   if (!isConfigured()) {
     throw new Error("De mailbox is nog niet gekoppeld.");
@@ -845,6 +910,7 @@ async function searchAlleMailboxen(query, limitPerBox = 15) {
 }
 
 module.exports = {
+  fetchMailBodies,
   searchAlleMailboxen,
   fetchAllMails,
   fetchNieuweMails,
