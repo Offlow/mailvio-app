@@ -1242,6 +1242,24 @@ app.get("/api/klant/:address/fiche", async (req, res) => {
 // ---------------------------------------------------------------------------
 // Automatiseringsregels
 // ---------------------------------------------------------------------------
+// Alles opnieuw laten beoordelen. Nodig wanneer de AI slimmer geworden is —
+// bv. nu ze oplichting en boekhouding herkent — want mails die al beoordeeld
+// zijn worden anders niet meer opnieuw bekeken. Kost AI-oproepen, dus het
+// gebeurt enkel als jij erom vraagt.
+app.post("/api/herbeoordeel", (req, res) => {
+  try {
+    const accountKey = taakAccount();
+    const aantal = classifications.wisBeoordelingen(accountKey);
+    cache = { at: 0, mails: [], total: 0, capped: false, scanned: 0, scanning: false };
+    envelopeCache = { at: 0, mails: [], total: 0, capped: false };
+    achtergrondRonde();
+    res.json({ ok: true, aantal });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "Kon de herbeoordeling niet starten.", detail: e.message });
+  }
+});
+
 app.get("/api/regels", (req, res) => {
   res.json(regels.overzicht(taakAccount()));
 });

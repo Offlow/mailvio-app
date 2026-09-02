@@ -87,4 +87,22 @@ function setGenegeerd(accountKey, uid, genegeerd) {
   return entry;
 }
 
-module.exports = { getAll, setMany, setResolved, setGenegeerd };
+// Wist enkel het OORDEEL van de AI. Wat JIJ zelf besliste — afgehandeld,
+// niet meer opvolgen — blijft staan. Zo kan je de mailbox opnieuw laten
+// beoordelen zonder je eigen werk kwijt te spelen.
+function wisBeoordelingen(accountKey) {
+  const store = readStore();
+  const forAccount = store[accountKey] || {};
+  let aantal = 0;
+  for (const uid of Object.keys(forAccount)) {
+    const e = forAccount[uid];
+    const bewaard = { resolved: e.resolved, resolvedAt: e.resolvedAt, genegeerd: e.genegeerd };
+    forAccount[uid] = Object.fromEntries(Object.entries(bewaard).filter(([, v]) => v !== undefined));
+    aantal++;
+  }
+  store[accountKey] = forAccount;
+  writeStore(store);
+  return aantal;
+}
+
+module.exports = { getAll, setMany, setResolved, setGenegeerd, wisBeoordelingen };

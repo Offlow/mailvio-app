@@ -1591,6 +1591,16 @@ function renderRegels() {
       <h1 style="margin:0 0 4px;font-size:22px">Automatisering</h1>
       <div class="sub" style="margin-bottom:18px">Alles wat Mailvio uit zichzelf doet, staat hier. Werkt er iets niet zoals je wil? Zet het uit — de rest blijft gewoon werken.</div>
 
+      <div class="regelBouwer" style="border-style:solid">
+        <div class="naam" style="font-weight:800;font-size:13.5px">Alles opnieuw laten beoordelen</div>
+        <div class="uitleg" style="font-size:12.5px;color:var(--ink-soft);line-height:1.5;margin:5px 0 10px">
+          Mailvio bekijkt een mail maar één keer. Is ze intussen slimmer geworden — ze herkent nu bijvoorbeeld oplichting, je boekhouding en privépost — dan geldt dat enkel voor nieuwe mail.
+          Met deze knop wordt je hele mailbox opnieuw beoordeeld. Wat je zelf afvinkte of op "niet meer opvolgen" zette, blijft staan. Dit kost AI-oproepen en duurt even.
+        </div>
+        <button class="btn btn-ghost" id="herbeoordeelKnop">Mailbox opnieuw beoordelen</button>
+        <span class="hint" id="herbeoordeelUitslag" style="margin-left:10px"></span>
+      </div>
+
       <div class="sectionTitle">Ingebouwd</div>
       ${ingebouwd.map((r) => `
         <div class="regel ${r.aan ? "" : "uit"}">
@@ -1635,6 +1645,25 @@ function renderRegels() {
           <button class="regelWis" data-wisregel="${r.id}" title="Regel verwijderen">✕</button>
         </div>`).join("") : '<div class="empty">Je hebt nog geen eigen regels. Maak er hierboven één.</div>'}
     </div>`;
+
+  document.getElementById("herbeoordeelKnop").addEventListener("click", async () => {
+    if (!confirm("De hele mailbox opnieuw laten beoordelen?\n\nDat kost AI-oproepen en duurt een tijdje. Wat je zelf afvinkte blijft staan.")) return;
+    const knop = document.getElementById("herbeoordeelKnop");
+    const uitslag = document.getElementById("herbeoordeelUitslag");
+    knop.disabled = true;
+    uitslag.textContent = "Bezig met opnieuw beginnen...";
+    try {
+      const r = await (await fetch("/api/herbeoordeel", { method: "POST" })).json();
+      uitslag.textContent = r.ok
+        ? `${r.aantal} mails worden opnieuw beoordeeld — volg het lampje in de zijbalk.`
+        : (r.error || "Kon niet starten.");
+      loadMails(true);
+    } catch (e) {
+      uitslag.textContent = "Er ging iets mis: " + e.message;
+    } finally {
+      knop.disabled = false;
+    }
+  });
 
   mount.querySelectorAll("[data-ing]").forEach((b) => b.addEventListener("click", () => {
     regelActie("/api/regels/ingebouwd", {
@@ -2260,9 +2289,17 @@ function renderVandaag() {
     m.soort !== "reclame" && m.soort !== "phishing" && m.vanType !== "prive");
   const nieuwste = (a, b) => new Date(b.date) - new Date(a.date);
 
-  // Twee eenvoudige lijsten: wat vandaag moet, en wat deze week nog moet.
-  const vandaag = open.filter((m) => m.categorie === "dringend" || m.categorie === "vandaag").sort(nieuwste);
-  const week = open.filter((m) => m.categorie === "binnenkort").sort(nieuwste);
+  // "Vandaag te beantwoorden" moet ook ECHT over vandaag gaan. Een mail van drie
+  // maanden geleden die nooit beantwoord is, is geen dag-taak meer — die hoort
+  // bij "blijft al langer liggen". Anders staan er honderd dingen onder
+  // "vandaag" en zegt die lijst niets meer.
+  const VERS_DAGEN = 7;
+  const actie = (m) => m.categorie === "dringend" || m.categorie === "vandaag";
+  const vandaag = open.filter((m) => actie(m) && daysAgo(m.date) <= VERS_DAGEN).sort(nieuwste);
+  const week = open.filter((m) => m.categorie === "binnenkort" && daysAgo(m.date) <= 30).sort(nieuwste);
+  const blijftLiggen = open
+    .filter((m) => (actie(m) && daysAgo(m.date) > VERS_DAGEN) || (m.categorie === "binnenkort" && daysAgo(m.date) > 30))
+    .sort((a, b) => new Date(a.date) - new Date(b.date));
   // En wat geregeld moet worden zonder dat het dringend is.
   const regelen = open
     .filter((m) => (m.soort === "offerte" || m.soort === "afspraak" || m.soort === "factuur") &&
@@ -2342,6 +2379,7 @@ function renderVandaag() {
       ${lijst("Vandaag nog te beantwoorden", "Mails die vandaag een antwoord van jou vragen.", vandaag, "dringend")}
       ${lijst("Later deze week te beantwoorden", "Mag nog een paar dagen wachten, maar niet vergeten.", week, "binnenkort")}
       ${lijst("Nog te regelen", "Offertes, afspraken en facturen die geordend moeten worden, maar niet dringend zijn.", regelen, "offertes")}
+      ${blijftLiggen.length ? lijst("Blijft al langer liggen", "Ouder dan een week en nog altijd geen antwoord. Beantwoorden, of afvinken zodat ze uit je lijsten verdwijnen.", blijftLiggen, "dringend") : ""}
       `}
 
       ${openTaken.length ? `
