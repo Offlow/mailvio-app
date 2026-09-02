@@ -862,9 +862,19 @@ function bewaarInhoud(accountKey, map, uid, body, vorige) {
   mailstore.bewaarBody(accountKey, map, uid, { ...body, leegPogingen: pogingen });
 }
 
-async function haalMailOp(accountKey, uid, folder) {
+async function haalMailOp(accountKey, uid, folder, volledig) {
   const map = folder || "INBOX";
   const bewaard = mailstore.getBody(accountKey, map, uid);
+  // Bij het vooraf inladen halen we van grote mails alleen het begin op (de
+  // tekst), niet de bijlagen. Open jij zo'n mail echt, dan halen we ze alsnog
+  // in haar geheel — één keer, en daarna staat ze compleet in de cache.
+  if (volledig && bewaard && bewaard.afgekapt) {
+    const heel = await mailbox.fetchMailBody(uid, map === "INBOX" ? undefined : map);
+    if (leesbaar(heel)) {
+      mailstore.bewaarBody(accountKey, map, uid, heel);
+      return heel;
+    }
+  }
   if (leesbaar(bewaard)) return bewaard;
   if (bewaard && (bewaard.leegPogingen || 0) >= LEEG_MAX) return bewaard;
   const body = await mailbox.fetchMailBody(uid, map === "INBOX" ? undefined : map);
@@ -880,11 +890,11 @@ app.get("/api/mails/:uid", async (req, res) => {
 
     // Mail uit een andere map: geen AI-gegevens, gewoon de inhoud tonen.
     if (folder && folder !== "INBOX") {
-      const body = await haalMailOp(accountKey, uid, folder);
+      const body = await haalMailOp(accountKey, uid, folder, true);
       if (!body) return res.status(404).json({ error: "Mail niet gevonden." });
       return res.json(body);
     }
-    const body = await haalMailOp(accountKey, uid, "INBOX");
+    const body = await haalMailOp(accountKey, uid, "INBOX", true);
     if (!body) return res.status(404).json({ error: "Mail niet gevonden." });
     // De beoordeling erbij halen uit wat we al hebben — zonder de mailserver.
     const meta = (cache.mails || []).find((m) => m.uid === uid) ||

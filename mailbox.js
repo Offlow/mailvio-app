@@ -9,6 +9,11 @@ const settings = require("./settings");
 // bovengrens voor een mailbox die groter is dan dat aantal berichten.
 const ENVELOPE_CAP = 1500;
 
+// Hoeveel we van een mail binnenhalen bij het vooraf inladen. De tekst van een
+// mail staat altijd vooraan; wat daarna komt zijn de bijlagen, en die hebben we
+// pas nodig als je de mail echt opent.
+const BULK_MAX_BYTES = 262144; // 256 kB
+
 function isConfigured() {
   const c = settings.getConfig();
   return !!(c.imapHost && c.imapUser && c.imapPassword);
@@ -402,20 +407,26 @@ async function _fetchSnippetsForUids(uids, folder) {
 
 // Zet één opgehaald bericht om in wat Mailvio toont. Los gezet zodat we hem
 // zowel voor één mail als voor een hele reeks kunnen gebruiken.
-async function bouwMail(uid, msg) {
+async function bouwMail(uid, msg, opties) {
+  const afgekapt = !!(opties && opties.afgekapt);
   const parsed = await simpleParser(msg.source).catch(() => null);
   const text = parsed
     ? (parsed.text && parsed.text.trim() ? parsed.text.trim() : htmlToText(parsed.html))
     : await extractPlainText(msg.source);
   const html = parsed?.html ? schoonHtml(parsed.html) : "";
-  const attachments = (parsed?.attachments || [])
-    .filter((a) => a.contentDisposition !== "inline" || a.filename)
-    .map((a, i) => ({
-      index: i,
-      filename: a.filename || `bijlage-${i + 1}`,
-      contentType: a.contentType || "application/octet-stream",
-      size: a.size || (a.content ? a.content.length : 0),
-    }));
+  // Bij een afgekapte ophaling zit de bijlage zelf er niet bij; de LIJST van
+  // bijlagen halen we dan uit de structuur van de mail, die de mailserver
+  // gratis meegeeft. Zo zie je nog steeds welke bijlagen erbij zitten.
+  const attachments = afgekapt
+    ? bijlagenUitStructuur(msg.bodyStructure)
+    : (parsed?.attachments || [])
+      .filter((a) => a.contentDisposition !== "inline" || a.filename)
+      .map((a, i) => ({
+        index: i,
+        filename: a.filename || `bijlage-${i + 1}`,
+        contentType: a.contentType || "application/octet-stream",
+        size: a.size || (a.content ? a.content.length : 0),
+      }));
   const env = msg.envelope || {};
   const adressen = (lijst) => (lijst || []).map((a) => a.address).filter(Boolean);
   return {
@@ -431,7 +442,33 @@ async function bouwMail(uid, msg) {
     text,
     html,
     attachments,
+    // Werd deze mail maar gedeeltelijk opgehaald? Dan halen we ze alsnog
+    // volledig op zodra jij ze echt opent.
+    afgekapt,
   };
+}
+
+// De bijlagen uit de structuur van een mail halen, zonder de mail zelf te
+// downloaden. De mailserver geeft die structuur gratis mee.
+function bijlagenUitStructuur(node, uit, teller) {
+  const lijst = uit || [];
+  const n = teller || { i: 0 };
+  if (!node) return lijst;
+  const disp = (node.disposition || "").toLowerCase();
+  const naam = node.dispositionParameters?.filename || node.parameters?.name;
+  const type = (node.type || "").toLowerCase();
+  if ((disp === "attachment" || naam) && !type.startsWith("multipart/")) {
+    if (disp === "attachment" || !type.startsWith("text/")) {
+      lijst.push({
+        index: n.i++,
+        filename: naam || `bijlage-${lijst.length + 1}`,
+        contentType: node.type || "application/octet-stream",
+        size: node.size || 0,
+      });
+    }
+  }
+  for (const kind of node.childNodes || []) bijlagenUitStructuur(kind, lijst, n);
+  return lijst;
 }
 
 // ALLE MAILS SNEL, ZOALS OUTLOOK.
@@ -451,9 +488,18 @@ async function _fetchMailBodies(uids, folder, opVoortgang) {
   try {
     const lock = await imap.getMailboxLock(folder || "INBOX");
     try {
-      for await (const msg of imap.fetch(uids, { envelope: true, source: true }, { uid: true })) {
+      // ALLEEN DE TEKST, NIET DE BIJLAGEN.
+      // Hier werd tot nu élke mail VOLLEDIG opgehaald — inclusief bijlagen van
+      // enkele megabytes — terwijl we voor het inladen alleen de tekst nodig
+      // hebben. Dat kost bandbreedte én rekenwerk om die megabytes weer uit te
+      // pakken, en dat is precies waardoor het inladen zo traag ging.
+      // We nemen nu hoogstens de eerste 256 kB: de tekst van een mail staat
+      // altijd vooraan. Open je zo'n mail later echt, dan halen we ze alsnog
+      // volledig op.
+      for await (const msg of imap.fetch(uids, { envelope: true, bodyStructure: true, size: true, source: { start: 0, maxLength: BULK_MAX_BYTES } }, { uid: true })) {
         try {
-          const mail = await bouwMail(msg.uid, msg);
+          const afgekapt = typeof msg.size === "number" && msg.size > BULK_MAX_BYTES;
+          const mail = await bouwMail(msg.uid, msg, { afgekapt });
           resultaat.push(mail);
           if (opVoortgang) opVoortgang(mail);
         } catch (e) {
