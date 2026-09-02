@@ -140,6 +140,12 @@ async function fetchAllMails(folder) {
 
 // Haalt voor een specifieke reeks uid's de inhoud op en bouwt er een kort
 // fragment van (voor AI-beoordeling en als voorbeeldtekst in de inboxlijst).
+// Voor een fragment van 300 tekens hebben we niet de hele mail nodig. Vroeger
+// werd elk bericht volledig ingelezen — inclusief bijlagen van megabytes —
+// waardoor de server door zijn geheugen ging. Nu lezen we per mail hoogstens
+// SNIPPET_MAX_BYTES aan begin van het bericht.
+const SNIPPET_MAX_BYTES = 64 * 1024;
+
 async function fetchSnippetsForUids(uids, folder) {
   const out = new Map();
   if (!isConfigured() || !uids || !uids.length) return out;
@@ -148,9 +154,25 @@ async function fetchSnippetsForUids(uids, folder) {
   try {
     const lock = await imap.getMailboxLock(folder || "INBOX");
     try {
-      for await (const msg of imap.fetch(uids, { source: true }, { uid: true })) {
-        const text = await extractPlainText(msg.source);
-        out.set(msg.uid, text.replace(/\s+/g, " ").trim().slice(0, 300));
+      for (const uid of uids) {
+        let tekst = "";
+        try {
+          // download() met maxBytes stopt met lezen zodra we genoeg hebben.
+          const dl = await imap.download(String(uid), undefined, { uid: true, maxBytes: SNIPPET_MAX_BYTES });
+          if (dl && dl.content) {
+            const stukken = [];
+            let bytes = 0;
+            for await (const chunk of dl.content) {
+              stukken.push(chunk);
+              bytes += chunk.length;
+              if (bytes >= SNIPPET_MAX_BYTES) break;
+            }
+            tekst = await extractPlainText(Buffer.concat(stukken));
+          }
+        } catch (e) {
+          tekst = "";
+        }
+        out.set(uid, tekst.replace(/\s+/g, " ").trim().slice(0, 300));
       }
     } finally {
       lock.release();
@@ -463,10 +485,19 @@ async function searchMails(query, limit = 30, alleMappen = true) {
           const uids = await imap.search({ text: q }, { uid: true });
           if (!uids || !uids.length) continue;
           const recentUids = uids.slice(-limit);
-          for await (const msg of imap.fetch(recentUids, { envelope: true, flags: true, source: true }, { uid: true })) {
-            const mail = await parseAndBuild(msg);
-            mail.folder = pad;
-            mails.push(mail);
+          // Enkel envelope + vlaggen: de fragmenten halen we apart en begrensd
+          // op, zodat een mail met een grote bijlage het geheugen niet opvreet.
+          for await (const msg of imap.fetch(recentUids, { envelope: true, flags: true }, { uid: true })) {
+            mails.push({
+              uid: msg.uid,
+              from: msg.envelope.from?.[0]?.name || msg.envelope.from?.[0]?.address || "Onbekend",
+              fromAddress: msg.envelope.from?.[0]?.address || "",
+              subject: msg.envelope.subject || "(geen onderwerp)",
+              date: msg.envelope.date ? new Date(msg.envelope.date).toISOString() : null,
+              unread: !msg.flags.has("\\Seen"),
+              snippet: "",
+              folder: pad,
+            });
           }
         } finally {
           lock.release();
@@ -474,7 +505,42 @@ async function searchMails(query, limit = 30, alleMappen = true) {
       } catch (e) { /* map overslaan als ze niet doorzocht kan worden */ }
     }
     mails.sort((a, b) => new Date(b.date) - new Date(a.date));
-    return { configured: true, mails: mails.slice(0, limit * 2), mappen: paden.length };
+    const resultaat = mails.slice(0, limit * 2);
+
+    // Fragmenten enkel voor wat we effectief tonen, per map, met de begrensde
+    // leesmethode.
+    const perMap = new Map();
+    for (const m of resultaat) {
+      if (!perMap.has(m.folder)) perMap.set(m.folder, []);
+      perMap.get(m.folder).push(m.uid);
+    }
+    for (const [pad, uidsVanMap] of perMap) {
+      try {
+        const lock = await imap.getMailboxLock(pad);
+        try {
+          for (const uid of uidsVanMap) {
+            try {
+              const dl = await imap.download(String(uid), undefined, { uid: true, maxBytes: SNIPPET_MAX_BYTES });
+              if (!dl || !dl.content) continue;
+              const stukken = [];
+              let bytes = 0;
+              for await (const chunk of dl.content) {
+                stukken.push(chunk);
+                bytes += chunk.length;
+                if (bytes >= SNIPPET_MAX_BYTES) break;
+              }
+              const tekst = await extractPlainText(Buffer.concat(stukken));
+              const mail = resultaat.find((x) => x.uid === uid && x.folder === pad);
+              if (mail) mail.snippet = tekst.replace(/\s+/g, " ").trim().slice(0, 300);
+            } catch (e) { /* fragment is bijzaak */ }
+          }
+        } finally {
+          lock.release();
+        }
+      } catch (e) { /* map overslaan */ }
+    }
+
+    return { configured: true, mails: resultaat, mappen: paden.length };
   } finally {
     await imap.logout().catch(() => {});
   }

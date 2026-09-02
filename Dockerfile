@@ -18,6 +18,9 @@ RUN mkdir -p /app/data
 
 ENV NODE_ENV=production
 ENV PORT=8080
+# Grens op het geheugen dat Node voor zichzelf mag opeisen, zodat hij opruimt
+# in plaats van door de limiet van de server heen te groeien.
+ENV NODE_OPTIONS=--max-old-space-size=320
 
 EXPOSE 8080
 

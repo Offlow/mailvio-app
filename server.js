@@ -25,7 +25,9 @@ let envelopeCache = { at: 0, mails: [], total: 0, capped: false };
 // hieronder) zodat één aanvraag niet vastloopt bij een grote achterstand, en
 // het resultaat blijft permanent bewaard zodat een mail maar één keer gescand
 // moet worden.
-const SCAN_BATCH_SIZE = 40;
+// Kleinere porties: 40 mails tegelijk inlezen kostte te veel geheugen op een
+// kleine server. 15 per keer scant even snel door, maar veel rustiger.
+const SCAN_BATCH_SIZE = 15;
 let cache = { at: 0, mails: [], total: 0, capped: false, scanned: 0, scanning: false };
 const suggestionCache = new Map(); // uid -> voorstel, leegt mee met de mail-cache
 

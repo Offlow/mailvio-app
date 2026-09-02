@@ -41,6 +41,8 @@
   .navItem.active{background:var(--accent-soft);color:var(--accent-ink)}
   .navItem .count{margin-left:auto;font-weight:700;color:var(--ink-faint);font-size:12px}
   .navItem.active .count{color:var(--accent-ink)}
+  /* Ongelezen springt eruit; een gewoon aantal blijft rustig op de achtergrond. */
+  .navItem .count.nieuw{color:#fff;background:var(--accent);border-radius:99px;padding:1px 7px;font-size:11px}
   .navItem.soon{color:var(--ink-faint);cursor:pointer;font-weight:600}
   .navItem.soon:hover{background:none}
   .navItem .dotmark{width:7px;height:7px;border-radius:50%;flex:0 0 7px}
@@ -487,11 +489,18 @@ function renderFolders() {
   standaard.sort((a, b) => STANDAARD_ROLLEN.indexOf(a.rol) - STANDAARD_ROLLEN.indexOf(b.rol));
   eigen.sort((a, b) => a.name.localeCompare(b.name, "nl"));
 
+  // Elke map toont een aantal. Zijn er ongelezen berichten, dan springt dat
+  // getal eruit; anders zie je gewoon hoeveel berichten er in de map zitten.
   const knop = (f) => {
     const label = ROL_LABEL[f.rol] || f.name;
-    const teller = f.rol === "concepten" || f.rol === "verzonden"
-      ? (f.messages ? `<span class="count">${f.messages}</span>` : "")
-      : (f.unseen ? `<span class="count">${f.unseen}</span>` : "");
+    const totaal = typeof f.messages === "number" ? f.messages : null;
+    const ongelezen = typeof f.unseen === "number" ? f.unseen : 0;
+    let teller = "";
+    if (ongelezen > 0) {
+      teller = `<span class="count nieuw" title="${ongelezen} ongelezen van ${totaal ?? "?"}">${ongelezen}</span>`;
+    } else if (totaal !== null) {
+      teller = `<span class="count" title="${totaal} bericht${totaal === 1 ? "" : "en"}">${totaal}</span>`;
+    }
     const actief = state.view === "folder" && state.folder === f.path ? " active" : "";
     return `<button class="navItem${actief}" data-folder="${escapeHtml(f.path)}">${escapeHtml(label)} ${teller}</button>`;
   };

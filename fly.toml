@@ -7,6 +7,9 @@ primary_region = "ams"  # Amsterdam — dichtstbij voor een Belgische gebruiker
 
 [env]
   PORT = "8080"
+  # Houdt Node binnen de perken: ruimt geheugen eerder op in plaats van te
+  # blijven groeien tot de machine hem afschiet.
+  NODE_OPTIONS = "--max-old-space-size=320"
 
 # Persistente schijf voor data/settings.json (IMAP/SMTP/AI-instellingen).
 # Dit lost het probleem van Render's gratis plan op: instellingen overleven
@@ -25,4 +28,6 @@ primary_region = "ams"  # Amsterdam — dichtstbij voor een Belgische gebruiker
 
 [[vm]]
   size = "shared-cpu-1x"
-  memory = "256mb"
+  # 256mb bleek te krap: de machine werd telkens door geheugengebrek gedood
+  # (OOM) tijdens het inlezen van mails. 512mb geeft Node genoeg lucht.
+  memory = "512mb"
