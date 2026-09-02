@@ -14,6 +14,68 @@ function isConfigured() {
   return !!(c.imapHost && c.imapUser && c.imapPassword);
 }
 
+// ---------------------------------------------------------------------------
+// JOUW KLIK KRIJGT VOORRANG
+// ---------------------------------------------------------------------------
+// Een mailserver laat maar een paar verbindingen tegelijk toe. Terwijl Mailvio
+// op de achtergrond mails staat in te laden, moest jouw klik daarop wachten —
+// tot de verbinding zelfs in time-out ging. Daarom: zodra jij iets doet, pauzeert
+// het achtergrondwerk. Zo opent een mail altijd meteen.
+let gebruikersWerk = 0;
+function gebruikerBezig() {
+  return gebruikersWerk > 0;
+}
+
+// ÉÉN WACHTRIJ NAAR DE MAILSERVER.
+// Een mailserver laat maar een paar verbindingen tegelijk toe. Deden we twee
+// dingen tegelijk — jij opent een mail terwijl de achtergrond aan het inladen
+// is — dan weigerde de server de tweede verbinding en kreeg je "kon de mail
+// niet ophalen" of een time-out van anderhalve minuut.
+// Alles wat de mailserver nodig heeft, gaat nu netjes één voor één door deze
+// wachtrij. Jouw klik komt vooraan te staan.
+let rij = Promise.resolve();
+const wachtenden = [];
+function inDeRij(fn, voorrang) {
+  return new Promise((resolve, reject) => {
+    const taak = { fn, resolve, reject };
+    if (voorrang) wachtenden.unshift(taak);
+    else wachtenden.push(taak);
+    rij = rij.then(verwerkRij, verwerkRij);
+  });
+}
+async function verwerkRij() {
+  const taak = wachtenden.shift();
+  if (!taak) return;
+  try {
+    taak.resolve(await taak.fn());
+  } catch (e) {
+    taak.reject(e);
+  }
+}
+// Alles wat jij aanklikt gaat vooraan; achtergrondwerk sluit gewoon aan.
+function serieel(fn) {
+  return inDeRij(fn, false);
+}
+function serieelMetVoorrang(fn) {
+  gebruikersWerk++;
+  return inDeRij(fn, true).finally(() => { gebruikersWerk--; });
+}
+async function metVoorrang(fn) {
+  gebruikersWerk++;
+  try {
+    return await fn();
+  } finally {
+    gebruikersWerk--;
+  }
+}
+// Het achtergrondwerk wacht hiermee tot jij klaar bent.
+async function wachtOpRust(maxMs = 15000) {
+  const begin = Date.now();
+  while (gebruikerBezig() && Date.now() - begin < maxMs) {
+    await new Promise((r) => setTimeout(r, 200));
+  }
+}
+
 function client(config) {
   const c = config || settings.getConfig();
   const imap = new ImapFlow({
@@ -125,6 +187,10 @@ function heeftBijlage(node) {
 //
 // sindsUid = het hoogste nummer dat we al kennen; alles daarboven is nieuw.
 async function fetchNieuweMails(folder, sindsUid) {
+  return serieel(() => _fetchNieuweMails(folder, sindsUid));
+}
+
+async function _fetchNieuweMails(folder, sindsUid) {
   if (!isConfigured()) return { configured: false, nieuwe: [], alleUids: [], uidValidity: null };
 
   const box = folder || "INBOX";
@@ -172,6 +238,10 @@ async function fetchNieuweMails(folder, sindsUid) {
 // hebben. Zo vult een grote mailbox (duizenden mails) zichzelf stap voor stap
 // aan op de achtergrond, zonder ooit één zware ophaalbeurt te doen.
 async function fetchOudereMails(folder, onderUid, aantal) {
+  return serieel(() => _fetchOudereMails(folder, onderUid, aantal));
+}
+
+async function _fetchOudereMails(folder, onderUid, aantal) {
   if (!isConfigured() || !onderUid) return { configured: false, mails: [] };
   const imap = client();
   await imap.connect();
@@ -207,6 +277,10 @@ async function fetchOudereMails(folder, onderUid, aantal) {
 // Haalt enkel de gelezen/ongelezen-vlaggen op van de recentste berichten, zodat
 // een mail die je elders (gsm, Outlook) las hier ook als gelezen komt te staan.
 async function fetchVlaggen(folder, uids) {
+  return serieel(() => _fetchVlaggen(folder, uids));
+}
+
+async function _fetchVlaggen(folder, uids) {
   if (!isConfigured() || !uids || !uids.length) return new Map();
   const out = new Map();
   const imap = client();
@@ -227,6 +301,10 @@ async function fetchVlaggen(folder, uids) {
 }
 
 async function fetchAllMails(folder) {
+  return serieel(() => _fetchAllMails(folder));
+}
+
+async function _fetchAllMails(folder) {
   if (!isConfigured()) {
     return { configured: false, mails: [], total: 0, capped: false };
   }
@@ -278,6 +356,10 @@ async function fetchAllMails(folder) {
 const SNIPPET_MAX_BYTES = 64 * 1024;
 
 async function fetchSnippetsForUids(uids, folder) {
+  return serieel(() => _fetchSnippetsForUids(uids, folder));
+}
+
+async function _fetchSnippetsForUids(uids, folder) {
   const out = new Map();
   if (!isConfigured() || !uids || !uids.length) return out;
   const imap = client();
@@ -354,6 +436,10 @@ async function bouwMail(uid, msg) {
 // halve seconde aan aanmelden alleen al, en bij duizenden mails loopt dat op
 // tot uren. Zo doet Outlook het ook: één verbinding, en dan alles binnenhalen.
 async function fetchMailBodies(uids, folder, opVoortgang) {
+  return serieel(() => _fetchMailBodies(uids, folder, opVoortgang));
+}
+
+async function _fetchMailBodies(uids, folder, opVoortgang) {
   if (!isConfigured() || !uids.length) return [];
   const imap = client();
   await imap.connect();
@@ -380,9 +466,17 @@ async function fetchMailBodies(uids, folder, opVoortgang) {
 }
 
 async function fetchMailBody(uid, folder) {
+  return serieelMetVoorrang(() => _fetchMailBody(uid, folder));
+}
+
+async function _fetchMailBody(uid, folder) {
   if (!isConfigured()) {
     throw new Error("De mailbox is nog niet gekoppeld.");
   }
+  // Jij zit hierop te wachten: dit werk krijgt voorrang op het inladen op de
+  // achtergrond.
+  gebruikersWerk++;
+  try {
   const imap = client();
   await imap.connect();
   try {
@@ -432,10 +526,17 @@ async function fetchMailBody(uid, folder) {
   } finally {
     await imap.logout().catch(() => {});
   }
+  } finally {
+    gebruikersWerk--;
+  }
 }
 
 // Haalt één bijlage op zodat ze gedownload/geopend kan worden.
 async function fetchAttachment(uid, index, folder) {
+  return serieelMetVoorrang(() => _fetchAttachment(uid, index, folder));
+}
+
+async function _fetchAttachment(uid, index, folder) {
   if (!isConfigured()) throw new Error("De mailbox is nog niet gekoppeld.");
   const imap = client();
   await imap.connect();
@@ -528,6 +629,10 @@ async function vindMapMetRol(imap, rol) {
 
 // Zet of verwijdert de "gelezen"-vlag — precies wat een gewone mailclient doet.
 async function markeerGelezen(uid, gelezen, folder) {
+  return serieelMetVoorrang(() => _markeerGelezen(uid, gelezen, folder));
+}
+
+async function _markeerGelezen(uid, gelezen, folder) {
   if (!isConfigured()) throw new Error("De mailbox is nog niet gekoppeld.");
   const imap = client();
   await imap.connect();
@@ -548,6 +653,10 @@ async function markeerGelezen(uid, gelezen, folder) {
 // Verplaatst een mail naar een andere map (archiveren of naar de prullenmand).
 // Valt terug op het markeren als verwijderd als de map niet bestaat.
 async function verplaatsMail(uid, doelRol, folder) {
+  return serieelMetVoorrang(() => _verplaatsMail(uid, doelRol, folder));
+}
+
+async function _verplaatsMail(uid, doelRol, folder) {
   if (!isConfigured()) throw new Error("De mailbox is nog niet gekoppeld.");
   const imap = client();
   await imap.connect();
@@ -574,6 +683,10 @@ async function verplaatsMail(uid, doelRol, folder) {
 // Schrijft een verstuurde mail bij in de map "Verzonden" op de mailserver,
 // zodat ze ook in Outlook of op je gsm terug te vinden is.
 async function bewaarInVerzonden(raw) {
+  return serieelMetVoorrang(() => _bewaarInVerzonden(raw));
+}
+
+async function _bewaarInVerzonden(raw) {
   if (!isConfigured() || !raw) return { ok: false };
   const imap = client();
   await imap.connect();
@@ -590,6 +703,10 @@ async function bewaarInVerzonden(raw) {
 // Bewaart een onafgewerkte mail als concept op de mailserver, zodat je er
 // later (ook vanaf je gsm of in Outlook) aan verder kan werken.
 async function bewaarConcept(raw) {
+  return serieelMetVoorrang(() => _bewaarConcept(raw));
+}
+
+async function _bewaarConcept(raw) {
   if (!isConfigured() || !raw) return { ok: false };
   const imap = client();
   await imap.connect();
@@ -604,6 +721,10 @@ async function bewaarConcept(raw) {
 }
 
 async function listFolders() {
+  return serieel(() => _listFolders());
+}
+
+async function _listFolders() {
   if (!isConfigured()) return { configured: false, folders: [] };
   const imap = client();
   await imap.connect();
@@ -688,6 +809,10 @@ async function parseAndBuild(msg) {
 const ZOEK_MAPPEN_MAX = 6;
 
 async function searchMails(query, limit = 30, alleMappen = true, config) {
+  return serieel(() => _searchMails(query, limit = 30, alleMappen = true, config));
+}
+
+async function _searchMails(query, limit = 30, alleMappen = true, config) {
   if (!config && !isConfigured()) return { configured: false, mails: [] };
   const q = (query || "").trim();
   if (!q) return { configured: true, mails: [] };
@@ -778,6 +903,10 @@ async function searchMails(query, limit = 30, alleMappen = true, config) {
 }
 
 async function fetchMailsFromAddress(address, limit = 30) {
+  return serieelMetVoorrang(() => _fetchMailsFromAddress(address, limit = 30));
+}
+
+async function _fetchMailsFromAddress(address, limit = 30) {
   if (!isConfigured()) return { configured: false, mails: [] };
   if (!address) return { configured: true, mails: [] };
   const imap = client();
@@ -823,6 +952,10 @@ const FOLLOWUP_MAX = 15;
 const FOLLOWUP_DAYS = 30;
 
 async function fetchFollowUps() {
+  return serieel(() => _fetchFollowUps());
+}
+
+async function _fetchFollowUps() {
   if (!isConfigured()) return { configured: false, supported: false, items: [] };
   const imap = client();
   await imap.connect();
@@ -910,6 +1043,9 @@ async function searchAlleMailboxen(query, limitPerBox = 15) {
 }
 
 module.exports = {
+  gebruikerBezig,
+  metVoorrang,
+  wachtOpRust,
   fetchMailBodies,
   searchAlleMailboxen,
   fetchAllMails,

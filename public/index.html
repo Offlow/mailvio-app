@@ -1072,7 +1072,7 @@ function tekenMapRijen(erbij) {
   const lijstEl = document.getElementById("folderList");
   if (!lijstEl) return;
   const mails = state.folderMails || [];
-  if (!erbij) state.getoondeMapRijen = RIJEN_PER_KEER;
+  if (!erbij && !state.getoondeMapRijen) state.getoondeMapRijen = RIJEN_PER_KEER;
   const tot = Math.min(state.getoondeMapRijen || RIJEN_PER_KEER, mails.length);
   const stuk = mails.slice(0, tot);
   lijstEl.innerHTML = stuk.length
@@ -1130,7 +1130,13 @@ async function loadMails(forceRefresh) {
   renderSidebarCounts();
   // Schermen die niets met de mailijst te maken hebben, hoeven niet opnieuw
   // getekend te worden. En renderView() zelf stelt uit zolang je typt.
-  if (!["taken", "agenda", "mail", "klant", "regels", "opruimen"].includes(state.view)) {
+  // Is er NIETS veranderd aan je mails, dan tekenen we helemaal niets opnieuw.
+  // Anders werd je inbox elke paar seconden herbouwd — en sprong je bij het
+  // scrollen telkens terug naar boven.
+  const vingerafdruk = `${state.mails.length}|${state.mails[0] ? state.mails[0].uid : 0}|${state.mailsScanned}|${state.mailsScanning}`;
+  const veranderd = vingerafdruk !== state._mailAfdruk;
+  state._mailAfdruk = vingerafdruk;
+  if (veranderd && !["taken", "agenda", "mail", "klant", "regels", "opruimen"].includes(state.view)) {
     renderView();
   }
 
@@ -1232,6 +1238,9 @@ document.querySelectorAll("[data-nav]").forEach((btn) => {
   btn.addEventListener("click", () => {
     state.view = btn.dataset.nav;
     if (btn.dataset.filter) state.filter = btn.dataset.filter;
+    // Nieuw scherm: weer bovenaan beginnen met een vers pakket rijen.
+    state.getoondeRijen = RIJEN_PER_KEER;
+    state.getoondeMapRijen = RIJEN_PER_KEER;
     renderSidebarCounts();
     renderView();
   });
@@ -1292,6 +1301,21 @@ function renderView(gedwongen) {
     return;
   }
   state._wachtOpHertekenen = false;
+
+  // WAAR JE STOND, BLIJF JE STAAN. Een hertekening mag je niet terug naar boven
+  // katapulteren terwijl je door je inbox aan het scrollen bent.
+  const kies = () => document.querySelector(".inboxMain, .listPane, .vandaagView, .takenView, .regelView, .opruimView, .agendaView, .mailMain");
+  const vorige = kies();
+  const scrollWas = vorige ? vorige.scrollTop : 0;
+  const uitslag = tekenScherm();
+  if (scrollWas) {
+    const nieuwEl = kies();
+    if (nieuwEl) nieuwEl.scrollTop = scrollWas;
+  }
+  return uitslag;
+}
+
+function tekenScherm() {
   if (state.view === "vandaag") return renderVandaag();
   if (state.view === "inbox") return renderInbox();
   if (state.view === "zoeken") return renderZoeken();
@@ -2336,7 +2360,10 @@ function koppelTwijfelKnoppen(mount) {
     e.stopPropagation();
     openMail(Number(el.dataset.openmail));
   }));
-  koppelTwijfelKnoppen(mount);
+  // Hier stond per ongeluk een oproep naar deze functie zelf: het scherm liep
+  // dan vast met "Maximum call stack size exceeded" en je zag niets.
+  mount.querySelectorAll("[data-reclame]").forEach((b) => b.addEventListener("click", () => beslisOverAfzender(b.dataset.reclame, true)));
+  mount.querySelectorAll("[data-geenreclame]").forEach((b) => b.addEventListener("click", () => beslisOverAfzender(b.dataset.geenreclame, false)));
   mount.querySelectorAll("[data-naarscherm]").forEach((b) => b.addEventListener("click", () => {
     state.view = b.dataset.naarscherm; renderSidebarCounts(); renderView(true);
   }));
@@ -2736,7 +2763,8 @@ function tekenMailRijen(erbij) {
   const rijen = document.getElementById("mailRows");
   if (!rijen) return;
   const list = filteredMails();
-  if (!erbij) state.getoondeRijen = RIJEN_PER_KEER;
+  // Had je al verder gescrold? Dan houden we die rijen aan.
+  if (!erbij && !state.getoondeRijen) state.getoondeRijen = RIJEN_PER_KEER;
   const tot = Math.min(state.getoondeRijen || RIJEN_PER_KEER, list.length);
   const stuk = list.slice(0, tot);
 
@@ -2852,6 +2880,7 @@ function renderInbox() {
   // tekst én je cursor kwijt.
   document.getElementById("inboxSearch").addEventListener("input", (e) => {
     state.inboxZoek = e.target.value;
+    state.getoondeRijen = RIJEN_PER_KEER;
     tekenMailRijen();
   });
   document.getElementById("inboxAsk").addEventListener("keydown", async (e) => {

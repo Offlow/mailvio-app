@@ -118,7 +118,9 @@ function telPoging(accountKey, uids) {
   const forAccount = store[accountKey] || {};
   for (const uid of uids) {
     const e = forAccount[uid] || {};
-    forAccount[uid] = { ...e, pogingen: (e.pogingen || 0) + 1 };
+    // Nooit hoger dan 3 tellen. Twee achtergrondtaken kunnen dezelfde mail
+    // net na elkaar proberen; zonder deze grens staat er dan 4 of 5.
+    forAccount[uid] = { ...e, pogingen: Math.min(3, (e.pogingen || 0) + 1) };
   }
   store[accountKey] = forAccount;
   writeStore(store);

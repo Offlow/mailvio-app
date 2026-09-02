@@ -156,7 +156,7 @@ let envelopeCache = { at: 0, mails: [], total: 0, capped: false };
 const SCAN_BATCH_SIZE = 30;
 // Hoeveel mails we per portie volledig inladen. Ze gaan over één verbinding, en
 // de achtergrondronde blijft porties halen tot je HELE mailbox binnen is.
-const VOORAF_PER_RONDE = 200;
+const VOORAF_PER_RONDE = 60;
 let cache = { at: 0, mails: [], total: 0, capped: false, scanned: 0, scanning: false };
 const suggestionCache = new Map(); // uid -> voorstel, leegt mee met de mail-cache
 let folderCache = { at: 0, folders: [] };
@@ -365,11 +365,17 @@ async function laadVoorafIn(accountKey, maxRondes) {
       }
       if (!teDoen.length) break;
 
+      // Eerst wachten tot jij niets aan het doen bent. Een mailserver laat maar
+      // een paar verbindingen toe; zonder deze pauze moest jouw klik wachten op
+      // het inladen op de achtergrond.
+      await mailbox.wachtOpRust();
+      if (mailbox.gebruikerBezig()) break;
+
       // In één keer over ÉÉN verbinding. Per mail apart verbinden kost een halve
       // seconde aan aanmelden alleen al — bij duizenden mails is dat uren.
       let bewaard = 0;
       await mailbox.fetchMailBodies(teDoen, "INBOX", (mail) => {
-        mailstore.bewaarBody(accountKey, "INBOX", mail.uid, mail);
+        bewaarInhoud(accountKey, "INBOX", mail.uid, mail, mailstore.getBody(accountKey, "INBOX", mail.uid));
         bewaard++;
       });
       if (!bewaard) break; // lukt het niet, dan stoppen we deze ronde
@@ -685,13 +691,37 @@ app.get("/api/folder-mails", async (req, res) => {
 // mail opende, werd het volledige bericht — inclusief bijlagen — opnieuw van de
 // mailserver gehaald. Vandaar dat openen seconden tot minuten duurde.
 // Nu: eerst kijken of we ze al hebben. Zo ja, dan is het scherm er meteen.
+// LEGE INHOUD IS GEEN INHOUD. Sommige mails stonden bewaard met een lege tekst
+// én lege html (bv. als een bulk-ophaling halverwege afbrak). Die werden daarna
+// eeuwig als "we hebben ze al" teruggegeven en jij zag een leeg scherm. Zoiets
+// wordt nu weggegooid en opnieuw opgehaald.
+function leesbaar(body) {
+  if (!body) return false;
+  if (body.html && String(body.html).trim()) return true;
+  if (body.text && String(body.text).trim()) return true;
+  // Een mail die enkel uit bijlagen bestaat is ook geldig.
+  return Array.isArray(body.attachments) && body.attachments.length > 0;
+}
+
+// Een mail die ECHT leeg is (dat bestaat: enkel een onderwerp) wordt na twee
+// pogingen toch bewaard. Anders zou de server zo'n bericht bij elke ronde
+// opnieuw gaan ophalen en nooit klaar zijn.
+const LEEG_MAX = 2;
+function bewaarInhoud(accountKey, map, uid, body, vorige) {
+  if (!body) return;
+  if (leesbaar(body)) return mailstore.bewaarBody(accountKey, map, uid, body);
+  const pogingen = ((vorige && vorige.leegPogingen) || 0) + 1;
+  mailstore.bewaarBody(accountKey, map, uid, { ...body, leegPogingen: pogingen });
+}
+
 async function haalMailOp(accountKey, uid, folder) {
   const map = folder || "INBOX";
   const bewaard = mailstore.getBody(accountKey, map, uid);
-  if (bewaard) return bewaard;
+  if (leesbaar(bewaard)) return bewaard;
+  if (bewaard && (bewaard.leegPogingen || 0) >= LEEG_MAX) return bewaard;
   const body = await mailbox.fetchMailBody(uid, map === "INBOX" ? undefined : map);
-  if (body) mailstore.bewaarBody(accountKey, map, uid, body);
-  return body;
+  bewaarInhoud(accountKey, map, uid, body, bewaard);
+  return body || bewaard;
 }
 
 app.get("/api/mails/:uid", async (req, res) => {
@@ -1536,10 +1566,6 @@ async function achtergrondRonde() {
       console.error("Mappen binnenhalen mislukt:", e.message);
     }
 
-    // De inhoud van je mails binnenhalen tot ALLES er is. Daarna opent elke
-    // mail meteen, ook een van drie jaar geleden.
-    await laadVoorafIn(accountKeyVoor, 100);
-
     // Dan de achterstand van de AI-beoordeling wegwerken, portie per portie.
     // Dit gebeurt hier, op de achtergrond, en niet terwijl jij op je scherm wacht.
     for (let ronde = 0; ronde < 25; ronde++) {
@@ -1558,6 +1584,12 @@ async function achtergrondRonde() {
       if (ai.getLaatsteFout()) break;
     }
     cache.at = 0;
+
+    // PAS HIERNA de volledige inhoud van elke mail binnenhalen. Dit stond
+    // vroeger VOOR de beoordeling, en dan bleef je dashboard leeg zolang er
+    // duizenden berichten stonden in te laden. Het oordeel is wat je scherm
+    // nodig heeft; de inhoud mag daarna komen.
+    await laadVoorafIn(accountKeyVoor, 100);
 
     // Ook de andere mappen bijhouden — Verzonden, Archief, Prullenmand en je
     // eigen mappen. Zo staat ALLES op de schijf van de server en hoeft er nooit

@@ -93,7 +93,7 @@ function extractJson(text, fallback) {
 }
 
 const CLASSIFY_SYSTEM = `Je bent de AI-assistent van Mailvio, een persoonlijke mailapp voor een zelfstandige dakwerker in Vlaanderen.
-Je krijgt een lijst van recente mails. Beoordeel per mail hoe dringend die is, wie de afzender waarschijnlijk is, en welke actie nodig is — puur op basis van de inhoud (niet op basis van gelezen/ongelezen).
+Je krijgt een lijst van recente mails, elk met het e-mailadres van de afzender ("adres"). Kijk ALTIJD naar dat adres: een bekende naam met een vreemd domein is phishing, en een domein dat je kent bepaalt mee of iets reclame is. Beoordeel per mail hoe dringend die is, wie de afzender waarschijnlijk is, en welke actie nodig is — puur op basis van de inhoud (niet op basis van gelezen/ongelezen).
 
 Gebruik exact een van deze categorieën:
 - "dringend": vraagt vandaag nog een reactie (bv. een klacht, een klant die dringend iets nodig heeft)
@@ -139,9 +139,13 @@ Geen andere tekst.`;
 async function classifyMails(mails) {
   if (!isConfigured() || mails.length === 0) return [];
   const anthropic = client();
+  // HET E-MAILADRES MOET MEE. Zonder adres zag de AI enkel "bpost" staan en niet
+  // dat de mail van no-reply@bpost-tracking.info kwam — precies waaraan je
+  // phishing en nepreclame herkent.
   const input = mails.map((m) => ({
     uid: m.uid,
     van: m.from,
+    adres: m.fromAddress || "",
     onderwerp: m.subject,
     fragment: m.snippet,
   }));
@@ -164,6 +168,13 @@ async function classifyMails(mails) {
   // mails blijven onbeoordeeld en worden straks opnieuw geprobeerd, in kleinere
   // porties. Beter een ronde later beoordeeld dan voorgoed als "onbekend"
   // weggeschreven.
+  // Een LEGE lijst is een geldig antwoord ("hier valt niets over te zeggen").
+  // Die werd vroeger als kapot beschouwd en dan werd dezelfde portie in
+  // steeds kleinere helften opnieuw voorgelegd — acht AI-oproepen voor niets,
+  // telkens opnieuw. Nu wordt enkel een ECHT onleesbaar antwoord gesplitst.
+  if (Array.isArray(uitslag) && !uitslag.length && resp.stop_reason !== "max_tokens") {
+    return [];
+  }
   if (!Array.isArray(uitslag) || !uitslag.length) {
     if (resp.stop_reason === "max_tokens") {
       console.error(`Beoordeling afgekapt bij ${mails.length} mails — probeer het in twee helften.`);
