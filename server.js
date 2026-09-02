@@ -288,9 +288,12 @@ async function beoordeelPortie(accountKey, unclassified) {
     const byUid = Object.fromEntries(
       (Array.isArray(results) ? results : []).filter((c) => c && c.uid !== undefined).map((c) => [c.uid, c])
     );
-    const toStore = forAi.map((m) => ({
+    // Enkel bewaren wat de AI effectief beoordeeld heeft. Kwam een mail niet
+    // terug in het antwoord, dan slaan we ze NIET op als "onbekend" — dan
+    // wordt ze de volgende ronde gewoon opnieuw voorgelegd.
+    const toStore = forAi.filter((m) => byUid[m.uid]).map((m) => ({
       uid: m.uid,
-      categorie: byUid[m.uid]?.categorie || "onbekend",
+      categorie: byUid[m.uid]?.categorie || "geen_actie",
       reden: byUid[m.uid]?.reden || "",
       vanType: byUid[m.uid]?.vanType || "onbekend",
       actieLabel: byUid[m.uid]?.actieLabel || "",
@@ -322,7 +325,13 @@ async function getMails(forceRefresh) {
   // Let op: "categorie" ontbreken is de echte maatstaf voor "nog niet gescand"
   // — een mail kan al een store-record hebben omdat ze al als afgehandeld is
   // gemarkeerd (via setResolved) vóór de AI-classificatie ooit liep.
-  const unclassified = light.filter((m) => !store[m.uid] || store[m.uid].categorie === undefined);
+  // "onbekend" telt NIET als beoordeeld. Zo worden mails die eerder door een
+  // afgekapt AI-antwoord verkeerd als onbekend zijn weggeschreven, alsnog
+  // opnieuw beoordeeld in plaats van voorgoed leeg te blijven.
+  const unclassified = light.filter((m) => {
+    const c = store[m.uid];
+    return !c || c.categorie === undefined || c.categorie === "onbekend";
+  });
 
   // NIET WACHTEN OP DE AI. Vroeger werd hier eerst een portie mails door Claude
   // beoordeeld voordat de server antwoordde — inclusief het ophalen van de
@@ -1389,7 +1398,10 @@ async function achtergrondRonde() {
     for (let ronde = 0; ronde < 25; ronde++) {
       const licht = mailstore.getMails(accountKey0, "INBOX");
       const store = classifications.getAll(accountKey0);
-      const teDoen = licht.filter((m) => !store[m.uid] || store[m.uid].categorie === undefined);
+      const teDoen = licht.filter((m) => {
+        const c = store[m.uid];
+        return !c || c.categorie === undefined || c.categorie === "onbekend";
+      });
       if (!teDoen.length) break;
       await beoordeelPortie(accountKey0, teDoen);
       // Blijft het mislukken (bv. een sleutel die niet aanvaard wordt), dan

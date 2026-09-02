@@ -134,15 +134,40 @@ async function classifyMails(mails) {
     fragment: m.snippet,
   }));
 
+  // RUIMTE GENOEG OM TE ANTWOORDEN. Dit stond op 1536 tokens terwijl er 30 mails
+  // beoordeeld moesten worden. Het antwoord werd dan halverwege afgekapt, de
+  // JSON was stuk, en ELKE mail kwam als "onbekend" binnen — de mailbox leek
+  // beoordeeld maar er stond nergens iets. Reken ruim: ~120 tokens per mail.
   const resp = await anthropic.messages.create({
     model: modelSnel(),
-    max_tokens: 1536,
+    max_tokens: Math.min(16000, Math.max(2000, mails.length * 140)),
     system: CLASSIFY_SYSTEM,
     messages: [{ role: "user", content: JSON.stringify(input) }],
   });
 
   const text = resp.content.map((b) => (b.type === "text" ? b.text : "")).join("");
-  return extractJson(text, []);
+  const uitslag = extractJson(text, null);
+
+  // Toch afgekapt of onleesbaar? Dan liever NIETS teruggeven dan onzin: de
+  // mails blijven onbeoordeeld en worden straks opnieuw geprobeerd, in kleinere
+  // porties. Beter een ronde later beoordeeld dan voorgoed als "onbekend"
+  // weggeschreven.
+  if (!Array.isArray(uitslag) || !uitslag.length) {
+    if (resp.stop_reason === "max_tokens") {
+      console.error(`Beoordeling afgekapt bij ${mails.length} mails — probeer het in twee helften.`);
+    } else {
+      console.error("Beoordeling was niet leesbaar:", text.slice(0, 200));
+    }
+    // In twee helften opnieuw proberen, zolang de portie nog te splitsen valt.
+    if (mails.length > 4) {
+      const helft = Math.ceil(mails.length / 2);
+      const [a, b] = [mails.slice(0, helft), mails.slice(helft)];
+      const [ra, rb] = await Promise.all([classifyMails(a), classifyMails(b)]);
+      return [...(ra || []), ...(rb || [])];
+    }
+    return [];
+  }
+  return uitslag;
 }
 
 function suggestSystem(toon, handtekening) {

@@ -134,6 +134,8 @@
   .opruimRij .reden{font-size:11.5px;color:var(--ink-faint);margin-top:1px}
   .opruimRij .wanneer{flex:0 0 auto;font-size:11.5px;color:var(--ink-faint)}
   .opruimGroep{font-size:11px;text-transform:uppercase;letter-spacing:.05em;font-weight:800;color:var(--ink-faint);margin:22px 0 4px}
+  .meerRijen{padding:16px 6px;font-size:12.5px;color:var(--ink-faint);text-align:center}
+  .meerRijen button{border:1px solid var(--border);background:var(--surface);border-radius:8px;padding:6px 12px;font-family:inherit;font-size:12.5px;font-weight:700;color:var(--accent-ink);cursor:pointer;margin-left:6px}
   .zoekTreffers{display:flex;flex-direction:column;gap:7px;margin-bottom:16px}
   .zoekTreffer{display:flex;align-items:center;gap:12px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 13px}
   .zoekTreffer .info{flex:1 1 auto;min-width:0}
@@ -741,6 +743,8 @@ const state = {
   chatLog: {},      // uid -> [{who,text}] mini-log per mail (AI-panel)
   taken: [],        // je eigen to-dolijst
   inboxZoek: "",    // wat je in de inbox zoekt
+  getoondeRijen: 60,
+  getoondeMapRijen: 60,
   chatAntwoord: "",  // laatste antwoord van de AI op het dashboard
   chatBezig: false,
   opruimen: null,   // mails die weg mogen
@@ -1043,16 +1047,46 @@ function renderFolderView() {
         <h2>${escapeHtml(label)}</h2>
         <div class="listInfo">${mails.length} bericht${mails.length === 1 ? "" : "en"}${state.folderCapped ? " (nieuwste " + (state.envelopeCap || "") + ")" : ""} · map op je mailserver</div>
       </div>
-      <div class="mailList" id="folderList">
-        ${mails.length ? mails.map((m) => mailRowHtml(m, true)).join("") : `<div class="empty">Deze map is leeg.</div>`}
-      </div>
+      <div class="mailList" id="folderList"></div>
     </div>
     </div>
   `;
-  mount.querySelectorAll("[data-open]").forEach((row) => {
+  tekenMapRijen();
+}
+
+// Dezelfde aanpak voor een map van je mailserver: Verzonden heeft duizenden
+// berichten, en die allemaal tegelijk tekenen legt je browser plat.
+function tekenMapRijen(erbij) {
+  const lijstEl = document.getElementById("folderList");
+  if (!lijstEl) return;
+  const mails = state.folderMails || [];
+  if (!erbij) state.getoondeMapRijen = RIJEN_PER_KEER;
+  const tot = Math.min(state.getoondeMapRijen || RIJEN_PER_KEER, mails.length);
+  const stuk = mails.slice(0, tot);
+  lijstEl.innerHTML = stuk.length
+    ? stuk.map((m) => mailRowHtml(m, true)).join("") +
+      (tot < mails.length
+        ? `<div class="meerRijen" id="meerMapRijen">Nog ${mails.length - tot} berichten — scrol verder of <button id="meerMapKnop">toon meer</button></div>`
+        : "")
+    : '<div class="empty">Deze map is leeg.</div>';
+  lijstEl.querySelectorAll("[data-open]").forEach((row) => {
     row.addEventListener("click", () => openMail(Number(row.dataset.open), state.folder));
   });
-  koppelSleepbareMails(mount);
+  koppelSleepbareMails(lijstEl);
+  const meer = document.getElementById("meerMapRijen");
+  if (meer) {
+    const laadMeer = () => {
+      state.getoondeMapRijen = (state.getoondeMapRijen || RIJEN_PER_KEER) + RIJEN_PER_KEER;
+      tekenMapRijen(true);
+    };
+    document.getElementById("meerMapKnop").addEventListener("click", laadMeer);
+    if (window.IntersectionObserver) {
+      const kijker = new IntersectionObserver((items) => {
+        if (items.some((i) => i.isIntersecting)) { kijker.disconnect(); laadMeer(); }
+      }, { rootMargin: "400px" });
+      kijker.observe(meer);
+    }
+  }
 }
 
 async function loadMails(forceRefresh) {
@@ -2517,15 +2551,46 @@ function filterTitel() {
 
 // Tekent enkel de mailrijen opnieuw. Zo blijft alles eromheen — en vooral het
 // zoekveld met je cursor erin — gewoon staan.
-function tekenMailRijen() {
+// HOEVEEL MAILS WE IN ÉÉN KEER TEKENEN.
+// Alle 11.000 rijen tegelijk in de pagina zetten maakt de browser onwerkbaar
+// traag — élke keer opnieuw. We tekenen er een pakket van, en zodra je naar
+// beneden scrollt komt het volgende pakket erbij. Zoeken en filteren gaan nog
+// steeds over je VOLLEDIGE mailbox; enkel het tekenen gebeurt in stukken.
+const RIJEN_PER_KEER = 60;
+
+function tekenMailRijen(erbij) {
   const rijen = document.getElementById("mailRows");
   if (!rijen) return;
   const list = filteredMails();
-  rijen.innerHTML = list.length
-    ? list.map((m) => mailRowHtml(m)).join("")
+  if (!erbij) state.getoondeRijen = RIJEN_PER_KEER;
+  const tot = Math.min(state.getoondeRijen || RIJEN_PER_KEER, list.length);
+  const stuk = list.slice(0, tot);
+
+  rijen.innerHTML = stuk.length
+    ? stuk.map((m) => mailRowHtml(m)).join("") +
+      (tot < list.length
+        ? `<div class="meerRijen" id="meerRijen">Nog ${list.length - tot} mails — scrol verder of <button id="meerKnop">toon meer</button></div>`
+        : "")
     : '<div class="empty">Geen mails in deze weergave.</div>';
+
   rijen.querySelectorAll("[data-open]").forEach((el) => el.addEventListener("click", () => openMail(Number(el.dataset.open))));
   koppelSleepbareMails(rijen);
+
+  const meer = document.getElementById("meerRijen");
+  if (meer) {
+    const laadMeer = () => {
+      state.getoondeRijen = (state.getoondeRijen || RIJEN_PER_KEER) + RIJEN_PER_KEER;
+      tekenMailRijen(true);
+    };
+    document.getElementById("meerKnop").addEventListener("click", laadMeer);
+    // Automatisch bijladen zodra je onderaan komt.
+    if (window.IntersectionObserver) {
+      const kijker = new IntersectionObserver((items) => {
+        if (items.some((i) => i.isIntersecting)) { kijker.disconnect(); laadMeer(); }
+      }, { rootMargin: "400px" });
+      kijker.observe(meer);
+    }
+  }
 }
 
 function renderInbox() {
@@ -2560,7 +2625,6 @@ function renderInbox() {
           </div>
         </div>
         <div id="mailRows">
-          ${list.length ? list.map(mailRowHtml).join("") : '<div class="empty">Geen mails in dit overzicht.</div>'}
         </div>
       </div>
       <aside class="aiPanel">
@@ -2599,8 +2663,7 @@ function renderInbox() {
       btn.textContent = "↻ Ververs";
     }
   });
-  mount.querySelectorAll("[data-open]").forEach((el) => el.addEventListener("click", () => openMail(Number(el.dataset.open))));
-  koppelSleepbareMails(mount);
+  tekenMailRijen();
   mount.querySelectorAll(".tabBtn").forEach((b) => b.addEventListener("click", () => { state.filter = b.dataset.f; renderSidebarCounts(); renderInbox(); }));
   // Bij het typen tekenen we ENKEL de mailijst opnieuw, niet het hele scherm:
   // anders wordt het zoekveld waar je in typt zelf vervangen en ben je je
