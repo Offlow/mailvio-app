@@ -94,6 +94,22 @@ function lees(accountKey, folder) {
 
 function naarSchijf(accountKey, folder, data) {
   try {
+    // NOOIT EEN VOLLE MAILBOX OVERSCHRIJVEN MET NIETS.
+    // Lukt het inlezen van het bestand één keer niet (een half weggeschreven
+    // bestand na een harde herstart bijvoorbeeld), dan begint de app met een
+    // lege lijst — en die zou daarna over je échte, volle bestand geschreven
+    // worden. Duizenden bewaarde mails weg, en alles opnieuw ophalen.
+    // Dus: leeg wegschrijven mag alleen als er ook op schijf niets staat.
+    const leeg = !data || !data.mails || Object.keys(data.mails).length === 0;
+    if (leeg) {
+      try {
+        const bestaand = fs.statSync(bestandVoor(accountKey, folder));
+        if (bestaand.size > 200) {
+          console.error(`Lege maillijst voor ${folder} NIET weggeschreven — het bestaande bestand blijft staan.`);
+          return;
+        }
+      } catch (e) { /* er staat nog niets, dus leeg mag */ }
+    }
     if (!fs.existsSync(CACHE_DIR)) fs.mkdirSync(CACHE_DIR, { recursive: true });
     // Eerst naar een tijdelijk bestand en dan pas op zijn plaats zetten. Zo kan
     // een herstart middenin nooit een half bestand achterlaten.

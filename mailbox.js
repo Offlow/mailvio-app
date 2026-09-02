@@ -81,6 +81,81 @@ async function wachtOpRust(maxMs = 15000) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// ÉÉN VERBINDING, DIE OPEN BLIJFT
+// ---------------------------------------------------------------------------
+// Tot nu meldde Mailvio zich voor ELKE bewerking opnieuw aan bij je mailserver:
+// nieuwe mails ophalen, vlaggen nakijken, een map bijwerken, inhoud inladen —
+// telkens een nieuwe aanmelding. Met tientallen mappen zijn dat honderden
+// aanmeldingen per uur, en dan gaat je provider dichtknijpen: "Command failed".
+// Precies wat er in de logs stond.
+//
+// Nu is er één verbinding die openblijft. Ze wordt opnieuw opgezet als ze
+// wegvalt, en gaat vanzelf dicht als er een tijdje niets gebeurt. Alles loopt
+// toch al netjes één voor één door de wachtrij, dus één verbinding volstaat.
+let verbinding = null;
+let verbindingOp = 0;
+const VERBINDING_MAX_STIL_MS = 4 * 60 * 1000;
+
+async function sluitVerbinding() {
+  const oude = verbinding;
+  verbinding = null;
+  if (!oude) return;
+  try { await oude.logout(); } catch (e) { try { oude.close(); } catch (e2) { /* al weg */ } }
+}
+
+async function haalVerbinding() {
+  if (verbinding && verbinding.usable) {
+    verbindingOp = Date.now();
+    return verbinding;
+  }
+  if (verbinding) await sluitVerbinding();
+  const imap = client();
+  await imap.connect();
+  imap.on("close", () => { if (verbinding === imap) verbinding = null; });
+  verbinding = imap;
+  verbindingOp = Date.now();
+  return imap;
+}
+
+// Alles wat met de mailserver praat, loopt hierdoor. Valt de verbinding weg,
+// dan wordt ze één keer opnieuw opgezet en het werk overgedaan.
+async function metVerbinding(werk) {
+  for (let poging = 0; poging < 2; poging++) {
+    let imap;
+    try {
+      imap = await haalVerbinding();
+      return await werk(imap);
+    } catch (e) {
+      const bericht = leesbareImapFout(e);
+      // Een verbinding die stuk is, gooien we weg en proberen we één keer
+      // opnieuw. Een echte fout (map bestaat niet) niet.
+      const stuk = !imap || !imap.usable || /connection|closed|timeout|socket|ECONN/i.test(bericht);
+      await sluitVerbinding();
+      if (poging === 0 && stuk) continue;
+      throw e;
+    }
+  }
+}
+
+// imapflow zegt bij een geweigerd commando enkel "Command failed". Wat de
+// mailserver er ZELF bij zei, staat in andere velden — en dat is precies wat je
+// nodig hebt om te weten of het aan een limiet, een map of een wachtwoord ligt.
+function leesbareImapFout(e) {
+  if (!e) return "onbekende fout";
+  const delen = [e.message];
+  if (e.responseText && e.responseText !== e.message) delen.push(e.responseText);
+  if (e.serverResponseCode) delen.push(`[${e.serverResponseCode}]`);
+  if (e.response && typeof e.response === "string") delen.push(e.response);
+  if (e.code && e.code !== e.serverResponseCode) delen.push(`(${e.code})`);
+  return delen.filter(Boolean).join(" — ");
+}
+
+// Ligt de verbinding er een tijdje ongebruikt bij, dan sluiten we ze netjes.
+setInterval(() => {
+  if (verbinding && Date.now() - verbindingOp > VERBINDING_MAX_STIL_MS) sluitVerbinding();
+}, 60000).unref?.();
+
 function client(config) {
   const c = config || settings.getConfig();
   const imap = new ImapFlow({
@@ -199,9 +274,7 @@ async function _fetchNieuweMails(folder, sindsUid) {
   if (!isConfigured()) return { configured: false, nieuwe: [], alleUids: [], uidValidity: null };
 
   const box = folder || "INBOX";
-  const imap = client();
-  await imap.connect();
-  try {
+  return metVerbinding(async (imap) => {
     const lock = await imap.getMailboxLock(box);
     try {
       const mailboxInfo = imap.mailbox || {};
@@ -234,9 +307,7 @@ async function _fetchNieuweMails(folder, sindsUid) {
     } finally {
       lock.release();
     }
-  } finally {
-    await imap.logout().catch(() => {});
-  }
+  });
 }
 
 // Haalt een portie OUDERE berichten op — die van vóór wat we al bewaard
@@ -248,9 +319,7 @@ async function fetchOudereMails(folder, onderUid, aantal) {
 
 async function _fetchOudereMails(folder, onderUid, aantal) {
   if (!isConfigured() || !onderUid) return { configured: false, mails: [] };
-  const imap = client();
-  await imap.connect();
-  try {
+  return metVerbinding(async (imap) => {
     const lock = await imap.getMailboxLock(folder || "INBOX");
     try {
       const alleUids = await imap.search({ all: true }, { uid: true });
@@ -274,9 +343,7 @@ async function _fetchOudereMails(folder, onderUid, aantal) {
     } finally {
       lock.release();
     }
-  } finally {
-    await imap.logout().catch(() => {});
-  }
+  });
 }
 
 // Haalt enkel de gelezen/ongelezen-vlaggen op van de recentste berichten, zodat
@@ -288,9 +355,7 @@ async function fetchVlaggen(folder, uids) {
 async function _fetchVlaggen(folder, uids) {
   if (!isConfigured() || !uids || !uids.length) return new Map();
   const out = new Map();
-  const imap = client();
-  await imap.connect();
-  try {
+  return metVerbinding(async (imap) => {
     const lock = await imap.getMailboxLock(folder || "INBOX");
     try {
       for await (const msg of imap.fetch(uids, { flags: true }, { uid: true })) {
@@ -299,9 +364,7 @@ async function _fetchVlaggen(folder, uids) {
     } finally {
       lock.release();
     }
-  } finally {
-    await imap.logout().catch(() => {});
-  }
+  });
   return out;
 }
 
@@ -315,9 +378,7 @@ async function _fetchAllMails(folder) {
   }
 
   const box = folder || "INBOX";
-  const imap = client();
-  await imap.connect();
-  try {
+  return metVerbinding(async (imap) => {
     const lock = await imap.getMailboxLock(box);
     try {
       const status = await imap.status(box, { messages: true });
@@ -347,9 +408,7 @@ async function _fetchAllMails(folder) {
     } finally {
       lock.release();
     }
-  } finally {
-    await imap.logout().catch(() => {});
-  }
+  });
 }
 
 // Haalt voor een specifieke reeks uid's de inhoud op en bouwt er een kort
@@ -367,9 +426,7 @@ async function fetchSnippetsForUids(uids, folder) {
 async function _fetchSnippetsForUids(uids, folder) {
   const out = new Map();
   if (!isConfigured() || !uids || !uids.length) return out;
-  const imap = client();
-  await imap.connect();
-  try {
+  return metVerbinding(async (imap) => {
     const lock = await imap.getMailboxLock(folder || "INBOX");
     try {
       for (const uid of uids) {
@@ -399,9 +456,7 @@ async function _fetchSnippetsForUids(uids, folder) {
     } finally {
       lock.release();
     }
-  } finally {
-    await imap.logout().catch(() => {});
-  }
+  });
   return out;
 }
 
@@ -482,10 +537,8 @@ async function fetchMailBodies(uids, folder, opVoortgang) {
 
 async function _fetchMailBodies(uids, folder, opVoortgang) {
   if (!isConfigured() || !uids.length) return [];
-  const imap = client();
-  await imap.connect();
   const resultaat = [];
-  try {
+  return metVerbinding(async (imap) => {
     const lock = await imap.getMailboxLock(folder || "INBOX");
     try {
       // ALLEEN DE TEKST, NIET DE BIJLAGEN.
@@ -515,10 +568,8 @@ async function _fetchMailBodies(uids, folder, opVoortgang) {
     } finally {
       lock.release();
     }
-  } finally {
-    await imap.logout().catch(() => {});
-  }
-  return resultaat;
+    return resultaat;
+  });
 }
 
 async function fetchMailBody(uid, folder) {
@@ -533,9 +584,7 @@ async function _fetchMailBody(uid, folder) {
   // achtergrond.
   gebruikersWerk++;
   try {
-  const imap = client();
-  await imap.connect();
-  try {
+  return metVerbinding(async (imap) => {
     const lock = await imap.getMailboxLock(folder || "INBOX");
     try {
       const msg = await imap.fetchOne(String(uid), { envelope: true, source: true }, { uid: true });
@@ -579,9 +628,7 @@ async function _fetchMailBody(uid, folder) {
     } finally {
       lock.release();
     }
-  } finally {
-    await imap.logout().catch(() => {});
-  }
+  });
   } finally {
     gebruikersWerk--;
   }
@@ -594,9 +641,7 @@ async function fetchAttachment(uid, index, folder) {
 
 async function _fetchAttachment(uid, index, folder) {
   if (!isConfigured()) throw new Error("De mailbox is nog niet gekoppeld.");
-  const imap = client();
-  await imap.connect();
-  try {
+  return metVerbinding(async (imap) => {
     const lock = await imap.getMailboxLock(folder || "INBOX");
     try {
       const msg = await imap.fetchOne(String(uid), { source: true }, { uid: true });
@@ -613,9 +658,7 @@ async function _fetchAttachment(uid, index, folder) {
     } finally {
       lock.release();
     }
-  } finally {
-    await imap.logout().catch(() => {});
-  }
+  });
 }
 
 // Haalt de echte mappenstructuur van de mailbox op (Inbox, Verzonden,
@@ -690,9 +733,7 @@ async function markeerGelezen(uid, gelezen, folder) {
 
 async function _markeerGelezen(uid, gelezen, folder) {
   if (!isConfigured()) throw new Error("De mailbox is nog niet gekoppeld.");
-  const imap = client();
-  await imap.connect();
-  try {
+  return metVerbinding(async (imap) => {
     const lock = await imap.getMailboxLock(folder || "INBOX");
     try {
       if (gelezen) await imap.messageFlagsAdd(String(uid), ["\\Seen"], { uid: true });
@@ -701,9 +742,7 @@ async function _markeerGelezen(uid, gelezen, folder) {
     } finally {
       lock.release();
     }
-  } finally {
-    await imap.logout().catch(() => {});
-  }
+  });
 }
 
 // Verplaatst een mail naar een andere map (archiveren of naar de prullenmand).
@@ -714,9 +753,7 @@ async function verplaatsMail(uid, doelRol, folder) {
 
 async function _verplaatsMail(uid, doelRol, folder) {
   if (!isConfigured()) throw new Error("De mailbox is nog niet gekoppeld.");
-  const imap = client();
-  await imap.connect();
-  try {
+  return metVerbinding(async (imap) => {
     // Een rol ("archief", "prullenmand") wordt opgezocht; geef je een echte
     // mapnaam mee, dan gaat de mail gewoon daarheen. Zo kan je vanuit het
     // rechtsklikmenu naar élke map op je mailserver verplaatsen.
@@ -736,9 +773,7 @@ async function _verplaatsMail(uid, doelRol, folder) {
     } finally {
       lock.release();
     }
-  } finally {
-    await imap.logout().catch(() => {});
-  }
+  });
 }
 
 // Schrijft een verstuurde mail bij in de map "Verzonden" op de mailserver,
@@ -749,16 +784,12 @@ async function bewaarInVerzonden(raw) {
 
 async function _bewaarInVerzonden(raw) {
   if (!isConfigured() || !raw) return { ok: false };
-  const imap = client();
-  await imap.connect();
-  try {
+  return metVerbinding(async (imap) => {
     const doel = await vindMapMetRol(imap, "verzonden");
     if (!doel) return { ok: false, reden: "geen map Verzonden gevonden" };
     await imap.append(doel, raw, ["\\Seen"]);
     return { ok: true, map: doel };
-  } finally {
-    await imap.logout().catch(() => {});
-  }
+  });
 }
 
 // Bewaart een onafgewerkte mail als concept op de mailserver, zodat je er
@@ -769,16 +800,12 @@ async function bewaarConcept(raw) {
 
 async function _bewaarConcept(raw) {
   if (!isConfigured() || !raw) return { ok: false };
-  const imap = client();
-  await imap.connect();
-  try {
+  return metVerbinding(async (imap) => {
     const doel = await vindMapMetRol(imap, "concepten");
     if (!doel) return { ok: false, reden: "geen map Concepten gevonden" };
     await imap.append(doel, raw, ["\\Draft", "\\Seen"]);
     return { ok: true, map: doel };
-  } finally {
-    await imap.logout().catch(() => {});
-  }
+  });
 }
 
 async function listFolders() {
@@ -787,9 +814,7 @@ async function listFolders() {
 
 async function _listFolders() {
   if (!isConfigured()) return { configured: false, folders: [] };
-  const imap = client();
-  await imap.connect();
-  try {
+  return metVerbinding(async (imap) => {
     const lijst = await imap.list();
     const folders = [];
     for (const f of lijst) {
@@ -841,9 +866,7 @@ async function _listFolders() {
     }
 
     return { configured: true, folders };
-  } finally {
-    await imap.logout().catch(() => {});
-  }
+  });
 }
 
 async function parseAndBuild(msg) {
@@ -877,9 +900,9 @@ async function _searchMails(query, limit = 30, alleMappen = true, config) {
   if (!config && !isConfigured()) return { configured: false, mails: [] };
   const q = (query || "").trim();
   if (!q) return { configured: true, mails: [] };
-  const imap = client(config);
-  await imap.connect();
-  try {
+  // Bij een test met andere instellingen (het koppelscherm) gebruiken we een
+  // aparte, tijdelijke verbinding; anders die ene die openblijft.
+  const werk = async (imap) => {
     let paden = ["INBOX"];
     if (alleMappen) {
       try {
@@ -958,8 +981,14 @@ async function _searchMails(query, limit = 30, alleMappen = true, config) {
     }
 
     return { configured: true, mails: resultaat, mappen: paden.length };
+  };
+  if (!config) return metVerbinding(werk);
+  const tijdelijk = client(config);
+  await tijdelijk.connect();
+  try {
+    return await werk(tijdelijk);
   } finally {
-    await imap.logout().catch(() => {});
+    await tijdelijk.logout().catch(() => {});
   }
 }
 
@@ -970,9 +999,7 @@ async function fetchMailsFromAddress(address, limit = 30) {
 async function _fetchMailsFromAddress(address, limit = 30) {
   if (!isConfigured()) return { configured: false, mails: [] };
   if (!address) return { configured: true, mails: [] };
-  const imap = client();
-  await imap.connect();
-  try {
+  return metVerbinding(async (imap) => {
     const lock = await imap.getMailboxLock("INBOX");
     try {
       const uids = await imap.search({ from: address }, { uid: true });
@@ -987,9 +1014,7 @@ async function _fetchMailsFromAddress(address, limit = 30) {
     } finally {
       lock.release();
     }
-  } finally {
-    await imap.logout().catch(() => {});
-  }
+  });
 }
 
 const SENT_FOLDER_CANDIDATES = [
@@ -1018,9 +1043,7 @@ async function fetchFollowUps() {
 
 async function _fetchFollowUps() {
   if (!isConfigured()) return { configured: false, supported: false, items: [] };
-  const imap = client();
-  await imap.connect();
-  try {
+  return metVerbinding(async (imap) => {
     let sentPath;
     try {
       sentPath = await findSentFolderPath(imap);
@@ -1079,9 +1102,7 @@ async function _fetchFollowUps() {
       if (!m.replied) items.push(m);
     }
     return { configured: true, supported: true, items };
-  } finally {
-    await imap.logout().catch(() => {});
-  }
+  });
 }
 
 // Zoekt in ALLE gekoppelde mailboxen tegelijk. Handig als je bv. een factuur
@@ -1104,6 +1125,7 @@ async function searchAlleMailboxen(query, limitPerBox = 15) {
 }
 
 module.exports = {
+  leesbareImapFout,
   gebruikerBezig,
   metVoorrang,
   wachtOpRust,

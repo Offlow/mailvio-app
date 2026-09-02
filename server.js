@@ -281,12 +281,29 @@ async function getLightMails(forceRefresh) {
     mails = await syncMap(accountKey, "INBOX");
   } catch (e) {
     // Server even niet bereikbaar? Dan tonen we gewoon wat we al hebben.
-    console.error("Nieuwe mails ophalen mislukt, bewaarde mails worden getoond:", e.message);
+    console.error("Nieuwe mails ophalen mislukt, bewaarde mails worden getoond:", mailbox.leesbareImapFout(e));
     if (!mails.length) return { configured: true, mails: [], total: 0, capped: false };
   }
 
   envelopeCache = { at: Date.now(), mails, total: mails.length, capped: false };
   return { configured: true, mails, total: mails.length, capped: false };
+}
+
+// WELKE MAPPEN HALEN WE OP DE ACHTERGROND BINNEN?
+// Niet meer allemaal. Je mailbox heeft tientallen eigen mappen (per leverancier
+// bijvoorbeeld). Die allemaal, elke ronde, volledig binnenhalen betekent
+// honderden opdrachten naar je mailserver per uur — en daar knijpt je provider
+// op dicht ("Command failed"). We doen dus alleen de mappen die er echt toe
+// doen: je inbox en de standaardmappen. Een eigen map wordt binnengehaald op
+// het moment dat jij ze opent, en blijft daarna gewoon bewaard.
+const ACHTERGROND_ROLLEN = ["verzonden", "concepten", "archief", "prullenmand", "spam"];
+function mappenVoorAchtergrond(mappen) {
+  return (mappen || []).filter((f) => {
+    if (!f.path || f.path.toUpperCase() === "INBOX") return false;
+    if (ACHTERGROND_ROLLEN.includes(f.rol)) return true;
+    // Een eigen map die we al eens opgehaald hebben, houden we wel bij.
+    return mailstore.isVolledig(settingsStore.getConfig().imapUser || "default", f.path);
+  });
 }
 
 // Beoordeelt een portie nog niet gescande mails met de AI. Draait op de
@@ -1731,7 +1748,7 @@ async function achtergrondRonde() {
     try {
       await syncMap(accountKeyVoor, "INBOX", { totVolledig: true });
     } catch (e) {
-      console.error("Inbox volledig binnenhalen mislukt:", e.message);
+      console.error("Inbox volledig binnenhalen mislukt:", mailbox.leesbareImapFout(e));
     }
     cache.at = 0;
     envelopeCache = { at: 0, mails: [], total: 0, capped: false };
@@ -1744,20 +1761,20 @@ async function achtergrondRonde() {
     try {
       const mappen0 = folderCache.folders.length ? folderCache.folders : ((await mailbox.listFolders()).folders || []);
       if (mappen0.length) folderCache = { at: Date.now(), folders: mappen0 };
-      for (const f of mappen0) {
+      for (const f of mappenVoorAchtergrond(mappen0)) {
         if (!f.path || f.path.toUpperCase() === "INBOX") continue;
         if (mapBezig.has(f.path)) continue;
         mapBezig.add(f.path);
         try {
           await syncMap(accountKeyVoor, f.path, { totVolledig: true });
         } catch (e) {
-          console.error(`Map ${f.path} binnenhalen mislukt:`, e.message);
+          console.error(`Map ${f.path} binnenhalen mislukt:`, mailbox.leesbareImapFout(e));
         } finally {
           mapBezig.delete(f.path);
         }
       }
     } catch (e) {
-      console.error("Mappen binnenhalen mislukt:", e.message);
+      console.error("Mappen binnenhalen mislukt:", mailbox.leesbareImapFout(e));
     }
 
     // Dan de achterstand van de AI-beoordeling wegwerken, portie per portie.
@@ -1799,20 +1816,20 @@ async function achtergrondRonde() {
       // eens mislukte — en dan verdwenen Verzonden, Archief en Prullenmand
       // gewoon uit je zijbalk.
       if (mappen.length) folderCache = { at: Date.now(), folders: mappen };
-      for (const f of mappen) {
+      for (const f of mappenVoorAchtergrond(mappen)) {
         if (!f.path || f.path.toUpperCase() === "INBOX") continue;
         if (mapBezig.has(f.path)) continue;
         mapBezig.add(f.path);
         try {
           await syncMap(accountKey, f.path, { totVolledig: true });
         } catch (e) {
-          console.error(`Map ${f.path} bijwerken mislukt:`, e.message);
+          console.error(`Map ${f.path} bijwerken mislukt:`, mailbox.leesbareImapFout(e));
         } finally {
           mapBezig.delete(f.path);
         }
       }
     } catch (e) {
-      console.error("Mappen bijwerken mislukt:", e.message);
+      console.error("Mappen bijwerken mislukt:", mailbox.leesbareImapFout(e));
     }
   } catch (e) {
     console.error("Achtergrondronde mislukt (wordt straks opnieuw geprobeerd):", e.message);
