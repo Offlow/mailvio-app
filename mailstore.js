@@ -31,27 +31,94 @@ function bestandVoor(accountKey, folder) {
   return path.join(CACHE_DIR, `${veiligeNaam(accountKey)}__${veiligeNaam(folder)}.json`);
 }
 
-function lees(accountKey, folder) {
-  try {
-    return JSON.parse(fs.readFileSync(bestandVoor(accountKey, folder), "utf8"));
-  } catch (e) {
-    return { uidValidity: null, mails: {}, bodies: {}, bijgewerkt: 0 };
-  }
+// ---------------------------------------------------------------------------
+// DE MAILS BLIJVEN IN HET GEHEUGEN STAAN.
+// ---------------------------------------------------------------------------
+// Dit was DE reden dat alles zo traag aanvoelde. Elke keer als er iets van de
+// mails nodig was — en dat gebeurt tientallen keren per aanvraag — werd het
+// volledige bestand van schijf gelezen en ontleed. Bij 9000 mails is dat
+// megabytes, en zolang dat bezig is staat de HELE server stil: geen enkele
+// andere klik krijgt antwoord. Op de live server maten we zo 16,5 seconden
+// voor een aanvraag die niets voorstelt.
+//
+// Nu staat elke map één keer in het geheugen. Lezen kost niets meer.
+// Wegschrijven gebeurt vanaf nu ACHTER JE RUG, en hoogstens één keer per
+// seconde per map — dus ook schrijven laat je nooit meer wachten.
+const geheugen = new Map();          // "account__map" -> gegevens
+const nogTeSchrijven = new Map();    // "account__map" -> timer
+
+function sleutelVan(accountKey, folder) {
+  return `${veiligeNaam(accountKey)}__${veiligeNaam(folder)}`;
 }
 
-function schrijf(accountKey, folder, data) {
+function lees(accountKey, folder) {
+  const sleutel = sleutelVan(accountKey, folder);
+  const bestaand = geheugen.get(sleutel);
+  if (bestaand) return bestaand;
+  let data;
+  try {
+    data = JSON.parse(fs.readFileSync(bestandVoor(accountKey, folder), "utf8"));
+  } catch (e) {
+    data = { uidValidity: null, mails: {}, bodies: {}, bijgewerkt: 0 };
+  }
+  geheugen.set(sleutel, data);
+  return data;
+}
+
+function naarSchijf(accountKey, folder, data) {
   try {
     if (!fs.existsSync(CACHE_DIR)) fs.mkdirSync(CACHE_DIR, { recursive: true });
-    fs.writeFileSync(bestandVoor(accountKey, folder), JSON.stringify(data), "utf8");
+    // Eerst naar een tijdelijk bestand en dan pas op zijn plaats zetten. Zo kan
+    // een herstart middenin nooit een half bestand achterlaten.
+    const doel = bestandVoor(accountKey, folder);
+    const tijdelijk = doel + ".tmp";
+    fs.writeFileSync(tijdelijk, JSON.stringify(data), "utf8");
+    fs.renameSync(tijdelijk, doel);
   } catch (e) {
     console.error("Kon de mailcache niet wegschrijven:", e.message);
   }
 }
 
+function schrijf(accountKey, folder, data) {
+  const sleutel = sleutelVan(accountKey, folder);
+  geheugen.set(sleutel, data);
+  if (nogTeSchrijven.has(sleutel)) return; // er komt al een schrijfbeurt aan
+  const timer = setTimeout(() => {
+    nogTeSchrijven.delete(sleutel);
+    naarSchijf(accountKey, folder, geheugen.get(sleutel) || data);
+  }, 1000);
+  if (timer.unref) timer.unref(); // mag het afsluiten van de app niet tegenhouden
+  nogTeSchrijven.set(sleutel, { timer, accountKey, folder });
+}
+
+// Alles wat nog in de wacht staat meteen wegschrijven. Gebeurt bij het
+// afsluiten, zodat een herstart nooit de laatste seconde kwijtspeelt.
+function flush() {
+  for (const [sleutel, info] of [...nogTeSchrijven]) {
+    clearTimeout(info.timer);
+    nogTeSchrijven.delete(sleutel);
+    const data = geheugen.get(sleutel);
+    if (data) naarSchijf(info.accountKey, info.folder, data);
+  }
+}
+for (const sein of ["exit", "SIGINT", "SIGTERM"]) {
+  process.on(sein, () => {
+    flush();
+    if (sein !== "exit") process.exit(0);
+  });
+}
+
 // Alle bewaarde mails van een map, nieuwste eerst.
+// De gesorteerde lijst wordt onthouden: bij 9000 mails opnieuw sorteren bij elke
+// opvraging is verspilde tijd, en er wordt véél vaker opgevraagd dan gewijzigd.
 function getMails(accountKey, folder) {
   const data = lees(accountKey, folder);
-  return Object.values(data.mails || {}).sort((a, b) => new Date(b.date) - new Date(a.date));
+  if (data._gesorteerd && data._gesorteerdOp === data.bijgewerkt) return data._gesorteerd;
+  const lijst = Object.values(data.mails || {}).sort((a, b) => new Date(b.date) - new Date(a.date));
+  // Niet-opsombaar, zodat deze hulplijst nooit mee naar schijf geschreven wordt.
+  Object.defineProperty(data, "_gesorteerd", { value: lijst, writable: true, configurable: true, enumerable: false });
+  Object.defineProperty(data, "_gesorteerdOp", { value: data.bijgewerkt, writable: true, configurable: true, enumerable: false });
+  return lijst;
 }
 
 function getUidValidity(accountKey, folder) {
@@ -102,6 +169,7 @@ function werkBij(accountKey, folder, uid, velden) {
   const data = lees(accountKey, folder);
   if (!data.mails[uid]) return;
   data.mails[uid] = { ...data.mails[uid], ...velden };
+  data.bijgewerkt = Date.now();
   schrijf(accountKey, folder, data);
 }
 
@@ -118,7 +186,7 @@ function verwijderOntbrekende(accountKey, folder, bestaandeUids) {
       gewijzigd = true;
     }
   }
-  if (gewijzigd) schrijf(accountKey, folder, data);
+  if (gewijzigd) { data.bijgewerkt = Date.now(); schrijf(accountKey, folder, data); }
   return gewijzigd;
 }
 
@@ -127,6 +195,7 @@ function verwijderMail(accountKey, folder, uid) {
   delete data.mails[uid];
   delete data.bodies[uid];
   try { fs.unlinkSync(inhoudBestand(accountKey, folder, uid)); } catch (e) { /* niet bewaard */ }
+  data.bijgewerkt = Date.now();
   schrijf(accountKey, folder, data);
 }
 
@@ -146,19 +215,41 @@ function inhoudBestand(accountKey, folder, uid) {
   return path.join(INHOUD_DIR, `${veiligeNaam(accountKey)}__${veiligeNaam(folder)}__${veiligeNaam(String(uid))}.json`);
 }
 
+// De inhoud van pas opgehaalde mails staat eerst in het geheugen en gaat daarna
+// rustig naar schijf. Zo hoeft er nooit gewacht te worden op de schijf: bij het
+// vooraf inladen van duizenden mails werden dat evenveel schrijfbeurten na
+// elkaar, en daar stond de app seconden voor stil.
+const versGeheugen = new Map();      // bestandspad -> inhoud
+const MAX_VERS = 300;
+
 function bewaarBody(accountKey, folder, uid, body) {
-  try {
-    if (!fs.existsSync(INHOUD_DIR)) fs.mkdirSync(INHOUD_DIR, { recursive: true });
-    fs.writeFileSync(inhoudBestand(accountKey, folder, uid), JSON.stringify({ ...body, bewaardOp: Date.now() }), "utf8");
-  } catch (e) {
-    console.error("Mailinhoud bewaren mislukt:", e.message);
+  const pad = inhoudBestand(accountKey, folder, uid);
+  const inhoud = { ...body, bewaardOp: Date.now() };
+  versGeheugen.set(pad, inhoud);
+  // Het geheugen niet laten vollopen: enkel de laatst bewaarde blijven hangen,
+  // de rest staat dan toch al op schijf.
+  if (versGeheugen.size > MAX_VERS) {
+    const oudste = versGeheugen.keys().next().value;
+    versGeheugen.delete(oudste);
   }
+  (async () => {
+    try {
+      if (!fs.existsSync(INHOUD_DIR)) await fs.promises.mkdir(INHOUD_DIR, { recursive: true });
+      await fs.promises.writeFile(pad, JSON.stringify(inhoud), "utf8");
+    } catch (e) {
+      console.error("Mailinhoud bewaren mislukt:", e.message);
+    }
+  })();
   ruimInhoudOp(accountKey);
 }
 
 function getBody(accountKey, folder, uid) {
+  const pad = inhoudBestand(accountKey, folder, uid);
+  // Net bewaard? Dan hoeft de schijf er niet aan te pas te komen.
+  const vers = versGeheugen.get(pad);
+  if (vers) return vers;
   try {
-    return JSON.parse(fs.readFileSync(inhoudBestand(accountKey, folder, uid), "utf8"));
+    return JSON.parse(fs.readFileSync(pad, "utf8"));
   } catch (e) {
     return null;
   }
@@ -167,27 +258,47 @@ function getBody(accountKey, folder, uid) {
 // Niet oneindig laten aangroeien: de oudst bewaarde inhoud valt weg zodra we
 // boven de grens komen. De mail zelf blijft gewoon in je mailbox staan; enkel
 // de bewaarde kopie verdwijnt en wordt bij het openen opnieuw gehaald.
+// DIT WAS EEN TWEEDE OORZAAK VAN DE HAPERINGEN.
+// Deze opruiming vroeg van ELK bewaard bericht apart de datum op — bij 9000
+// mails zijn dat 9000 schijfvragen na elkaar, en de server stond daar ruim vier
+// seconden voor stil. Elke minuut opnieuw. En dat terwijl er meestal niets op
+// te ruimen valt.
+// Nu: eerst gewoon TELLEN (één schijfvraag). Zit je onder de grens — en dat is
+// bijna altijd — dan gebeurt er verder niets. Moet er toch opgeruimd worden,
+// dan gebeurt dat achter je rug, in kleine stukjes, zodat de app ondertussen
+// gewoon blijft antwoorden.
 let laatsteOpruim = 0;
+let opruimBezig = false;
 function ruimInhoudOp(accountKey) {
-  // Hoogstens één keer per minuut, anders kost het opruimen zelf tijd.
-  if (Date.now() - laatsteOpruim < 60000) return;
+  // Hoogstens één keer per uur: opruimen heeft geen haast.
+  if (Date.now() - laatsteOpruim < 3600000) return;
+  if (opruimBezig) return;
   laatsteOpruim = Date.now();
-  try {
-    const voorvoegsel = veiligeNaam(accountKey) + "__";
-    const bestanden = fs.readdirSync(INHOUD_DIR)
-      .filter((n) => n.startsWith(voorvoegsel))
-      .map((n) => {
-        const pad = path.join(INHOUD_DIR, n);
+  opruimBezig = true;
+  (async () => {
+    try {
+      const voorvoegsel = veiligeNaam(accountKey) + "__";
+      const namen = (await fs.promises.readdir(INHOUD_DIR)).filter((n) => n.startsWith(voorvoegsel));
+      if (namen.length <= MAX_BEWAARDE_BERICHTEN) return;
+
+      const bestanden = [];
+      for (let i = 0; i < namen.length; i++) {
+        const pad = path.join(INHOUD_DIR, namen[i]);
         let tijd = 0;
-        try { tijd = fs.statSync(pad).mtimeMs; } catch (e) { /* weg is weg */ }
-        return { pad, tijd };
-      });
-    if (bestanden.length <= MAX_BEWAARDE_BERICHTEN) return;
-    bestanden.sort((a, b) => a.tijd - b.tijd);
-    for (const b of bestanden.slice(0, bestanden.length - MAX_BEWAARDE_BERICHTEN)) {
-      try { fs.unlinkSync(b.pad); } catch (e) { /* al weg */ }
-    }
-  } catch (e) { /* map bestaat nog niet */ }
+        try { tijd = (await fs.promises.stat(pad)).mtimeMs; } catch (e) { /* weg is weg */ }
+        bestanden.push({ pad, tijd });
+        // Om de honderd even de app laten ademen.
+        if (i % 100 === 99) await new Promise((r) => setImmediate(r));
+      }
+      bestanden.sort((a, b) => a.tijd - b.tijd);
+      const teveel = bestanden.slice(0, bestanden.length - MAX_BEWAARDE_BERICHTEN);
+      for (let i = 0; i < teveel.length; i++) {
+        try { await fs.promises.unlink(teveel[i].pad); } catch (e) { /* al weg */ }
+        if (i % 100 === 99) await new Promise((r) => setImmediate(r));
+      }
+    } catch (e) { /* map bestaat nog niet */ }
+    finally { opruimBezig = false; }
+  })();
 }
 
 // Alles van een map weggooien — bij een uidValidity-wissel of als de
@@ -221,6 +332,7 @@ function getMappen(accountKey) {
 }
 
 module.exports = {
+  flush,
   getMappen,
   getMails,
   getUidValidity,

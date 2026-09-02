@@ -380,6 +380,10 @@ async function laadVoorafIn(accountKey, maxRondes) {
       });
       if (!bewaard) break; // lukt het niet, dan stoppen we deze ronde
       console.log(`${bewaard} mails ingeladen (portie ${i + 1}).`);
+      // Even de app laten ademen tussen twee porties. Zonder deze adempauze
+      // draait het inladen honderd porties na elkaar af zonder ooit een klik
+      // van jou te behandelen.
+      await new Promise((r) => setImmediate(r));
     }
   } catch (e) {
     console.error("Vooraf inladen mislukt:", e.message);

@@ -7,18 +7,50 @@ const path = require("path");
 
 const STORE_FILE = path.join(__dirname, "data", "classifications.json");
 
+// DE BEOORDELINGEN BLIJVEN IN HET GEHEUGEN STAAN.
+// Net als bij de mails werd dit bestand bij ELKE opvraging opnieuw van schijf
+// gelezen en ontleed — en dat gebeurt tientallen keren per aanvraag. Zolang dat
+// bezig is staat de hele server stil. Nu wordt het één keer gelezen; het
+// wegschrijven gebeurt achter je rug, hoogstens één keer per seconde.
+let _store = null;
+let _schrijfTimer = null;
+
 function readStore() {
+  if (_store) return _store;
   try {
-    return JSON.parse(fs.readFileSync(STORE_FILE, "utf8"));
+    _store = JSON.parse(fs.readFileSync(STORE_FILE, "utf8"));
   } catch (e) {
-    return {};
+    _store = {};
+  }
+  return _store;
+}
+
+function naarSchijf() {
+  try {
+    const dir = path.dirname(STORE_FILE);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    // Via een tijdelijk bestand, zodat een herstart middenin nooit een half
+    // bestand achterlaat en al je beoordelingen weg zijn.
+    fs.writeFileSync(STORE_FILE + ".tmp", JSON.stringify(_store || {}), "utf8");
+    fs.renameSync(STORE_FILE + ".tmp", STORE_FILE);
+  } catch (e) {
+    console.error("Kon de beoordelingen niet wegschrijven:", e.message);
   }
 }
 
 function writeStore(store) {
-  const dir = path.dirname(STORE_FILE);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(STORE_FILE, JSON.stringify(store), "utf8");
+  _store = store;
+  if (_schrijfTimer) return;
+  _schrijfTimer = setTimeout(() => { _schrijfTimer = null; naarSchijf(); }, 1000);
+  if (_schrijfTimer.unref) _schrijfTimer.unref();
+}
+
+function flush() {
+  if (_schrijfTimer) { clearTimeout(_schrijfTimer); _schrijfTimer = null; }
+  if (_store) naarSchijf();
+}
+for (const sein of ["exit", "SIGINT", "SIGTERM"]) {
+  process.on(sein, () => { flush(); if (sein !== "exit") process.exit(0); });
 }
 
 // Alles wordt genest onder de accountsleutel (het IMAP-mailadres) zodat een
@@ -126,4 +158,4 @@ function telPoging(accountKey, uids) {
   writeStore(store);
 }
 
-module.exports = { getAll, setMany, setResolved, setGenegeerd, wisBeoordelingen, telPoging };
+module.exports = { flush, getAll, setMany, setResolved, setGenegeerd, wisBeoordelingen, telPoging };
