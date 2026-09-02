@@ -158,7 +158,10 @@ function onthoudVerbindingsFout(e) {
     soort = "bereikbaar";
     uitleg = "Je mailserver is niet bereikbaar. Kijk het adres na bij Instellingen.";
   }
-  laatsteVerbindingsFout = { soort, uitleg, technisch: tekst, op: Date.now() };
+  // MET TWEE MAILBOXEN MOET JE WETEN WELKE. Anders zoek je in de verkeerde.
+  const c = settings.getConfig();
+  const mailbox = c.imapUser || "";
+  laatsteVerbindingsFout = { soort, uitleg, technisch: tekst, mailbox, op: Date.now() };
 }
 function getVerbindingsFout() {
   return laatsteVerbindingsFout;
@@ -1153,8 +1156,31 @@ async function searchAlleMailboxen(query, limitPerBox = 15) {
   return { configured: true, mails: resultaten };
 }
 
+// Even proberen aan te melden bij je mailserver en meteen zeggen of het lukt.
+// Zo hoef je na het invullen van een wachtwoord niet te gokken.
+async function testAanmelden(config) {
+  const c = config || settings.getConfig();
+  if (!c.imapHost || !c.imapUser || !c.imapPassword) {
+    return { ok: false, uitleg: "Vul eerst de server, je e-mailadres en je wachtwoord in." };
+  }
+  const imap = client(c);
+  try {
+    await imap.connect();
+    const lijst = await imap.list().catch(() => []);
+    await imap.logout().catch(() => {});
+    wisVerbindingsFout();
+    return { ok: true, uitleg: `Aanmelden gelukt. ${lijst.length} mappen gevonden.`, mappen: lijst.length };
+  } catch (e) {
+    try { await imap.logout(); } catch (e2) { try { imap.close(); } catch (e3) { /* al weg */ } }
+    onthoudVerbindingsFout(e);
+    const f = getVerbindingsFout();
+    return { ok: false, uitleg: (f && f.uitleg) || leesbareImapFout(e), technisch: leesbareImapFout(e) };
+  }
+}
+
 module.exports = {
   leesbareImapFout,
+  testAanmelden,
   getVerbindingsFout,
   wisVerbindingsFout,
   gebruikerBezig,

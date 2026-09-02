@@ -658,6 +658,8 @@
       <div class="fieldRow"><label for="setHost">Server</label><input id="setHost" type="text" placeholder="imap.mailprotect.be" autocomplete="off"></div>
       <div class="fieldRow"><label for="setPort">Poort</label><input id="setPort" type="text" placeholder="993" autocomplete="off"></div>
       <div class="fieldRow"><label for="setPassword">Wachtwoord</label><input id="setPassword" type="password" placeholder="" autocomplete="off"></div>
+      <p class="hint" style="margin:-2px 0 8px">Dit is het wachtwoord van je mailbox bij je provider — niet het wachtwoord waarmee je in Mailvio aanmeldt. Sommige providers vragen hiervoor een apart "app-wachtwoord".</p>
+      <div class="fieldRow"><label></label><div><button class="btn btn-ghost" id="mailTestKnop" type="button">Verbinding testen</button> <span id="mailTestUitslag" style="font-size:12.5px"></span></div></div>
     </div>
 
     <div class="sectionLabel">Uitgaande server (SMTP)</div>
@@ -1319,7 +1321,8 @@ function renderBanner() {
   // wachtwoord weigerde — en dan zit je te zoeken waarom er niets binnenkomt.
   if (s.mailFout && s.imapConfigured) {
     rood = true;
-    html = `<b>Je mailbox is niet bereikbaar.</b> ${escapeHtml(s.mailFout.uitleg)} <a id="bnrLink">Naar instellingen</a>.`;
+    const welke = s.mailFout.mailbox ? ` (${escapeHtml(s.mailFout.mailbox)})` : "";
+    html = `<b>Je mailbox${welke} is niet bereikbaar.</b> ${escapeHtml(s.mailFout.uitleg)} <a id="bnrLink">Naar instellingen</a>.`;
   } else if (!s.imapConfigured) {
     html = 'De mailbox is nog niet gekoppeld. <a id="bnrLink">Vul je mailgegevens in</a>.';
   } else if (!s.smtpConfigured) {
@@ -4830,6 +4833,38 @@ function toonHandtekeningVoorbeeld() {
     ? "Wordt als opgemaakte handtekening verstuurd (met platte tekst als terugval)."
     : "Wordt als gewone tekst onderaan je mail gezet.";
 }
+
+// Even proberen aan te melden bij je mailserver, met wat er NU in het scherm
+// staat. Zo weet je meteen of je wachtwoord aanvaard wordt, in plaats van te
+// moeten opslaan en dan af te wachten of er iets binnenkomt.
+const mailTestKnop = document.getElementById("mailTestKnop");
+if (mailTestKnop) mailTestKnop.addEventListener("click", async () => {
+  const uitslag = document.getElementById("mailTestUitslag");
+  mailTestKnop.disabled = true;
+  uitslag.textContent = "Bezig met aanmelden...";
+  uitslag.style.color = "var(--ink-faint)";
+  try {
+    const res = await fetch("/api/mail/test", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        imapHost: document.getElementById("setHost").value,
+        imapPort: document.getElementById("setPort").value,
+        imapUser: document.getElementById("setEmail").value,
+        imapPassword: document.getElementById("setPassword").value,
+      }),
+    });
+    const data = await res.json();
+    uitslag.textContent = (data.ok ? "✓ " : "✗ ") + (data.uitleg || "");
+    uitslag.style.color = data.ok ? "var(--green, #1e7f4f)" : "#b3261e";
+    if (data.ok) loadStatus();
+  } catch (e) {
+    uitslag.textContent = "✗ De test lukte niet: " + e.message;
+    uitslag.style.color = "#b3261e";
+  } finally {
+    mailTestKnop.disabled = false;
+  }
+});
 
 document.getElementById("zijbalkNieuweMail").addEventListener("click", () => openCompose());
 

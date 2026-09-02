@@ -711,6 +711,26 @@ app.get("/api/status", (req, res) => {
   });
 });
 
+// Test of je mailgegevens aanvaard worden. Kan met de bewaarde instellingen, of
+// met wat je op dat moment in het scherm hebt staan — zodat je een nieuw
+// wachtwoord kan uitproberen zonder het eerst te moeten opslaan.
+app.post("/api/mail/test", async (req, res) => {
+  try {
+    const b = req.body || {};
+    const huidig = settingsStore.getConfig();
+    const proef = {
+      imapHost: b.imapHost || huidig.imapHost,
+      imapPort: b.imapPort || huidig.imapPort,
+      imapUser: b.imapUser || huidig.imapUser,
+      imapPassword: (b.imapPassword && b.imapPassword.trim()) ? b.imapPassword.trim() : huidig.imapPassword,
+    };
+    const uitslag = await mailbox.testAanmelden(proef);
+    res.json(uitslag);
+  } catch (e) {
+    res.status(500).json({ ok: false, uitleg: "De test kon niet uitgevoerd worden: " + e.message });
+  }
+});
+
 app.get("/api/settings", (req, res) => {
   res.json(settingsStore.getPublicConfig());
 });
