@@ -143,7 +143,10 @@ async function metVerbinding(werk) {
 // DE LAATSTE FOUT VAN JE MAILSERVER ONTHOUDEN.
 // Weigert je mailserver het wachtwoord, dan bleef Mailvio gewoon leeg staan
 // zonder te zeggen waarom. Nu wordt de fout bewaard en op je scherm getoond.
-let laatsteVerbindingsFout = null;
+// PER MAILBOX APART. Je hebt twee mailboxen; weigert er één, dan mag de melding
+// niet over allebei gaan. Vroeger stond er één fout voor alles, en dan leek ook
+// de werkende mailbox stuk.
+const foutPerMailbox = new Map();
 function onthoudVerbindingsFout(e) {
   const tekst = leesbareImapFout(e);
   let uitleg = tekst;
@@ -161,13 +164,21 @@ function onthoudVerbindingsFout(e) {
   // MET TWEE MAILBOXEN MOET JE WETEN WELKE. Anders zoek je in de verkeerde.
   const c = settings.getConfig();
   const mailbox = c.imapUser || "";
-  laatsteVerbindingsFout = { soort, uitleg, technisch: tekst, mailbox, op: Date.now() };
+  foutPerMailbox.set(mailbox, { soort, uitleg, technisch: tekst, mailbox, op: Date.now() });
 }
-function getVerbindingsFout() {
-  return laatsteVerbindingsFout;
+// De klacht over de mailbox die je NU bekijkt.
+function getVerbindingsFout(welke) {
+  const naam = welke || settings.getConfig().imapUser || "";
+  return foutPerMailbox.get(naam) || null;
 }
-function wisVerbindingsFout() {
-  laatsteVerbindingsFout = null;
+// Alle klachten, zodat het scherm kan tonen dat één van je twee mailboxen niet
+// bereikbaar is terwijl je in de andere aan het werken bent.
+function alleVerbindingsFouten() {
+  return [...foutPerMailbox.values()];
+}
+function wisVerbindingsFout(welke) {
+  const naam = welke || settings.getConfig().imapUser || "";
+  foutPerMailbox.delete(naam);
 }
 
 // imapflow zegt bij een geweigerd commando enkel "Command failed". Wat de
@@ -1182,6 +1193,7 @@ module.exports = {
   leesbareImapFout,
   testAanmelden,
   getVerbindingsFout,
+  alleVerbindingsFouten,
   wisVerbindingsFout,
   gebruikerBezig,
   metVoorrang,

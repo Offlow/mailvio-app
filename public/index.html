@@ -1292,6 +1292,11 @@ function renderAiStatus() {
     tekst.textContent = "Mailbox onbereikbaar — klik voor uitleg";
     return;
   }
+  if ((st.andereMailFouten || []).length && st.imapConfigured) {
+    lamp.className = "lampje oranje";
+    tekst.textContent = "Je andere mailbox is onbereikbaar";
+    return;
+  }
   if (!st.aiConfigured) {
     lamp.className = "lampje";
     tekst.textContent = "AI niet ingesteld — vul je API-sleutel in";
@@ -1319,10 +1324,16 @@ function renderBanner() {
   // WEIGERT JE MAILSERVER? DAN STAAT DAT HIER, GROOT.
   // Zonder dit bleef Mailvio gewoon leeg staan terwijl je mailserver het
   // wachtwoord weigerde — en dan zit je te zoeken waarom er niets binnenkomt.
+  const andere = (s.andereMailFouten || [])[0];
   if (s.mailFout && s.imapConfigured) {
     rood = true;
     const welke = s.mailFout.mailbox ? ` (${escapeHtml(s.mailFout.mailbox)})` : "";
     html = `<b>Je mailbox${welke} is niet bereikbaar.</b> ${escapeHtml(s.mailFout.uitleg)} <a id="bnrLink">Naar instellingen</a>.`;
+  } else if (andere && s.imapConfigured) {
+    // Deze mailbox werkt, de andere niet. Dat mag je weten zonder dat het lijkt
+    // alsof alles stuk is.
+    rood = true;
+    html = `<b>Je andere mailbox (${escapeHtml(andere.mailbox)}) is niet bereikbaar.</b> ${escapeHtml(andere.uitleg)} <a id="bnrLink">Naar instellingen</a>.`;
   } else if (!s.imapConfigured) {
     html = 'De mailbox is nog niet gekoppeld. <a id="bnrLink">Vul je mailgegevens in</a>.';
   } else if (!s.smtpConfigured) {

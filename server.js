@@ -707,7 +707,11 @@ app.get("/api/status", (req, res) => {
     aiConfigured: ai.isConfigured(),
     // Weigert je mailserver de verbinding of je wachtwoord, dan moet dat op je
     // scherm staan. Vroeger bleef de app gewoon leeg zonder een woord uitleg.
+    // De klacht over de mailbox die je nu bekijkt...
     mailFout: (mailbox.getVerbindingsFout && mailbox.getVerbindingsFout()) || null,
+    // ...en die over je andere mailbox, zodat je die niet over het hoofd ziet.
+    andereMailFouten: (mailbox.alleVerbindingsFouten ? mailbox.alleVerbindingsFouten() : [])
+      .filter((f) => f.mailbox !== (settingsStore.getConfig().imapUser || "")),
   });
 });
 
