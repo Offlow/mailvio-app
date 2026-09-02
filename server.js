@@ -296,12 +296,30 @@ async function beoordeelPortie(accountKey, unclassified) {
     // Nieuwste onbeoordeelde mails eerst (meest relevant), de rest van de
     // achterstand volgt automatisch in de volgende ververs-rondes.
     const batch = unclassified.slice(0, SCAN_BATCH_SIZE);
+    // EERST KIJKEN WAT WE AL HEBBEN.
+    // Voor elke mail werd hier een apart fragment van de mailserver gehaald —
+    // ook als de volledige mail al op onze eigen schijf stond. Dat is dubbel
+    // werk, het houdt de enige verbinding met je mailserver bezet, en het
+    // vertraagt het inladen van de rest.
     let snippetByUid = new Map();
-    try {
-      belasting.zetBezig(`fragmenten ophalen van ${batch.length} mails`);
-      snippetByUid = await mailbox.fetchSnippetsForUids(batch.map((m) => m.uid));
-    } catch (e) {
-      console.error("Fragmenten ophalen mislukt:", e.message);
+    const nogNodig = [];
+    for (const m of batch) {
+      const bewaardeInhoud = mailstore.getBody(accountKey, "INBOX", m.uid);
+      const tekst = bewaardeInhoud && (bewaardeInhoud.text || bewaardeInhoud.snippet || "");
+      if (tekst && tekst.trim()) {
+        snippetByUid.set(m.uid, String(tekst).replace(/\s+/g, " ").trim().slice(0, 300));
+      } else {
+        nogNodig.push(m.uid);
+      }
+    }
+    if (nogNodig.length) {
+      try {
+        belasting.zetBezig(`fragmenten ophalen van ${nogNodig.length} mails`);
+        const extra = await mailbox.fetchSnippetsForUids(nogNodig);
+        for (const [uid, tekst] of extra) snippetByUid.set(uid, tekst);
+      } catch (e) {
+        console.error("Fragmenten ophalen mislukt:", e.message);
+      }
     }
     const forAi = batch.map((m) => ({ ...m, snippet: snippetByUid.get(m.uid) || "" }));
     let results = [];

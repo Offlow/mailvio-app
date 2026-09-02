@@ -386,6 +386,10 @@ async function _fetchSnippetsForUids(uids, folder) {
           tekst = "";
         }
         out.set(uid, tekst.replace(/\s+/g, " ").trim().slice(0, 300));
+        // NA ELK FRAGMENT DE APP LATEN ADEMEN. Dertig mails na elkaar uitpakken
+        // hield de server vier tot vijf seconden bezet — dan komt er ondertussen
+        // niets anders aan de beurt, en jij ook niet.
+        await new Promise((r) => setImmediate(r));
       }
     } finally {
       lock.release();
