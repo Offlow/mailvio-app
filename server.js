@@ -179,6 +179,22 @@ async function getLightMails(forceRefresh) {
     return { configured: false, mails: [], total: 0, capped: false };
   }
 
+  // NIET LATEN WACHTEN. Hebben we al mails op schijf staan, dan geven we die
+  // METEEN terug en halen we de nieuwe post op de achtergrond op. Vroeger bleef
+  // je scherm hangen tot de mailserver klaar was — soms tientallen seconden.
+  // De achtergrondronde ververst de cache, dus binnen een paar tellen staat de
+  // nieuwe post er vanzelf bij.
+  if (!forceRefresh && bewaard.length) {
+    if (!getLightMails._bezig) {
+      getLightMails._bezig = true;
+      getLightMails(true)
+        .catch((e) => console.error("Achtergrondsynchronisatie mislukt:", e.message))
+        .finally(() => { getLightMails._bezig = false; });
+    }
+    envelopeCache = { at: Date.now(), mails: bewaard, total: bewaard.length, capped: false };
+    return { configured: true, mails: bewaard, total: bewaard.length, capped: false };
+  }
+
   let mails = bewaard;
   try {
     const hoogste = mailstore.getHoogsteUid(accountKey, "INBOX");
@@ -267,6 +283,9 @@ async function getMails(forceRefresh) {
       results = await ai.classifyMails(forAi);
     } catch (e) {
       console.error("Classificatie mislukt:", e.message);
+      // Onthouden zodat de app het KAN TONEN. Een stille fout hier betekent dat
+      // je mailbox niet beoordeeld wordt en je nergens ziet waarom.
+      ai.onthoudFout(e);
     }
     // De AI hoort een lijst terug te geven. Geeft ze iets anders (dat gebeurt
     // zelden, maar het gebeurt), dan mag dat niet je hele inbox blokkeren:
@@ -286,6 +305,7 @@ async function getMails(forceRefresh) {
       reclameTwijfel: !!byUid[m.uid]?.reclameTwijfel,
       snippet: m.snippet,
     }));
+    if (results && results.length) ai.wisFout();
     classifications.setMany(accountKey, toStore);
   }
 
@@ -384,7 +404,11 @@ async function getMails(forceRefresh) {
 }
 
 app.get("/api/status", (req, res) => {
+  const fout = ai.getLaatsteFout();
   res.json({
+    // Zo kan de app ALTIJD tonen of de AI werkt of niet — en waarom niet.
+    aiFout: fout ? fout.uitleg : "",
+    aiWerkt: ai.isConfigured() && !fout,
     imapConfigured: mailbox.isConfigured(),
     smtpConfigured: mailer.isConfigured(),
     aiConfigured: ai.isConfigured(),

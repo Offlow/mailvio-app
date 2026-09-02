@@ -40,6 +40,17 @@ function client(config) {
 
 // Zet HTML om naar leesbare platte tekst — vangnet voor mails die geen
 // text/plain-versie hebben (enkel HTML), zodat die toch geopend kunnen worden.
+// Een mailserver geeft soms een datum terug die geen geldige datum is (een
+// leeg veld, een rare tijdzone, een kapotte kopregel). new Date(...) geeft dan
+// "Invalid Date" en .toISOString() gooit een fout — waardoor het OPHALEN VAN
+// NIEUWE MAILS volledig stukliep en je alleen nog de bewaarde mails zag.
+// Deze functie geeft in dat geval gewoon null terug, en de mail komt binnen.
+function veiligeDatum(waarde) {
+  if (!waarde) return null;
+  const d = waarde instanceof Date ? waarde : new Date(waarde);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+}
+
 function htmlToText(html) {
   if (!html) return "";
   return html
@@ -141,7 +152,7 @@ async function fetchNieuweMails(folder, sindsUid) {
             from: msg.envelope.from?.[0]?.name || msg.envelope.from?.[0]?.address || "Onbekend",
             fromAddress: msg.envelope.from?.[0]?.address || "",
             subject: msg.envelope.subject || "(geen onderwerp)",
-            date: msg.envelope.date ? new Date(msg.envelope.date).toISOString() : null,
+            date: veiligeDatum(msg.envelope.date),
             unread: !msg.flags.has("\\Seen"),
             heeftBijlage: heeftBijlage(msg.bodyStructure),
           });
@@ -179,7 +190,7 @@ async function fetchOudereMails(folder, onderUid, aantal) {
           from: msg.envelope.from?.[0]?.name || msg.envelope.from?.[0]?.address || "Onbekend",
           fromAddress: msg.envelope.from?.[0]?.address || "",
           subject: msg.envelope.subject || "(geen onderwerp)",
-          date: msg.envelope.date ? new Date(msg.envelope.date).toISOString() : null,
+          date: veiligeDatum(msg.envelope.date),
           unread: !msg.flags.has("\\Seen"),
           heeftBijlage: heeftBijlage(msg.bodyStructure),
         });
@@ -242,7 +253,7 @@ async function fetchAllMails(folder) {
           from: msg.envelope.from?.[0]?.name || msg.envelope.from?.[0]?.address || "Onbekend",
           fromAddress: msg.envelope.from?.[0]?.address || "",
           subject: msg.envelope.subject || "(geen onderwerp)",
-          date: msg.envelope.date ? new Date(msg.envelope.date).toISOString() : null,
+          date: veiligeDatum(msg.envelope.date),
           unread: !msg.flags.has("\\Seen"),
           heeftBijlage: heeftBijlage(msg.bodyStructure),
         });
@@ -345,7 +356,7 @@ async function fetchMailBody(uid, folder) {
         messageId: env.messageId || "",
         replyTo: env.replyTo?.[0]?.address || "",
         subject: env.subject || "(geen onderwerp)",
-        date: env.date ? new Date(env.date).toISOString() : null,
+        date: veiligeDatum(env.date),
         text,
         html,
         attachments,
@@ -601,7 +612,7 @@ async function parseAndBuild(msg) {
     from: msg.envelope.from?.[0]?.name || msg.envelope.from?.[0]?.address || "Onbekend",
     fromAddress: msg.envelope.from?.[0]?.address || "",
     subject: msg.envelope.subject || "(geen onderwerp)",
-    date: msg.envelope.date ? new Date(msg.envelope.date).toISOString() : null,
+    date: veiligeDatum(msg.envelope.date),
     unread: !msg.flags.has("\\Seen"),
     snippet,
   };
@@ -648,7 +659,7 @@ async function searchMails(query, limit = 30, alleMappen = true, config) {
               from: msg.envelope.from?.[0]?.name || msg.envelope.from?.[0]?.address || "Onbekend",
               fromAddress: msg.envelope.from?.[0]?.address || "",
               subject: msg.envelope.subject || "(geen onderwerp)",
-              date: msg.envelope.date ? new Date(msg.envelope.date).toISOString() : null,
+              date: veiligeDatum(msg.envelope.date),
               unread: !msg.flags.has("\\Seen"),
               snippet: "",
               folder: pad,
@@ -772,7 +783,7 @@ async function fetchFollowUps() {
           if (!to?.address) continue;
           const date = msg.envelope.date ? new Date(msg.envelope.date) : null;
           if (!date || date < since) continue;
-          sentMsgs.push({ to: to.name || to.address, toAddress: to.address, subject: msg.envelope.subject || "(geen onderwerp)", date: date.toISOString() });
+          sentMsgs.push({ to: to.name || to.address, toAddress: to.address, subject: msg.envelope.subject || "(geen onderwerp)", date: veiligeDatum(date) });
         }
       }
     } finally {

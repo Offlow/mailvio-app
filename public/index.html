@@ -139,10 +139,18 @@
   .zoekTreffer .info{flex:1 1 auto;min-width:0}
   .zoekTreffer .van{font-size:12px;font-weight:800;color:var(--ink-soft)}
   .zoekTreffer .onderwerp{font-size:13px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  /* Toestand van de AI — altijd zichtbaar, zodat je nooit moet raden of hij werkt. */
+  .aiStatus{display:flex;align-items:center;gap:8px;width:100%;border:1px solid var(--border);background:var(--surface-2);border-radius:9px;padding:8px 10px;font-family:inherit;font-size:11.5px;font-weight:700;color:var(--ink-soft);cursor:pointer;text-align:left;margin-bottom:8px;line-height:1.35}
+  .aiStatus:hover{border-color:var(--accent)}
+  .lampje{width:9px;height:9px;border-radius:50%;flex:0 0 auto;background:var(--ink-faint)}
+  .lampje.groen{background:#1f9d55;box-shadow:0 0 0 3px rgba(31,157,85,.15)}
+  .lampje.rood{background:#d93025;box-shadow:0 0 0 3px rgba(217,48,37,.15)}
+  .lampje.oranje{background:#e8940c;box-shadow:0 0 0 3px rgba(232,148,12,.15)}
   .extraLinks{display:flex;gap:16px;flex-wrap:wrap;margin-top:12px}
   .extraLinks button{border:none;background:none;padding:0;font-family:inherit;font-size:12.5px;font-weight:800;color:var(--accent-ink);cursor:pointer}
   .extraLinks button:hover{text-decoration:underline}
-  .nieuweMailKnop{width:100%;border:none;border-radius:11px;background:var(--accent);color:#fff;font-family:inherit;font-size:14px;font-weight:800;padding:12px 14px;cursor:pointer;margin-bottom:10px;box-shadow:0 2px 8px rgba(0,0,0,.08);text-align:left}
+  .nieuweMailKnop{display:flex;align-items:center;gap:11px;width:100%;border:none;border-radius:11px;background:var(--accent);color:#fff;font-family:inherit;font-size:14.5px;font-weight:800;padding:13px 14px;cursor:pointer;margin-bottom:10px;box-shadow:0 2px 8px rgba(0,0,0,.08);text-align:left}
+  .nieuweMailKnop .ico{font-size:19px;line-height:1;flex:0 0 auto}
   .nieuweMailKnop:hover{filter:brightness(1.06)}
   /* De mappenlijst van de mailserver klapt open en dicht, en staat standaard
      dicht: je werkt normaal met de slimme lijsten, niet met die mappen. */
@@ -153,7 +161,7 @@
   .navHome{display:flex;align-items:center;gap:11px;width:100%;text-align:left;border:1px solid var(--border);background:var(--accent-soft);color:var(--accent-ink);border-radius:11px;padding:12px 13px;cursor:pointer;font-family:inherit;margin-bottom:6px}
   .navHome:hover{border-color:var(--accent)}
   .navHome.actief{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft)}
-  .navHomeIcoon{font-size:19px;line-height:1}
+  .navHomeIcoon{font-size:22px;line-height:1;flex:0 0 auto}
   .navHomeTekst{display:flex;flex-direction:column;line-height:1.25;min-width:0}
   .navHomeTekst b{font-size:14.5px;font-weight:800}
   .navHomeTekst small{font-size:11.5px;color:var(--ink-faint);font-weight:600}
@@ -323,6 +331,14 @@
   /* ---- Inbox ---- */
   .inboxView{flex:1 1 auto;display:flex;overflow:hidden}
   .inboxMain{flex:1 1 auto;overflow-y:auto;padding:24px 28px}
+  /* Een map van je mailserver (Verzonden, Concepten, ...) krijgt exact dezelfde
+     marges en kop als de inbox — die stond eerder tegen de rand geplakt. */
+  .listPane{flex:1 1 auto;overflow-y:auto;padding:24px 28px;min-width:0}
+  .listHead{margin-bottom:14px}
+  .listHead h2{margin:0 0 4px;font-size:21px;font-weight:800}
+  .listInfo{font-size:12px;color:var(--ink-faint)}
+  .mailList{max-width:100%}
+  @media (max-width:900px){.listPane{padding:18px 16px}}
   .inboxHead{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
   .inboxHead h1{font-size:22px;margin:0}
   .searchRow{display:flex;gap:10px;margin-bottom:14px}
@@ -517,7 +533,7 @@
       <div class="acctMenu" id="acctMenu" hidden></div>
     </div>
 
-    <button class="nieuweMailKnop" id="zijbalkNieuweMail">✉ Nieuwe mail</button>
+    <button class="nieuweMailKnop" id="zijbalkNieuweMail"><span class="ico">✉</span> Nieuwe mail</button>
 
     <button class="navHome" data-nav="vandaag">
       <span class="navHomeIcoon">⌂</span>
@@ -541,6 +557,9 @@
     <div class="sidebarFooter">
       <button class="navItem" data-nav="regels" id="navRegels">🔒 Automatisering</button>
       <button class="navItem" id="settingsBtn">⚙ Instellingen</button>
+      <button class="aiStatus" id="aiStatus" title="Toestand van de AI">
+        <span class="lampje" id="aiLampje"></span><span id="aiStatusTekst">AI wordt nagekeken...</span>
+      </button>
       <div class="userChip"><span class="avatar" id="userAvatar">?</span><span id="userName">Account</span></div>
     </div>
   </nav>
@@ -589,6 +608,7 @@
     <div class="sectionLabel">Claude AI</div>
     <div class="fieldList">
       <div class="fieldRow"><label for="setApiKey">API-sleutel</label><input id="setApiKey" type="password" placeholder="sk-ant-..." autocomplete="off"></div>
+      <div class="fieldRow"><label for="setWorkspace">Workspace-id</label><input id="setWorkspace" type="text" placeholder="enkel nodig bij een workspace-sleutel" autocomplete="off" spellcheck="false"></div>
     </div>
 
     <div class="sectionLabel">Jij</div>
@@ -700,6 +720,8 @@ const state = {
   chatLog: {},      // uid -> [{who,text}] mini-log per mail (AI-panel)
   taken: [],        // je eigen to-dolijst
   inboxZoek: "",    // wat je in de inbox zoekt
+  chatAntwoord: "",  // laatste antwoord van de AI op het dashboard
+  chatBezig: false,
   opruimen: null,   // mails die weg mogen
   opruimGekozen: null,
   mappenOpen: false, // mappenlijst van de mailserver open of dicht
@@ -989,11 +1011,12 @@ function renderFolderView() {
   const mount = document.getElementById("viewMount");
   const label = folderLabel(state.folder);
   if (state.folderBusy) {
-    mount.innerHTML = `<div class="listPane"><div class="listHead"><h2>${escapeHtml(label)}</h2></div><div class="empty">Bezig met laden...</div></div>`;
+    mount.innerHTML = `<div class="inboxView"><div class="listPane"><div class="listHead"><h2>${escapeHtml(label)}</h2></div><div class="empty">Bezig met laden...</div></div></div>`;
     return;
   }
   const mails = state.folderMails || [];
   mount.innerHTML = `
+    <div class="inboxView">
     <div class="listPane">
       <div class="listHead">
         <h2>${escapeHtml(label)}</h2>
@@ -1002,6 +1025,7 @@ function renderFolderView() {
       <div class="mailList" id="folderList">
         ${mails.length ? mails.map((m) => mailRowHtml(m, true)).join("") : `<div class="empty">Deze map is leeg.</div>`}
       </div>
+    </div>
     </div>
   `;
   mount.querySelectorAll("[data-open]").forEach((row) => {
@@ -1035,6 +1059,7 @@ async function loadMails(forceRefresh) {
   state.mailsScanning = !!data.scanning;
   state.backfillResterend = data.backfillResterend || 0;
   renderBanner();
+  renderAiStatus();
   renderSidebarCounts();
   // Schermen die niets met de mailijst te maken hebben, hoeven niet opnieuw
   // getekend te worden. En renderView() zelf stelt uit zolang je typt.
@@ -1057,6 +1082,34 @@ async function loadStatus() {
     Object.assign(state.status, data);
   } catch (e) { /* stil negeren */ }
   renderBanner();
+  renderAiStatus();
+}
+
+// Het lampje onderaan de zijbalk. Groen: de AI beoordeelt je mail. Rood: er is
+// iets mis en je ziet meteen wát — klik erop voor de volledige uitleg. Grijs:
+// nog geen sleutel ingevuld. Zo hoef je nooit meer te raden of het werkt.
+function renderAiStatus() {
+  const lamp = document.getElementById("aiLampje");
+  const tekst = document.getElementById("aiStatusTekst");
+  if (!lamp || !tekst) return;
+  const st = state.status || {};
+  if (!st.aiConfigured) {
+    lamp.className = "lampje";
+    tekst.textContent = "AI niet ingesteld — vul je API-sleutel in";
+    return;
+  }
+  if (st.aiFout) {
+    lamp.className = "lampje rood";
+    tekst.textContent = "AI werkt niet — klik voor uitleg";
+    return;
+  }
+  if (state.mailsScanning) {
+    lamp.className = "lampje oranje";
+    tekst.textContent = `AI beoordeelt je mail (${state.mailsScanned || 0}/${(state.mails || []).length})`;
+    return;
+  }
+  lamp.className = "lampje groen";
+  tekst.textContent = `AI werkt — ${state.mailsScanned || 0} mails beoordeeld`;
 }
 
 function renderBanner() {
@@ -2202,7 +2255,7 @@ function renderVandaag() {
         <button class="chip" data-q="Wat zijn mijn belangrijkste mails?">Wat zijn mijn belangrijkste mails?</button>
         <button class="chip" data-q="Welke offertes moet ik opvolgen?">Welke offertes moet ik opvolgen?</button>
       </div>
-      <div class="promptAnswer" id="vandaagAnswer" hidden></div>
+      <div class="promptAnswer" id="vandaagAnswer" ${state.chatAntwoord ? "" : "hidden"}>${escapeHtml(state.chatAntwoord || "")}</div>
 
       ${twijfel.length ? `
       <div class="sectionTitle" style="margin-top:26px"><span class="dotmark" style="background:var(--yellow)"></span> Is dit reclame?</div>
@@ -2303,19 +2356,27 @@ async function beslisOverAfzender(adres, reclame) {
 async function askVandaag(question) {
   const q = (question || "").trim();
   if (!q) return;
-  const btn = document.getElementById("vandaagAsk");
-  const answerEl = document.getElementById("vandaagAnswer");
-  btn.disabled = true;
-  answerEl.hidden = false;
-  answerEl.textContent = "Bezig met nadenken...";
+  // Het antwoord wordt in de state bewaard. Vroeger stond het enkel in het
+  // scherm, en dan verdween het (samen met de knop) zodra de mails op de
+  // achtergrond ververst werden — precies terwijl je op je antwoord wachtte.
+  state.chatAntwoord = "Bezig met nadenken...";
+  const toon = () => {
+    const el = document.getElementById("vandaagAnswer");
+    if (el) { el.hidden = false; el.textContent = state.chatAntwoord; }
+    const b = document.getElementById("vandaagAsk");
+    if (b) b.disabled = state.chatBezig;
+  };
+  state.chatBezig = true;
+  toon();
   try {
     const res = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ message: q }) });
     const data = await res.json();
-    answerEl.textContent = data.answer || data.error || "Geen antwoord ontvangen.";
+    state.chatAntwoord = data.answer || data.error || "Geen antwoord ontvangen.";
   } catch (e) {
-    answerEl.textContent = "Er ging iets mis: " + e.message;
+    state.chatAntwoord = "Er ging iets mis: " + e.message;
   } finally {
-    btn.disabled = false;
+    state.chatBezig = false;
+    toon();
   }
 }
 
@@ -3936,6 +3997,7 @@ async function openSettings() {
     document.getElementById("setSignature").value = data.handtekening || "";
     document.getElementById("setAfbeeldingen").checked = !!data.toonAfbeeldingen;
     document.getElementById("setAanspreek").value = data.aanspreektitel || "";
+    document.getElementById("setWorkspace").value = data.anthropicWorkspaceId || "";
     document.getElementById("setModelSnel").value = data.aiModelSnel || "";
     document.getElementById("setModelSlim").value = data.aiModelSlim || "";
     toonHandtekeningVoorbeeld();
@@ -4022,6 +4084,7 @@ async function saveSettings() {
     handtekening: document.getElementById("setSignature").value,
     toonAfbeeldingen: document.getElementById("setAfbeeldingen").checked,
     aanspreektitel: document.getElementById("setAanspreek").value,
+    anthropicWorkspaceId: document.getElementById("setWorkspace").value,
     aiModelSnel: document.getElementById("setModelSnel").value,
     aiModelSlim: document.getElementById("setModelSlim").value,
   };
@@ -4109,6 +4172,19 @@ function toonHandtekeningVoorbeeld() {
 }
 
 document.getElementById("zijbalkNieuweMail").addEventListener("click", () => openCompose());
+
+document.getElementById("aiStatus").addEventListener("click", () => {
+  const st = state.status || {};
+  if (st.aiFout) {
+    alert("De AI werkt op dit moment niet:\n\n" + st.aiFout);
+    return;
+  }
+  if (!st.aiConfigured) {
+    openSettings();
+    return;
+  }
+  showToast(`AI werkt. ${state.mailsScanned || 0} van ${(state.mails || []).length} mails beoordeeld.`);
+});
 
 // De mappenlijst open- en dichtklappen. De keuze blijft bewaard zolang je in
 // Mailvio zit, zodat ze niet telkens opnieuw openspringt.

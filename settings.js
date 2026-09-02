@@ -120,6 +120,10 @@ function getConfig() {
     // daar past een klein, snel en goedkoop model bij. Antwoorden schrijven en
     // vragen beantwoorden vraagt meer, dus daar staat standaard een sterker
     // model. Je kan beide zelf kiezen.
+    // Sommige Anthropic-sleutels (identity-linked keys) werken enkel als je er
+    // ook het workspace-id bij stuurt. Zonder dat geeft élke AI-oproep een
+    // 400-fout en blijft je mailbox "dom".
+    anthropicWorkspaceId: stored.anthropicWorkspaceId || process.env.ANTHROPIC_WORKSPACE_ID || "",
     aiModelSnel: stored.aiModelSnel || process.env.AI_MODEL_SNEL || "claude-haiku-4-5",
     aiModelSlim: stored.aiModelSlim || process.env.AI_MODEL_SLIM || "claude-sonnet-5",
   };
@@ -207,6 +211,8 @@ function getPublicConfig() {
     aiHandtekening: config.aiHandtekening,
     toonAfbeeldingen: config.toonAfbeeldingen,
     aanspreektitel: config.aanspreektitel,
+    heeftWorkspaceId: !!config.anthropicWorkspaceId,
+    anthropicWorkspaceId: config.anthropicWorkspaceId,
     aiModelSnel: config.aiModelSnel,
     aiModelSlim: config.aiModelSlim,
     handtekening: config.handtekening,
@@ -258,6 +264,7 @@ function updateSettings(update) {
   if (typeof update.aiHandtekening === "string") stored.aiHandtekening = update.aiHandtekening.trim();
   if (typeof update.toonAfbeeldingen === "boolean") stored.toonAfbeeldingen = update.toonAfbeeldingen;
   if (typeof update.aanspreektitel === "string") stored.aanspreektitel = update.aanspreektitel.trim();
+  if (typeof update.anthropicWorkspaceId === "string") stored.anthropicWorkspaceId = update.anthropicWorkspaceId.trim();
   if (typeof update.aiModelSnel === "string" && update.aiModelSnel.trim()) stored.aiModelSnel = update.aiModelSnel.trim();
   if (typeof update.aiModelSlim === "string" && update.aiModelSlim.trim()) stored.aiModelSlim = update.aiModelSlim.trim();
 

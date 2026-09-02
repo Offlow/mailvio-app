@@ -8,7 +8,40 @@ function isConfigured() {
 }
 
 function client() {
-  return new Anthropic({ apiKey: settings.getConfig().anthropicApiKey });
+  const c = settings.getConfig();
+  const opties = { apiKey: c.anthropicApiKey };
+  // Een identity-linked sleutel werkt enkel mét het workspace-id erbij.
+  if (c.anthropicWorkspaceId) {
+    opties.defaultHeaders = { "anthropic-workspace-id": c.anthropicWorkspaceId };
+  }
+  return new Anthropic(opties);
+}
+
+// Zet een technische API-fout om in iets waar je wat aan hebt. Zo verdwijnt een
+// probleem nooit meer stil in de logs.
+function leesbareAiFout(e) {
+  const bericht = String((e && e.message) || e || "");
+  if (/anthropic-workspace-id/i.test(bericht)) {
+    return "Je API-sleutel hoort bij een workspace. Vul bij Instellingen \u2192 AI-instellingen je workspace-id in (te vinden in console.anthropic.com bij Settings \u2192 Workspaces), of maak daar een gewone API-sleutel aan zonder workspace.";
+  }
+  if (/authentication|invalid x-api-key|401/i.test(bericht)) return "Je API-sleutel wordt niet aanvaard. Kijk hem na bij Instellingen.";
+  if (/credit|billing|quota|402/i.test(bericht)) return "Je API-tegoed is op. Vul aan bij console.anthropic.com.";
+  if (/429|rate.?limit/i.test(bericht)) return "Te veel aanvragen na elkaar. Probeer over een minuut opnieuw.";
+  if (/model/i.test(bericht) && /not_found|does not exist/i.test(bericht)) return "Het ingestelde AI-model bestaat niet. Kijk het na bij Instellingen \u2192 Welk AI-model.";
+  return bericht.slice(0, 250);
+}
+
+// De laatste AI-fout, zodat de app ze kan tonen in plaats van ze te verzwijgen.
+let laatsteFout = null;
+function onthoudFout(e) {
+  laatsteFout = { uitleg: leesbareAiFout(e), op: Date.now() };
+  return laatsteFout;
+}
+function getLaatsteFout() {
+  return laatsteFout;
+}
+function wisFout() {
+  laatsteFout = null;
 }
 
 // Twee modellen, elk voor hun werk.
@@ -467,7 +500,8 @@ async function chat(message, mails) {
         messages,
       });
     } catch (e) {
-      return "Er ging iets mis bij het antwoorden: " + e.message;
+      onthoudFout(e);
+      return "Er ging iets mis: " + leesbareAiFout(e);
     }
 
     const toolUses = resp.content.filter((b) => b.type === "tool_use");
@@ -487,4 +521,4 @@ async function chat(message, mails) {
   return "Geen antwoord ontvangen.";
 }
 
-module.exports = { classifyMails, suggestReply, rewriteProfessional, chat, isConfigured, extractAfspraak, vatBijlageSamen, vatKlantSamen, stelRegelVoor, testModel };
+module.exports = { classifyMails, suggestReply, rewriteProfessional, chat, isConfigured, extractAfspraak, vatBijlageSamen, vatKlantSamen, stelRegelVoor, testModel, leesbareAiFout, getLaatsteFout, wisFout, onthoudFout };
