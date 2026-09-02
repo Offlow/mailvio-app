@@ -435,6 +435,42 @@ const SEARCH_TOOL = {
 // terwijl je in info@ aan het werken bent. Bij elk resultaat staat uit welke
 // mailbox het komt, zodat het antwoord dat kan vermelden.
 async function runMailboxSearch(zoekterm) {
+  const term = String(zoekterm || "").trim().toLowerCase();
+  if (!term) return "Geen zoekterm meegegeven.";
+  const woorden = term.split(/\s+/).filter(Boolean);
+
+  // EERST in de bewaarde mailbox zoeken. Die staat op de schijf van de server,
+  // dus dit gaat in milliseconden. Vroeger ging dit rechtstreeks naar de
+  // mailserver over IMAP, en dan zat je een halve minuut op je antwoord te
+  // wachten — dat is precies wat "Bezig met nadenken..." zo lang maakte.
+  try {
+    const mailstore = require("./mailstore");
+    const classifications = require("./classifications");
+    const accountKey = settings.getConfig().imapUser || "default";
+    const labels = classifications.getAll(accountKey);
+    const treffers = [];
+    for (const map of mailstore.getMappen(accountKey)) {
+      for (const m of mailstore.getMails(accountKey, map)) {
+        const c = labels[m.uid] || {};
+        const hooi = `${m.from || ""} ${m.fromAddress || ""} ${m.subject || ""} ${c.snippet || ""}`.toLowerCase();
+        if (woorden.every((w) => hooi.includes(w))) {
+          treffers.push({ ...m, snippet: c.snippet || "", categorie: c.categorie, soort: c.soort, map });
+        }
+        if (treffers.length > 400) break;
+      }
+    }
+    if (treffers.length) {
+      treffers.sort((a, b) => new Date(b.date) - new Date(a.date));
+      return treffers
+        .slice(0, 40)
+        .map((m) => `- (uid ${m.uid}, map: ${m.map}) Van: ${m.from} <${m.fromAddress}> | Onderwerp: ${m.subject} | ${m.date ? new Date(m.date).toLocaleDateString("nl-BE") : "?"}${m.soort && m.soort !== "overig" ? " | " + m.soort : ""} | ${String(m.snippet).slice(0, 160)}`)
+        .join("\n");
+    }
+  } catch (e) {
+    console.error("Zoeken in de bewaarde mailbox mislukt:", e.message);
+  }
+
+  // Niets gevonden in wat we bewaard hebben? Dan pas de mailserver bevragen.
   try {
     const { mails } = await mailbox.searchAlleMailboxen(zoekterm, 15);
     if (!mails.length) return `Geen mails gevonden voor "${zoekterm}".`;
@@ -461,8 +497,10 @@ async function chat(message, mails) {
   // voor een gewone vraag ("welke offertes moet ik opvolgen?") niet eerst in de
   // mailbox gezocht te worden — dat duurde seconden. Nu staat het antwoord er
   // vrijwel meteen, omdat de beoordeling al op de achtergrond gebeurd is.
-  const OPEN_LIMIET = 220;   // openstaande zaken: die zijn het belangrijkst
-  const RECENT_LIMIET = 80;  // plus de recentste van de rest, voor context
+  // Bewust beperkt: hoe meer we meesturen, hoe trager het antwoord. Dit is ruim
+  // genoeg om "welke offertes moet ik opvolgen" correct te beantwoorden.
+  const OPEN_LIMIET = 120;   // openstaande zaken: die zijn het belangrijkst
+  const RECENT_LIMIET = 40;  // plus de recentste van de rest, voor context
 
   const nieuwste = (a, b) => new Date(b.date) - new Date(a.date);
   const alles = [...mails].sort(nieuwste);
@@ -491,7 +529,7 @@ async function chat(message, mails) {
       m.viaWebsite ? "via daklo.be" : "",
       m.unread ? "ongelezen" : "",
     ].filter(Boolean);
-    return `- ${stukken.join(" | ")}${m.snippet ? ` :: ${String(m.snippet).slice(0, 160)}` : ""}`;
+    return `- ${stukken.join(" | ")}${m.snippet ? ` :: ${String(m.snippet).slice(0, 110)}` : ""}`;
   };
 
   const context = [
