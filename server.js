@@ -1886,6 +1886,51 @@ const ACHTERGROND_MS = 3 * 60 * 1000;   // elke drie minuten kijken of er nieuwe
 const EERSTE_START_MS = 4 * 1000;       // meteen na het opstarten beginnen
 let achtergrondBezig = false;
 
+// ---------------------------------------------------------------------------
+// MAILS DIE VANZELF NAAR EEN MAP MOETEN
+// ---------------------------------------------------------------------------
+// Heb je een eigen regel met de actie "verplaats naar map" — bijvoorbeeld
+// "alles van LUCY naar Boekhouding" — dan gebeurt dat hier, op de achtergrond.
+// Bewust NIET op het moment dat je je mails opvraagt: dan zou er met je
+// mailserver gepraat worden terwijl jij op je scherm staat te wachten.
+// Hoogstens een handvol per ronde, zodat je mailserver niet overbelast raakt.
+const VERPLAATS_PER_RONDE = 15;
+const alVerplaatst = new Set();
+
+async function verplaatsVolgensRegels(accountKey) {
+  const overzichtRegels = regels.overzicht(accountKey);
+  const verhuisRegels = (overzichtRegels.eigen || []).filter((r) => r.aan && (r.acties || []).includes("verplaats") && r.map);
+  if (!verhuisRegels.length) return;
+
+  const mails = mailstore.getMails(accountKey, "INBOX").slice(0, 400);
+  const store = classifications.getAll(accountKey);
+  let gedaan = 0;
+  for (const m of mails) {
+    if (gedaan >= VERPLAATS_PER_RONDE) break;
+    if (alVerplaatst.has(m.uid)) continue;
+    const c = store[m.uid] || {};
+    const beoordeling = { soort: c.soort || "overig", categorie: c.categorie || "", belangrijk: !!c.belangrijk };
+    regels.pasToe(accountKey, { ...m, snippet: c.snippet || m.snippet }, beoordeling);
+    if (!beoordeling.verplaatsNaar) continue;
+    try {
+      await mailbox.verplaatsMail(m.uid, beoordeling.verplaatsNaar, "INBOX");
+      alVerplaatst.add(m.uid);
+      gedaan++;
+      console.log(`Mail ${m.uid} vanzelf naar "${beoordeling.verplaatsNaar}" verplaatst.`);
+    } catch (e) {
+      // Lukt het niet, dan proberen we het gewoon de volgende ronde opnieuw —
+      // maar we blijven er niet in vastzitten.
+      alVerplaatst.add(m.uid);
+      console.error(`Kon mail ${m.uid} niet verplaatsen:`, mailbox.leesbareImapFout(e));
+    }
+    await mailbox.wachtOpRust();
+  }
+  if (gedaan) {
+    cache.at = 0;
+    envelopeCache = { at: 0, mails: [], total: 0, capped: false };
+  }
+}
+
 async function achtergrondRonde() {
   if (achtergrondBezig) return;
   if (!mailbox.isConfigured()) return;
@@ -1952,6 +1997,14 @@ async function achtergrondRonde() {
       eigenMailsNaarTaken(accountKey0, (await getMails(false)).mails || []);
     } catch (e) {
       console.error("Eigen mails naar to-do zetten mislukt:", e.message);
+    }
+
+    // Mails die volgens jouw eigen regels naar een map moeten (bijvoorbeeld
+    // alles van de boekhouding naar je boekhoudmap) worden hier verplaatst.
+    try {
+      await verplaatsVolgensRegels(accountKey0);
+    } catch (e) {
+      console.error("Automatisch verplaatsen mislukt:", mailbox.leesbareImapFout(e));
     }
 
     // Het klaarzetten van de antwoorden gebeurt NIET meer hier. Het stond

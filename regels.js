@@ -115,7 +115,10 @@ function zetIngebouwd(accountKey, sleutel, aan) {
 // Een regel is: ALS <veld> <test> <waarde> DAN <acties>.
 const VELDEN = ["afzender", "onderwerp", "inhoud", "soort"];
 const TESTEN = ["bevat", "is", "begint_met"];
-const ACTIES = ["reclame", "belangrijk", "dringend", "geen_actie", "taak", "niet_opvolgen"];
+// "verplaats" hoort bij een map: die staat in regel.map. Zo kan bijvoorbeeld
+// alles van de boekhouding vanzelf in je boekhoudmap belanden, zonder dat je
+// het er elke keer zelf insleept.
+const ACTIES = ["reclame", "belangrijk", "dringend", "geen_actie", "taak", "niet_opvolgen", "verplaats"];
 
 function voegToe(accountKey, regel) {
   const naam = String(regel?.naam || "").trim();
@@ -124,6 +127,15 @@ function voegToe(accountKey, regel) {
   const waarde = String(regel?.waarde || "").trim();
   const acties = (regel?.acties || []).filter((a) => ACTIES.includes(a));
   if (!waarde || !acties.length) return null;
+  const map = String(regel?.map || "").trim();
+  // Verplaatsen zonder te zeggen waarheen doet niets — dan slaan we die actie
+  // gewoon over in plaats van mail naar het niets te sturen.
+  if (acties.includes("verplaats") && !map) {
+    const zonder = acties.filter((a) => a !== "verplaats");
+    if (!zonder.length) return null;
+    acties.length = 0;
+    acties.push(...zonder);
+  }
 
   const huidig = voorAccount(accountKey);
   const nieuw = {
@@ -133,6 +145,7 @@ function voegToe(accountKey, regel) {
     test,
     waarde,
     acties,
+    map,
     aan: true,
     op: Date.now(),
   };
@@ -148,6 +161,7 @@ function wijzigEigen(accountKey, id, velden) {
   if (typeof velden.aan === "boolean") regel.aan = velden.aan;
   if (typeof velden.naam === "string" && velden.naam.trim()) regel.naam = velden.naam.trim();
   if (typeof velden.waarde === "string" && velden.waarde.trim()) regel.waarde = velden.waarde.trim();
+  if (typeof velden.map === "string") regel.map = velden.map.trim();
   bewaar(accountKey, huidig);
   return regel;
 }
@@ -205,6 +219,11 @@ function pasToe(accountKey, mail, beoordeling) {
       } else if (actie === "niet_opvolgen") {
         beoordeling.genegeerd = true;
         beoordeling.resolved = true;
+      } else if (actie === "verplaats" && regel.map) {
+        // Het verplaatsen zelf gebeurt op de achtergrond in server.js — hier
+        // noteren we alleen waarheen. Zo blijft het opvragen van je mails snel
+        // en praat er nooit iets met je mailserver terwijl jij staat te kijken.
+        beoordeling.verplaatsNaar = regel.map;
       }
       // "taak" wordt in server.js afgehandeld, want daar zit de takenlijst.
     }

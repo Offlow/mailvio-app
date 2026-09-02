@@ -147,11 +147,16 @@ Silvio: er ging al meer dan $5 op. Wat er nu gebeurt:
 Silvio: deze zijn minder belangrijk dan "het voorstel moet klaarstaan".
 Niet aan beginnen zolang er iets dringenders is, tenzij hij er zelf om vraagt.
 
-### A. Het blok "Is dit reclame?"
-- [ ] Reageert supertraag en gaat niet vooruit
-- [ ] "Bekijken" aanklikken werkt meestal niet
-- [ ] Rechtsklikken werkt daar ook niet
-- [ ] De knop "Echte mail" moet GROEN zijn. Groen en rood in dat blok, nooit blauw
+### A. Het blok "Is dit reclame?" — OPGELOST (02-09, avond)
+- [x] "Bekijken" werkt nu altijd. De oorzaak: na elke hertekening van het
+      dashboard werd op elke knop opnieuw een luisteraar gezet. Ververste het
+      scherm net terwijl jij klikte, dan was die knop al vervangen door een
+      nieuwe zonder luisteraar — en gebeurde er niets. Nu luistert het scherm
+      zelf, en werkt elke knop, ook eentje die een seconde geleden nog niet
+      bestond.
+- [x] Rechtsklikken werkt nu ook op die kaarten: archiveren, verwijderen,
+      naar een map verplaatsen.
+- [x] "Echte mail" is GROEN, "Reclame" is ROOD. Geen blauw meer.
 
 ### B. Aanvragen zijn er veel te veel (4.097) — OPGELOST (03-09)
 - [x] De AI beslist nu zelf per mail of het een ECHTE aanvraag is, in dezelfde
@@ -169,30 +174,37 @@ Niet aan beginnen zolang er iets dringenders is, tenzij hij er zelf om vraagt.
 - [x] De AI zet nu per mail "antwoordNodig": zit er een MENS op een antwoord te
       wachten, of is het een automatische melding, bevestiging, factuur,
       documentmelding of login? *(03-09)*
-- [ ] Nog te doen: die vlag ook gebruiken om de lijst "vandaag te beantwoorden"
-      op te schonen
+- [x] Die vlag wordt nu ook gebruikt: staat er uitdrukkelijk "hier hoeft geen
+      antwoord op", dan valt de mail uit "vandaag te beantwoorden", uit "later
+      deze week" en uit "blijft al langer liggen". Mails van vóór dit bestond
+      blijven staan tot ze opnieuw beoordeeld zijn. *(02-09)*
 
-### E. Mails van jezelf aan jezelf
-- [ ] Mail van info@daklo.be naar info@daklo.be zijn je eigen to-do's — die
-      horen in de BESTAANDE to-domap, geen nieuw scherm of nieuwe regel
+### E. Mails van jezelf aan jezelf — OPGELOST
+- [x] Mail van info@daklo.be naar info@daklo.be komt in je BESTAANDE
+      to-dolijst. Geen nieuw scherm, geen nieuwe regel.
 
-### F. Zien waarop je al geantwoord hebt
-- [ ] Een groen vinkje naast mails waarop al geantwoord is. Nu kan je wel
-      afvinken, maar je ziet niet of er al een antwoord vertrokken is
-- [ ] Zulke mails horen niet meer bij Aanvragen te staan
+### F. Zien waarop je al geantwoord hebt — OPGELOST
+- [x] Groen "✓ Beantwoord" naast elke mail waar via Mailvio een antwoord op
+      vertrokken is — in de lijst én bovenaan de mail zelf. Dat is iets anders
+      dan afvinken: afvinken zegt "hier moet ik niets mee", beantwoord zegt
+      "er is een antwoord vertrokken".
+- [x] Zo'n mail verdwijnt meteen uit Aanvragen en uit je openstaande zaken.
 
-### G. Knop "Nieuwe mail"
-- [ ] Ander icoontje, duidelijker en groter
+### G. Knop "Nieuwe mail" — OPGELOST
+- [x] Groter, met een potlood in plaats van de envelop.
 
-### H. "Mogelijk te verwijderen"
-- [ ] Er mag veel meer in komen, vooral oude mails, zodat de mailbox echt kan
-      opruimen
-- [ ] Logisch gesorteerd van nieuw naar oud, en omgekeerd te zetten
+### H. "Mogelijk te verwijderen" — OPGELOST
+- [x] Er komt veel meer in, vooral oude mails.
+- [x] Gesorteerd van nieuw naar oud, met een knop om het om te draaien.
 
 ### D. LUCY (boekhouding)
 - [x] Alles van de boekhouding krijgt "aanvraag: false" en "antwoordNodig: false"
       en verdwijnt uit de aanvragen *(03-09)*
-- [ ] Nog te doen: automatisch naar een boekhoudmap verplaatsen
+- [x] Automatisch naar een map verplaatsen kan nu. Bij Automatisering is er een
+      nieuwe actie "verplaats naar map": zet een regel op "als de afzender LUCY
+      bevat → verplaats naar Boekhouding" en dat gebeurt vanaf dan vanzelf, op
+      de achtergrond. Bewust GEEN standaardregel: jij zet hem aan, zodat er nooit
+      buiten je weten mail verhuist. *(02-09)*
 
 ---
 
@@ -251,3 +263,27 @@ en openen daarna in 3 tot 10 ms.
 - browsertest als een mens: **83 geslaagd, 0 gefaald**
 - mappen 3/3 · inladen 2/2 · openen 9/9 · voorrang 8/8 · sync 8/8 ·
   bewaren 5/5 · AI 26/26 · klaarstaan 8/8 · kosten 7/7 · mailfout 7/7
+
+---
+
+## 14. Weergave van mails (02-09, avond)
+
+**Afbeeldingen.** Ze stonden standaard UIT: bij elke mail kreeg je eerst een
+balk "externe afbeeldingen zijn geblokkeerd". Bij een nieuwsbrief die vooral uit
+beeld bestaat zag je dan een leeg wit vlak, en bij een gewone mail verdwenen de
+logo's en icoontjes. Nu laden ze altijd meteen. Wil je het toch anders, dan zet
+je het uit bij Instellingen → Weergave van mails.
+
+**Marge rondom.** De inhoud plakte tegen de rand van het venster: bovenaan wat
+lucht, links en rechts niets. Nu staat er aan alle vier de kanten dezelfde
+marge (20 boven en onder, 22 links en rechts), en staat de mail in een kader met
+ronde hoeken — als een blad papier in plaats van een uitgeknipt stuk. Een mail
+zonder opmaak krijgt precies dezelfde marge.
+
+## 15. Tests na deze ronde (02-09, avond)
+
+- browsertest als een mens: **87 geslaagd, 0 gefaald** (vier nieuwe: marge
+  rondom, "Echte mail" groen, "Reclame" rood, en "Bekijken" werkt ook na een
+  hertekening)
+- openen 9/9 · voorrang 8/8 · sync 8/8 · bewaren 5/5 · AI 26/26 · kosten 7/7 ·
+  mappen 3/3

@@ -326,8 +326,13 @@
   .twijfelKaart .van{font-weight:800;font-size:13px}
   .twijfelKaart .onderwerp{font-size:12.5px;color:var(--ink-soft);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .twijfelKnop{border:1px solid var(--border);background:var(--surface);border-radius:9px;padding:7px 12px;font-family:inherit;font-size:13px;font-weight:800;cursor:pointer}
-  .twijfelKnop.ja{color:#b3261e;border-color:#f0c8c4}
-  .twijfelKnop.nee{color:var(--accent-ink);border-color:var(--accent)}
+  /* GROEN EN ROOD, NOOIT BLAUW.
+     "Echte mail" stond in hetzelfde blauw als alle andere knoppen, waardoor je
+     bij het snel doorlopen niet zag welke kant je op klikte. */
+  .twijfelKnop.ja{color:#b3261e;border-color:#e8b4b0;background:#fdf3f2}
+  .twijfelKnop.ja:hover{background:#fbe6e4;border-color:#d99a95}
+  .twijfelKnop.nee{color:#1a6b3c;border-color:#a9d8bd;background:#f1faf5}
+  .twijfelKnop.nee:hover{background:#e2f4ea;border-color:#7cc19c}
   .twijfelKnop:hover{background:var(--surface-2)}
   .twijfelKnop.bekijk{color:var(--ink-soft)}
   .twijfelKaart .info{cursor:pointer}
@@ -442,7 +447,9 @@
   .mailFrom .who b{font-size:13.5px;display:block}
   .mailFrom .who span{font-size:12px;color:var(--ink-faint)}
   .mailFrom .date{margin-left:auto;font-size:12px;color:var(--ink-faint)}
-  .mailBody{white-space:pre-wrap;font-size:14px;line-height:1.7;color:var(--ink)}
+  /* Een mail zonder opmaak krijgt dezelfde marge rondom als een opgemaakte,
+     zodat de tekst niet tegen de rand plakt. */
+  .mailBody{white-space:pre-wrap;font-size:14px;line-height:1.7;color:var(--ink);background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px 22px}
   /* Opgemaakte (HTML) mail in een afgeschermd venster */
   .htmlMail{margin-top:4px}
   .htmlMailBar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;background:var(--surface-2);border:1px solid var(--border);border-radius:9px;padding:9px 12px;margin-bottom:12px;font-size:12.5px;color:var(--ink-soft)}
@@ -450,7 +457,7 @@
   .htmlMailBar button:hover{background:var(--accent-soft)}
   /* Geen eigen scrollbalk: het venster is even hoog als de mail zelf, je
      scrollt gewoon de pagina door tot bij de antwoordknoppen. */
-  #mailFrame{width:100%;min-height:120px;height:400px;border:none;display:block;background:#fff;border-radius:8px;overflow:hidden}
+  #mailFrame{width:100%;min-height:120px;height:400px;border:1px solid var(--border);display:block;background:#fff;border-radius:12px;overflow:hidden}
 
   /* Bijlagen */
   .bijlagen{margin-top:20px;padding-top:14px;border-top:1px solid var(--border)}
@@ -1754,6 +1761,7 @@ const REGEL_ACTIES = {
   geen_actie: "geen actie nodig",
   taak: "zet op mijn to-do",
   niet_opvolgen: "niet meer opvolgen",
+  verplaats: "verplaats naar map",
 };
 
 async function laadRegels(stil) {
@@ -1880,6 +1888,13 @@ function renderRegels() {
         <div class="actieKeuze" id="rgActies">
           ${Object.entries(REGEL_ACTIES).map(([k, v]) => `<label class="actieVink"><input type="checkbox" value="${k}"> ${v}</label>`).join("")}
         </div>
+        <div id="rgMapRij" hidden style="margin-top:10px;display:flex;align-items:center;gap:9px;flex-wrap:wrap">
+          <span style="font-size:13px;color:var(--ink-soft)">Naar welke map?</span>
+          <select id="rgMap">
+            ${(state.folders || []).filter((f) => f.path && f.path.toUpperCase() !== "INBOX")
+              .map((f) => `<option value="${escapeHtml(f.path)}">${escapeHtml(f.name || f.path)}</option>`).join("")}
+          </select>
+        </div>
         <div style="margin-top:12px"><button class="btn btn-primary" id="rgMaak">Regel toevoegen</button></div>
       </div>
 
@@ -1986,18 +2001,28 @@ function renderRegels() {
   document.getElementById("rgVraagKnop").addEventListener("click", vraagRegel);
   vraagVeld.addEventListener("keydown", (e) => { if (e.key === "Enter") vraagRegel(); });
 
+  // Het mapkeuzevak verschijnt pas als je "verplaats naar map" aanvinkt.
+  const mapRij = document.getElementById("rgMapRij");
+  document.querySelectorAll("#rgActies input").forEach((i) => i.addEventListener("change", () => {
+    const aan = [...document.querySelectorAll("#rgActies input:checked")].some((x) => x.value === "verplaats");
+    if (mapRij) mapRij.hidden = !aan;
+  }));
+
   document.getElementById("rgMaak").addEventListener("click", () => {
     const acties = [...document.querySelectorAll("#rgActies input:checked")].map((i) => i.value);
     const waarde = document.getElementById("rgWaarde").value.trim();
+    const mapKeuze = document.getElementById("rgMap");
+    const map = mapKeuze ? mapKeuze.value : "";
     if (!waarde) return showToast("Vul in waar de regel op moet reageren.");
     if (!acties.length) return showToast("Kies minstens één actie.");
+    if (acties.includes("verplaats") && !map) return showToast("Kies naar welke map de mail moet.");
     regelActie("/api/regels", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         veld: document.getElementById("rgVeld").value,
         test: document.getElementById("rgTest").value,
-        waarde, acties,
+        waarde, acties, map,
       }),
     });
   });
@@ -2556,8 +2581,8 @@ function timeGreeting() {
 // beslist — dat was het lastige: je moest oordelen zonder de mail te zien.
 function twijfelKaart(m) {
   return `
-    <div class="twijfelKaart">
-      <div class="info" data-openmail="${m.uid}" title="Open deze mail om te kijken">
+    <div class="twijfelKaart" data-uid="${m.uid}">
+      <div class="info" data-openmail="${m.uid}" title="Open deze mail om te kijken. Rechtsklik voor archiveren, verwijderen of verplaatsen.">
         <div class="van">${escapeHtml(m.from)} <span style="font-weight:600;color:var(--ink-faint)">${escapeHtml(m.fromAddress || "")}</span></div>
         <div class="onderwerp">${escapeHtml(m.subject)}</div>
         ${m.snippet ? `<div class="twijfelFragment">${escapeHtml(String(m.snippet).slice(0, 130))}</div>` : ""}
@@ -2593,19 +2618,39 @@ function renderTwijfel() {
   koppelTwijfelKnoppen(mount);
 }
 
-function koppelTwijfelKnoppen(mount) {
-  mount.querySelectorAll("[data-openmail]").forEach((el) => el.addEventListener("click", (e) => {
+// ÉÉN LUISTERAAR VOOR HET HELE SCHERM, IN PLAATS VAN EEN PER KNOP.
+// Vroeger werd er na elke hertekening opnieuw op elke knop een luisteraar
+// gezet. Ververste het dashboard net terwijl jij aan het klikken was, dan was
+// de knop waar je op duwde al vervangen door een nieuwe zonder luisteraar — en
+// dus gebeurde er niets. Dat is waarom "Bekijken" het meestal niet deed.
+// Nu luistert het document zelf, en werkt elke knop altijd, ook een knop die
+// een seconde geleden nog niet bestond.
+document.addEventListener("click", (e) => {
+  const open = e.target.closest("[data-openmail]");
+  if (open) {
     e.stopPropagation();
-    openMail(Number(el.dataset.openmail));
-  }));
-  // Hier stond per ongeluk een oproep naar deze functie zelf: het scherm liep
-  // dan vast met "Maximum call stack size exceeded" en je zag niets.
-  mount.querySelectorAll("[data-reclame]").forEach((b) => b.addEventListener("click", () => beslisOverAfzender(b.dataset.reclame, true)));
-  mount.querySelectorAll("[data-geenreclame]").forEach((b) => b.addEventListener("click", () => beslisOverAfzender(b.dataset.geenreclame, false)));
-  mount.querySelectorAll("[data-naarscherm]").forEach((b) => b.addEventListener("click", () => {
-    state.view = b.dataset.naarscherm; renderSidebarCounts(); renderView(true);
-  }));
-}
+    openMail(Number(open.dataset.openmail), open.dataset.openmap || undefined);
+    return;
+  }
+  const ja = e.target.closest("[data-reclame]");
+  if (ja) { beslisOverAfzender(ja.dataset.reclame, true); return; }
+  const nee = e.target.closest("[data-geenreclame]");
+  if (nee) { beslisOverAfzender(nee.dataset.geenreclame, false); return; }
+  const naar = e.target.closest("[data-naarscherm]");
+  if (naar) { state.view = naar.dataset.naarscherm; renderSidebarCounts(); renderView(true); }
+});
+
+// Rechtsklikken werkt nu OOK op de kaarten van "Is dit reclame?" — archiveren,
+// verwijderen of naar een map verplaatsen, net als in de mailijst.
+document.addEventListener("contextmenu", (e) => {
+  const kaart = e.target.closest(".twijfelKaart[data-uid]");
+  if (!kaart) return;
+  openCtxMenu(e, Number(kaart.dataset.uid), "INBOX");
+});
+
+// Blijft bestaan omdat het op een paar plaatsen aangeroepen wordt; het werk
+// gebeurt hierboven, voor het hele scherm tegelijk.
+function koppelTwijfelKnoppen() {}
 
 // AANVRAGEN — nieuw werk dat binnenkomt. Alles met een offerte-, prijs- of
 // contactvraag: via je website, via dakwAIrker, of rechtstreeks van een klant.
@@ -2706,11 +2751,19 @@ function renderVandaag() {
   // bij "blijft al langer liggen". Anders staan er honderd dingen onder
   // "vandaag" en zegt die lijst niets meer.
   const VERS_DAGEN = 7;
-  const actie = (m) => m.categorie === "dringend" || m.categorie === "vandaag";
+  // EN ER MOET ÉCHT IEMAND OP EEN ANTWOORD WACHTEN.
+  // De lijst stond vol met dingen waar geen antwoord op hoort: facturen van de
+  // boekhouder, "je document staat klaar", inlogmails, meldingen van
+  // programma's. De AI zegt nu per mail of er een MENS op een antwoord zit te
+  // wachten (antwoordNodig). Staat die uitdrukkelijk op nee, dan hoort de mail
+  // hier niet. Mails van vóór dit bestond hebben nog geen oordeel; die blijven
+  // gewoon staan tot ze opnieuw beoordeeld zijn.
+  const wachtOpAntwoord = (m) => m.antwoordNodig !== false;
+  const actie = (m) => (m.categorie === "dringend" || m.categorie === "vandaag") && wachtOpAntwoord(m);
   const vandaag = open.filter((m) => actie(m) && daysAgo(m.date) <= VERS_DAGEN).sort(nieuwste);
-  const week = open.filter((m) => m.categorie === "binnenkort" && daysAgo(m.date) <= 30).sort(nieuwste);
+  const week = open.filter((m) => m.categorie === "binnenkort" && wachtOpAntwoord(m) && daysAgo(m.date) <= 30).sort(nieuwste);
   const blijftLiggen = open
-    .filter((m) => (actie(m) && daysAgo(m.date) > VERS_DAGEN) || (m.categorie === "binnenkort" && daysAgo(m.date) > 30))
+    .filter((m) => (actie(m) && daysAgo(m.date) > VERS_DAGEN) || (m.categorie === "binnenkort" && wachtOpAntwoord(m) && daysAgo(m.date) > 30))
     .sort((a, b) => new Date(a.date) - new Date(b.date));
   // En wat geregeld moet worden zonder dat het dringend is.
   const regelen = open
@@ -2812,8 +2865,8 @@ function renderVandaag() {
     await taakActie(`/api/taken/${b.dataset.taakaf}`, jsonPost({ klaar: true }, "PATCH"));
     renderVandaag();
   }));
-  mount.querySelectorAll("[data-reclame]").forEach((b) => b.addEventListener("click", () => beslisOverAfzender(b.dataset.reclame, true)));
-  mount.querySelectorAll("[data-geenreclame]").forEach((b) => b.addEventListener("click", () => beslisOverAfzender(b.dataset.geenreclame, false)));
+  // ✓ Reclame / ✗ Echte mail worden nu voor het hele scherm afgehandeld — hier
+  // nog eens een luisteraar zetten zou de knop twee keer laten afgaan.
   mount.querySelectorAll("[data-resolve]").forEach((b) => b.addEventListener("click", (e) => { e.stopPropagation(); resolveMail(Number(b.dataset.resolve), true); }));
   mount.querySelectorAll("[data-open]").forEach((b) => b.addEventListener("click", () => openMail(Number(b.dataset.open))));
   mount.querySelectorAll("[data-goto]").forEach((b) => b.addEventListener("click", () => {
@@ -3872,9 +3925,13 @@ function vulHtmlMail(m) {
   const frame = document.getElementById("mailFrame");
   if (!frame) return;
   const heeftAfbeeldingen = /<img[^>]*\sdata-src=/i.test(m.html || "");
-  // Staat "afbeeldingen altijd laden" aan in de instellingen, dan tonen we de
-  // mail meteen volledig — anders krijg je bij elke nieuwsbrief eerst een balk.
-  const altijd = !!(state.settings && state.settings.toonAfbeeldingen);
+  // AFBEELDINGEN LADEN ALTIJD.
+  // Vroeger stonden ze standaard uit en kreeg je eerst een balk "externe
+  // afbeeldingen zijn geblokkeerd". Bij een nieuwsbrief die vooral uit beeld
+  // bestaat zag je dan een leeg wit vlak, en bij een gewone mail verdwenen de
+  // logo's en icoontjes. Nu laden ze meteen, tenzij je ze in de instellingen
+  // uitdrukkelijk uitzet.
+  const altijd = !(state.settings && state.settings.toonAfbeeldingen === false);
   const bar = document.getElementById("htmlMailBar");
   if (bar && heeftAfbeeldingen && !altijd) bar.hidden = false;
 
@@ -3979,7 +4036,11 @@ function vulHtmlMail(m) {
   const bouwDoc = (metAfbeeldingen) => `<!doctype html><html><head><meta charset="utf-8">
 <style>
   html,body{height:auto;overflow:visible}
-  body{margin:0;padding:2px 0;font-family:'Manrope',system-ui,-apple-system,sans-serif;font-size:14px;line-height:1.65;color:#1a1a1a;word-wrap:break-word;overflow-wrap:break-word;background:#fff}
+  /* RONDOM EVENVEEL RUIMTE.
+     De inhoud plakte tegen de rand van het venster: bovenaan wat lucht, links
+     en rechts niets. Nu staat er aan alle vier de kanten dezelfde marge, zodat
+     een mail leest als een blad papier in plaats van als een uitgeknipt stuk. */
+  body{margin:0;padding:20px 22px;font-family:'Manrope',system-ui,-apple-system,sans-serif;font-size:14px;line-height:1.65;color:#1a1a1a;word-wrap:break-word;overflow-wrap:break-word;background:#fff}
   /* AFBEELDINGEN DEFTIG TONEN.
      Mails uit een nieuwsbrief zetten hun beelden vaak op een vaste breedte van
      600 of 800 pixels. In een smaller venster werd dat weggesneden of piepklein.
@@ -4049,7 +4110,9 @@ window.addEventListener("message", (e) => {
   if (!data || typeof data.mailvioHoogte !== "number") return;
   const frame = document.getElementById("mailFrame");
   if (!frame || frame.dataset.sleutel !== data.sleutel) return;
-  const hoogte = Math.max(120, Math.min(data.mailvioHoogte + 28, 200000));
+  // + de marge boven en onder (2 × 20) en een paar pixels speling, anders wordt
+  // de laatste regel van de mail net afgesneden.
+  const hoogte = Math.max(120, Math.min(data.mailvioHoogte + 48, 200000));
   frame.style.height = hoogte + "px";
   frame.dataset.gemeten = "1";
 });
