@@ -16,7 +16,7 @@ function isConfigured() {
 
 function client(config) {
   const c = config || settings.getConfig();
-  return new ImapFlow({
+  const imap = new ImapFlow({
     host: c.imapHost,
     port: Number(c.imapPort || 993),
     secure: true,
@@ -26,6 +26,16 @@ function client(config) {
     },
     logger: false,
   });
+  // ZONDER DEZE REGEL VALT DE HELE APP OM.
+  // imapflow stuurt een "error"-gebeurtenis als de mailserver de verbinding
+  // laat vallen (time-out, reset, server die dichtklapt). Een error-gebeurtenis
+  // zonder luisteraar is in Node een crash van het volledige proces — dan is
+  // Mailvio plots onbereikbaar. We vangen ze op en loggen ze; de aanroeper
+  // krijgt de fout gewoon via zijn eigen try/catch te zien.
+  imap.on("error", (err) => {
+    console.error("IMAP-verbindingsfout:", err && err.message ? err.message : err);
+  });
+  return imap;
 }
 
 // Zet HTML om naar leesbare platte tekst — vangnet voor mails die geen

@@ -11,17 +11,30 @@ const path = require("path");
 
 const BESTAND = path.join(__dirname, "data", "afzenders.json");
 
+// Kleine cache. Zonder deze werd dit bestand voor ELKE mail opnieuw van schijf
+// gelezen — bij 1500 mails duizenden keren per aanvraag, en dan staat de hele
+// app stil. De cache vervalt na een seconde en wordt gewist bij elk schrijven,
+// dus je ziet een wijziging altijd meteen.
+let _cache = null;
+let _cacheOp = 0;
+const CACHE_MS = 1000;
+
 function lees() {
+  if (_cache && Date.now() - _cacheOp < CACHE_MS) return _cache;
   try {
-    return JSON.parse(fs.readFileSync(BESTAND, "utf8"));
+    _cache = JSON.parse(fs.readFileSync(BESTAND, "utf8"));
   } catch (e) {
-    return {};
+    _cache = {};
   }
+  _cacheOp = Date.now();
+  return _cache;
 }
 
 function schrijf(data) {
   const dir = path.dirname(BESTAND);
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  _cache = data;
+  _cacheOp = Date.now();
   fs.writeFileSync(BESTAND, JSON.stringify(data, null, 2), "utf8");
 }
 

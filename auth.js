@@ -111,16 +111,30 @@ function tokenUitVerzoek(req) {
   return stuk ? decodeURIComponent(stuk.slice(COOKIE_NAAM.length + 1)) : null;
 }
 
-function zetCookie(res, token, verlooptOp) {
+// "Secure" betekent: de browser stuurt deze cookie enkel over https. Op
+// email.daklo.be is dat precies wat we willen. Maar test je lokaal op
+// http://localhost, dan weigert de browser de cookie en kom je in een
+// eindeloze lus tussen inloggen en het inlogscherm. Daarom: Secure aan zodra
+// het over een echte verbinding gaat, en enkel op localhost eraf.
+function beveiligd(req) {
+  if (!req) return true;
+  const host = String(req.headers?.host || "");
+  const lokaal = /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i.test(host);
+  return !lokaal;
+}
+
+function zetCookie(res, token, verlooptOp, req) {
   const maxAge = Math.max(0, Math.floor((verlooptOp - Date.now()) / 1000));
+  const secure = beveiligd(req) ? " Secure;" : "";
   res.setHeader(
     "Set-Cookie",
-    `${COOKIE_NAAM}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Secure; Max-Age=${maxAge}`
+    `${COOKIE_NAAM}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax;${secure} Max-Age=${maxAge}`
   );
 }
 
-function wisCookie(res) {
-  res.setHeader("Set-Cookie", `${COOKIE_NAAM}=; Path=/; HttpOnly; SameSite=Lax; Secure; Max-Age=0`);
+function wisCookie(res, req) {
+  const secure = beveiligd(req) ? " Secure;" : "";
+  res.setHeader("Set-Cookie", `${COOKIE_NAAM}=; Path=/; HttpOnly; SameSite=Lax;${secure} Max-Age=0`);
 }
 
 module.exports = {

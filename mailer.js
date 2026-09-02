@@ -50,12 +50,29 @@ function escapeHtml(s) {
 // Plakt de vaste handtekening onderaan de mail, tenzij die er al in staat
 // (bv. omdat de gebruiker ze zelf al in de tekst zette of het AI-voorstel ze
 // al bevatte). Zo krijg je nooit twee keer dezelfde ondertekening.
+// Waar het geciteerde origineel begint. Bij een antwoord of doorsturing staat
+// onder je eigen tekst het volledige oude bericht met ">" ervoor. Je
+// handtekening hoort ONDER JOUW TEKST, niet onderaan dat citaat — anders lijkt
+// het alsof je onder het bericht van de ander tekent.
+function splitsCitaat(body) {
+  const regels = body.split(/\r?\n/);
+  for (let i = 0; i < regels.length; i++) {
+    // De kopregel die openReply() erboven zet, of de eerste geciteerde regel.
+    if (/^Op .+ schreef .+:\s*$/.test(regels[i]) || /^>/.test(regels[i])) {
+      return { eigen: regels.slice(0, i).join("\n").replace(/\s+$/, ""), citaat: regels.slice(i).join("\n") };
+    }
+  }
+  return { eigen: body, citaat: "" };
+}
+
 function metHandtekening(text) {
   const handtekening = (settings.getConfig().handtekening || "").trim();
   const body = (text || "").replace(/\s+$/, "");
   if (!handtekening) return body;
   const platteHandtekening = isHtmlHandtekening(handtekening) ? htmlNaarTekst(handtekening) : handtekening;
   if (platteHandtekening && body.includes(platteHandtekening)) return body;
+  const { eigen, citaat } = splitsCitaat(body);
+  if (citaat) return `${eigen}\n\n${platteHandtekening}\n\n${citaat}`;
   return `${body}\n\n${platteHandtekening}`;
 }
 
@@ -69,8 +86,12 @@ function htmlVersie(text) {
   // Staat de handtekening al als tekst in het bericht? Dan die eruit halen,
   // want ze komt er zo meteen in opgemaakte vorm onder.
   if (platte && body.includes(platte)) body = body.replace(platte, "").replace(/\s+$/, "");
-  const bodyHtml = escapeHtml(body).replace(/\r?\n/g, "<br>");
-  return `<div style="font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;font-size:14px;line-height:1.6;color:#1a1a1a">${bodyHtml}<br><br>${handtekening}</div>`;
+  const { eigen, citaat } = splitsCitaat(body);
+  const eigenHtml = escapeHtml(eigen).replace(/\r?\n/g, "<br>");
+  const citaatHtml = citaat
+    ? `<br><br><div style="color:#555;border-left:3px solid #ddd;padding-left:12px">${escapeHtml(citaat).replace(/\r?\n/g, "<br>")}</div>`
+    : "";
+  return `<div style="font-family:-apple-system,'Segoe UI',Roboto,Arial,sans-serif;font-size:14px;line-height:1.6;color:#1a1a1a">${eigenHtml}<br><br>${handtekening}${citaatHtml}</div>`;
 }
 
 async function sendMail({ to, cc, subject, text, inReplyTo, references, attachments }) {

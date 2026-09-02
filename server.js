@@ -61,7 +61,7 @@ app.post("/api/auth/setup", (req, res) => {
   try {
     auth.stelWachtwoordIn(req.body?.wachtwoord);
     const s = auth.nieuweSessie();
-    auth.zetCookie(res, s.token, s.verlooptOp);
+    auth.zetCookie(res, s.token, s.verlooptOp, req);
     res.json({ ok: true });
   } catch (e) {
     res.status(400).json({ error: e.message });
@@ -94,13 +94,13 @@ app.post("/api/auth/login", (req, res) => {
   }
   pogingen.delete(ip);
   const s = auth.nieuweSessie();
-  auth.zetCookie(res, s.token, s.verlooptOp);
+  auth.zetCookie(res, s.token, s.verlooptOp, req);
   res.json({ ok: true });
 });
 
 app.post("/api/auth/logout", (req, res) => {
   auth.beeindigSessie(auth.tokenUitVerzoek(req));
-  auth.wisCookie(res);
+  auth.wisCookie(res, req);
   res.json({ ok: true });
 });
 
@@ -108,7 +108,7 @@ app.post("/api/auth/wachtwoord", (req, res) => {
   try {
     auth.wijzigWachtwoord(req.body?.oud, req.body?.nieuw);
     const s = auth.nieuweSessie();
-    auth.zetCookie(res, s.token, s.verlooptOp);
+    auth.zetCookie(res, s.token, s.verlooptOp, req);
     res.json({ ok: true });
   } catch (e) {
     res.status(400).json({ error: e.message });
@@ -246,7 +246,12 @@ async function getMails(forceRefresh) {
     } catch (e) {
       console.error("Classificatie mislukt:", e.message);
     }
-    const byUid = Object.fromEntries(results.map((c) => [c.uid, c]));
+    // De AI hoort een lijst terug te geven. Geeft ze iets anders (dat gebeurt
+    // zelden, maar het gebeurt), dan mag dat niet je hele inbox blokkeren:
+    // de mails komen dan gewoon zonder beoordeling binnen.
+    const byUid = Object.fromEntries(
+      (Array.isArray(results) ? results : []).filter((c) => c && c.uid !== undefined).map((c) => [c.uid, c])
+    );
     const toStore = forAi.map((m) => ({
       uid: m.uid,
       categorie: byUid[m.uid]?.categorie || "onbekend",
@@ -345,7 +350,14 @@ async function getMails(forceRefresh) {
     scanned,
     scanning: scanned < light.length,
   };
-  suggestionCache.clear();
+  // De voorstellencache NIET volledig leegmaken: tijdens het scannen loopt deze
+  // functie elke drie seconden, en dan zou elk AI-antwoord dat je net kreeg
+  // meteen weggegooid worden — met een nieuwe AI-oproep als gevolg zodra je die
+  // mail opent. We ruimen enkel op wat niet meer in de mailbox staat.
+  const bestaandeUids = new Set(merged.map((m) => m.uid));
+  for (const uid of [...suggestionCache.keys()]) {
+    if (!bestaandeUids.has(uid)) suggestionCache.delete(uid);
+  }
   return cache;
 }
 
@@ -502,7 +514,10 @@ app.get("/api/mails/:uid", async (req, res) => {
 app.get("/api/mails/:uid/suggestion", async (req, res) => {
   try {
     const uid = Number(req.params.uid);
-    if (suggestionCache.has(uid)) {
+    // "Maak een nieuw antwoord" stuurt force=1 mee: dan negeren we het bewaarde
+    // voorstel en laten we de AI er echt een ander maken.
+    const opnieuw = req.query.force === "1" || req.headers["x-force"] === "1";
+    if (!opnieuw && suggestionCache.has(uid)) {
       return res.json(suggestionCache.get(uid));
     }
     const data = await getMails(false);
@@ -1035,6 +1050,16 @@ app.post("/api/chat", async (req, res) => {
 });
 
 const PORT = process.env.PORT || 10000;
+// Laatste vangnet: een onvoorziene fout mag Mailvio nooit helemaal platleggen.
+// Beter een gelogde fout en een app die blijft draaien, dan een mailbox die
+// plots onbereikbaar is.
+process.on("uncaughtException", (err) => {
+  console.error("Onverwachte fout (app blijft draaien):", err && err.stack ? err.stack : err);
+});
+process.on("unhandledRejection", (reden) => {
+  console.error("Onafgehandelde belofte (app blijft draaien):", reden);
+});
+
 app.listen(PORT, () => {
   console.log(`Mailvio draait op poort ${PORT}`);
 });

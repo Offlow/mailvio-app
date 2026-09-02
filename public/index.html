@@ -597,6 +597,7 @@ const state = {
   suggestion: {},   // uid -> AI-voorstel
   chatLog: {},      // uid -> [{who,text}] mini-log per mail (AI-panel)
   taken: [],        // je eigen to-dolijst
+  inboxZoek: "",    // wat je in de inbox zoekt
   afspraken: [],    // je agenda
   regels: null,     // automatiseringsregels
   weekStart: null,  // week die je in de agenda bekijkt
@@ -767,7 +768,6 @@ async function loadContacten() {
 }
 
 async function loadFolders() {
-  const hint = document.getElementById("folderHint");
   try {
     const data = await (await fetch("/api/folders")).json();
     state.folders = data.folders || [];
@@ -775,10 +775,17 @@ async function loadFolders() {
     state.folders = [];
   }
   renderFolders();
-  if (!state.folders.length && hint) {
-    hint.textContent = state.status.imapConfigured
-      ? "Geen mappen gevonden."
-      : "Koppel eerst je mailbox bij Instellingen.";
+  // renderFolders() vervangt de inhoud van de zijbalk, dus de hint van hierboven
+  // bestaat dan niet meer. We zoeken hem opnieuw op — anders kreeg je bij een
+  // verse installatie "Geen eigen mappen" te zien in plaats van de aanwijzing
+  // om je mailbox te koppelen.
+  if (!state.folders.length) {
+    const nieuweHint = document.getElementById("folderHint");
+    if (nieuweHint) {
+      nieuweHint.textContent = state.status.imapConfigured
+        ? "Geen mappen gevonden."
+        : "Koppel eerst je mailbox bij Instellingen.";
+    }
   }
 }
 
@@ -877,8 +884,19 @@ function renderFolderView() {
 }
 
 async function loadMails(forceRefresh) {
-  const res = await fetch("/api/mails" + (forceRefresh ? "?refresh=1" : ""));
-  const data = await res.json();
+  let data;
+  try {
+    const res = await fetch("/api/mails" + (forceRefresh ? "?refresh=1" : ""));
+    data = await res.json();
+  } catch (e) {
+    // Server even weg of netwerk eruit? Dan mag de rest van de app niet
+    // stilvallen: we proberen het gewoon opnieuw, en de zijbalk, mappen en
+    // taken blijven werken met wat we al hadden.
+    console.error("Mails ophalen mislukt:", e.message);
+    clearTimeout(loadMails._scanTimer);
+    loadMails._scanTimer = setTimeout(() => loadMails(false), 8000);
+    return;
+  }
   state.status.imapConfigured = data.imapConfigured;
   state.status.aiConfigured = data.aiConfigured;
   state.status.smtpConfigured = data.smtpConfigured;
@@ -891,9 +909,9 @@ async function loadMails(forceRefresh) {
   state.backfillResterend = data.backfillResterend || 0;
   renderBanner();
   renderSidebarCounts();
-  // Schermen die niets met de mailijst te maken hebben NIET opnieuw tekenen:
-  // anders verdween je tekst terwijl je een taak aan het typen was.
-  if (!["taken", "agenda", "mail", "klant", "zoeken", "regels"].includes(state.view)) {
+  // Schermen die niets met de mailijst te maken hebben, hoeven niet opnieuw
+  // getekend te worden. En renderView() zelf stelt uit zolang je typt.
+  if (!["taken", "agenda", "mail", "klant", "regels"].includes(state.view)) {
     renderView();
   }
 
@@ -936,20 +954,13 @@ function renderBanner() {
 
 function renderSidebarCounts() {
   const open = state.mails.filter((m) => !m.resolved);
-  const dringend = open.filter((m) => m.categorie === "dringend").length;
-  const binnenkort = open.filter((m) => m.categorie === "binnenkort").length;
   const openstaand = open.filter((m) => m.categorie === "dringend" || m.categorie === "vandaag" || m.categorie === "binnenkort").length;
   const zet = (id, waarde) => {
     const el = document.getElementById(id);
     if (el) el.textContent = waarde || "";
   };
   zet("cntInbox", state.mails.length);
-  zet("cntDringend", dringend);
-  zet("cntBinnenkort", binnenkort);
   zet("cntZaken", openstaand);
-  zet("cntAfspraken", state.mails.filter((m) => m.soort === "afspraak").length);
-  zet("cntOffertes", state.mails.filter((m) => m.soort === "offerte").length);
-  zet("cntBelangrijk", state.mails.filter((m) => m.belangrijk).length);
   zet("cntReclame", state.mails.filter((m) => m.soort === "reclame").length);
   zet("cntTaken", (state.taken || []).filter((t) => !t.klaar).length);
   document.querySelectorAll(".navItem[data-nav]").forEach((btn) => {
@@ -989,7 +1000,47 @@ document.addEventListener("click", (e) => {
   if (menu && !menu.hidden && !e.target.closest(".acctSwitch")) menu.hidden = true;
 });
 
-function renderView() {
+// EEN SCHERM WORDT NOOIT OVERTEKEND TERWIJL JE TYPT.
+//
+// Dit was de oorzaak van "ik word altijd afgebroken": een achtergrondverversing
+// (bv. de AI die nog aan het scannen is) tekende het scherm opnieuw, en je
+// invoerveld — met je tekst en je cursor erin — werd daarbij vervangen.
+//
+// Nu wordt zo'n hertekening uitgesteld zolang je in een veld staat, en pas
+// uitgevoerd wanneer je dat veld verlaat. Een hertekening die JIJ zelf in gang
+// zet (op een knop klikken, van scherm wisselen) gaat wel altijd door.
+let typenLuisteraarGezet = false;
+function ietsAanHetTypen() {
+  const el = document.activeElement;
+  if (!el) return false;
+  const tag = el.tagName;
+  if (tag !== "INPUT" && tag !== "TEXTAREA" && !el.isContentEditable) return false;
+  // Een selectievakje of knop houdt niets tegen — enkel echte tekstinvoer.
+  if (tag === "INPUT" && ["checkbox", "radio", "button", "submit"].includes(el.type)) return false;
+  return true;
+}
+
+function renderView(gedwongen) {
+  if (!gedwongen && ietsAanHetTypen()) {
+    // Onthouden dat er nog een hertekening wacht, en ze uitvoeren zodra je
+    // klaar bent met typen.
+    state._wachtOpHertekenen = true;
+    if (!typenLuisteraarGezet) {
+      typenLuisteraarGezet = true;
+      document.addEventListener("focusout", () => {
+        // Even wachten: bij het wisselen tussen twee velden staat de focus
+        // heel kort nergens, en dan zou je alsnog onderbroken worden.
+        setTimeout(() => {
+          if (state._wachtOpHertekenen && !ietsAanHetTypen()) {
+            state._wachtOpHertekenen = false;
+            renderView(true);
+          }
+        }, 250);
+      });
+    }
+    return;
+  }
+  state._wachtOpHertekenen = false;
   if (state.view === "vandaag") return renderVandaag();
   if (state.view === "inbox") return renderInbox();
   if (state.view === "zoeken") return renderZoeken();
@@ -1782,7 +1833,8 @@ function markResolvedLocally(uid, resolved) {
   else if (state.view === "inbox") renderInbox();
   else if (state.view === "zaken") renderOpenstaandeZaken();
   else if (state.view === "mail" && state.currentUid === uid) {
-    const box = document.getElementById("mailBody");
+    // De knop staat in de kolom rechts (#mailActies), niet meer in de mail zelf.
+    const box = document.getElementById("mailActies") || document.getElementById("mailBody");
     if (box) {
       const btn = box.querySelector("[data-act='resolve']");
       if (btn) {
@@ -1845,7 +1897,7 @@ function filteredMails() {
   if (state.filter !== "reclame" && state.filter !== "alle") {
     list = list.filter((m) => m.soort !== "reclame");
   }
-  const q = (document.getElementById("inboxSearch")?.value || "").toLowerCase().trim();
+  const q = String(state.inboxZoek || "").toLowerCase().trim();
   if (q) list = list.filter((m) => (m.from + " " + m.subject + " " + m.snippet).toLowerCase().includes(q));
   return list;
 }
@@ -1877,6 +1929,19 @@ function filterTitel() {
   return FILTER_TITELS[state.filter] || "Inbox";
 }
 
+// Tekent enkel de mailrijen opnieuw. Zo blijft alles eromheen — en vooral het
+// zoekveld met je cursor erin — gewoon staan.
+function tekenMailRijen() {
+  const rijen = document.getElementById("mailRows");
+  if (!rijen) return;
+  const list = filteredMails();
+  rijen.innerHTML = list.length
+    ? list.map((m) => mailRowHtml(m)).join("")
+    : '<div class="empty">Geen mails in deze weergave.</div>';
+  rijen.querySelectorAll("[data-open]").forEach((el) => el.addEventListener("click", () => openMail(Number(el.dataset.open))));
+  koppelSleepbareMails(rijen);
+}
+
 function renderInbox() {
   const mount = document.getElementById("viewMount");
   const list = filteredMails();
@@ -1901,7 +1966,7 @@ function renderInbox() {
           ${state.backfillResterend ? ` Nog ${state.backfillResterend} oudere mails worden op de achtergrond binnengehaald.` : ""}
         </div>
         <div class="searchRow">
-          <input id="inboxSearch" type="text" placeholder="Zoek in mailbox...">
+          <input id="inboxSearch" type="text" placeholder="Zoek in mailbox..." value="${escapeHtml(state.inboxZoek || '')}">
           <div class="tabs">
             <button class="tabBtn ${state.filter === "alle" ? "active" : ""}" data-f="alle">Alles</button>
             <button class="tabBtn ${state.filter === "ongelezen" ? "active" : ""}" data-f="ongelezen">Ongelezen</button>
@@ -1935,14 +2000,29 @@ function renderInbox() {
     const btn = e.currentTarget;
     btn.disabled = true;
     btn.textContent = "Bezig...";
-    await loadMails(true);
-    loadFolders();
-    showToast("Mailbox bijgewerkt.");
+    try {
+      await loadMails(true);
+      loadFolders();
+      showToast("Mailbox bijgewerkt.");
+    } catch (err) {
+      showToast("Verversen mislukte: " + err.message);
+    } finally {
+      // Altijd terugzetten, ook bij een fout — anders blijft de knop voorgoed
+      // op "Bezig..." staan tot je de pagina herlaadt.
+      btn.disabled = false;
+      btn.textContent = "↻ Ververs";
+    }
   });
   mount.querySelectorAll("[data-open]").forEach((el) => el.addEventListener("click", () => openMail(Number(el.dataset.open))));
   koppelSleepbareMails(mount);
   mount.querySelectorAll(".tabBtn").forEach((b) => b.addEventListener("click", () => { state.filter = b.dataset.f; renderSidebarCounts(); renderInbox(); }));
-  document.getElementById("inboxSearch").addEventListener("input", () => renderInbox());
+  // Bij het typen tekenen we ENKEL de mailijst opnieuw, niet het hele scherm:
+  // anders wordt het zoekveld waar je in typt zelf vervangen en ben je je
+  // tekst én je cursor kwijt.
+  document.getElementById("inboxSearch").addEventListener("input", (e) => {
+    state.inboxZoek = e.target.value;
+    tekenMailRijen();
+  });
   document.getElementById("inboxAsk").addEventListener("keydown", async (e) => {
     if (e.key !== "Enter") return;
     const q = e.target.value.trim();
@@ -2042,9 +2122,12 @@ function renderOpenstaandeZaken() {
     { key: "vandaag", label: "Vandaag", uitleg: "Zou vandaag beantwoord moeten worden." },
     { key: "binnenkort", label: "Binnenkort", uitleg: "Mag een paar dagen wachten, maar mag je niet vergeten." },
     { key: "genegeerd", label: "Niet meer opvolgen", uitleg: "Zaken die je bewust hebt laten vallen. Hier kan je ze terugzetten." },
+    { key: "verzonden", label: "Verzonden, geen antwoord", uitleg: "Mails die jij verstuurd hebt en waar nog niemand op geantwoord heeft." },
   ];
   const actief = state.zakenTab || "alles";
   const info = tabs.find((t) => t.key === actief) || tabs[0];
+  // Dit tabblad haalt zijn gegevens apart op bij de server.
+  if (actief === "verzonden") return renderOpvolgingen();
 
   const alle = state.mails;
   let lijst;
@@ -2126,11 +2209,25 @@ async function renderOpvolgingen() {
   const mount = document.getElementById("viewMount");
   mount.innerHTML = `
     <div class="vandaagView"><div class="inner">
-      <h1>Wachten op antwoord</h1>
-      <div class="sub">Mails die je verstuurd hebt en waar (voor zover we kunnen zien) nog geen reactie op kwam, laatste 30 dagen.</div>
+      <h1>Nog open</h1>
+      <div class="tabRij">
+        <button class="tabKnop" data-terugtab="alles">Alles</button>
+        <button class="tabKnop" data-terugtab="dringend">Dringend</button>
+        <button class="tabKnop" data-terugtab="vandaag">Vandaag</button>
+        <button class="tabKnop" data-terugtab="binnenkort">Binnenkort</button>
+        <button class="tabKnop" data-terugtab="genegeerd">Niet meer opvolgen</button>
+        <button class="tabKnop aan" data-terugtab="verzonden">Verzonden, geen antwoord</button>
+      </div>
+      <div class="kolomUitleg" style="margin-bottom:14px">Mails die je verstuurd hebt en waar (voor zover we kunnen zien) nog geen reactie op kwam, laatste 30 dagen.</div>
       <div id="opvolgList"><div class="empty">Bezig met ophalen...</div></div>
     </div></div>
   `;
+  mount.querySelectorAll("[data-terugtab]").forEach((b) => b.addEventListener("click", () => {
+    state.zakenTab = b.dataset.terugtab;
+    state.view = "zaken";
+    renderSidebarCounts();
+    renderOpenstaandeZaken();
+  }));
   const listEl = document.getElementById("opvolgList");
   if (!state.status.imapConfigured) {
     listEl.innerHTML = '<div class="empty">De mailbox is nog niet gekoppeld.</div>';
@@ -2294,6 +2391,10 @@ async function openMail(uid, folder) {
       detail = { ...meta, text: "Kon de inhoud niet ophalen." };
     }
   }
+  // Klikte je ondertussen al een andere mail aan? Dan is dit antwoord te laat
+  // en mag het niets meer overschrijven — anders zag je de kop van de ene mail
+  // met de inhoud van de andere.
+  if (state.currentUid !== uid || state.view !== "mail") return;
   const volledig = { ...meta, ...detail };
   renderMailBody(uid, volledig);
 
@@ -2604,7 +2705,7 @@ async function zetInAgenda(uid, m) {
   }
   document.getElementById("agendaClose").addEventListener("click", () => { mount.innerHTML = ""; });
   document.getElementById("agendaMaak").addEventListener("click", () => maakAgendaBestand());
-  document.getElementById("agendaBox") && document.getElementById("agendaBox").scrollIntoView({ behavior: "smooth", block: "nearest" });
+  document.querySelector(".agendaBox") && document.querySelector(".agendaBox").scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
 
 function agendaFormulier(a) {
@@ -2703,6 +2804,12 @@ function koppelBijlageKiezer(inputId, knopId, mountId) {
   const input = document.getElementById(inputId);
   const knop = document.getElementById(knopId);
   if (!input || !knop) return;
+  // Deze twee elementen staan vast in de pagina en worden nooit vervangen. Zonder
+  // deze controle stapelden de luisteraars op: bij de tweede keer "Nieuwe mail"
+  // ging het bestandsvenster twee keer open en werd elke bijlage dubbel
+  // meegestuurd.
+  if (knop.dataset.gekoppeld === "1") return;
+  knop.dataset.gekoppeld = "1";
   knop.addEventListener("click", () => input.click());
   input.addEventListener("change", async () => {
     for (const file of Array.from(input.files || [])) {
@@ -3170,7 +3277,6 @@ async function openSettings() {
     document.getElementById("setSmtpPassword").value = "";
     document.getElementById("setApiKey").value = "";
     document.getElementById("setAiToon").value = data.aiToon || "";
-    document.getElementById("setAiSign").value = data.aiHandtekening || "";
     document.getElementById("setSignature").value = data.handtekening || "";
     document.getElementById("setAfbeeldingen").checked = !!data.toonAfbeeldingen;
     document.getElementById("setAanspreek").value = data.aanspreektitel || "";
@@ -3255,7 +3361,6 @@ async function saveSettings() {
     smtpPassword: document.getElementById("setSmtpPassword").value,
     anthropicApiKey: document.getElementById("setApiKey").value,
     aiToon: document.getElementById("setAiToon").value,
-    aiHandtekening: document.getElementById("setAiSign").value,
     handtekening: document.getElementById("setSignature").value,
     toonAfbeeldingen: document.getElementById("setAfbeeldingen").checked,
     aanspreektitel: document.getElementById("setAanspreek").value,
