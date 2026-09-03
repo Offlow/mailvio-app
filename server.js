@@ -896,11 +896,21 @@ app.post("/api/settings", (req, res) => {
 app.get("/api/mails", async (req, res) => {
   try {
     const data = await getMails(req.query.refresh === "1");
+    // ÉÉN INBOX VOOR AL JE MAILBOXEN.
+    // De post van je andere mailbox komt hier gewoon bij in dezelfde lijst,
+    // op datum. Elke mail weet zelf uit welke mailbox ze komt.
+    let mails = data.mails;
+    if (settingsStore.getConfig().samenvoegen) {
+      const anderen = mailsVanAndereMailboxen();
+      if (anderen.length) {
+        mails = mails.concat(anderen).sort((a, b) => new Date(b.date) - new Date(a.date));
+      }
+    }
     res.json({
       imapConfigured: mailbox.isConfigured(),
       smtpConfigured: mailer.isConfigured(),
       aiConfigured: ai.isConfigured(),
-      mails: data.mails,
+      mails,
       total: data.total,
       capped: data.capped,
       envelopeCap: mailbox.ENVELOPE_CAP,
@@ -1042,6 +1052,28 @@ app.get("/api/mails/:uid", async (req, res) => {
     const uid = Number(req.params.uid);
     const folder = req.query.folder;
     const accountKey = settingsStore.getConfig().imapUser || "default";
+
+    // KOMT DEZE MAIL UIT JE ANDERE MAILBOX?
+    // Dan halen we hem daar op — uit wat er al op de schijf staat, en anders
+    // met een eigen korte verbinding naar die mailbox. Twee mailboxen kunnen
+    // dezelfde mailnummers gebruiken, dus zonder dit zou je de verkeerde mail
+    // te zien krijgen.
+    const anderAccount = String(req.query.account || "").trim();
+    if (anderAccount && anderAccount !== accountKey) {
+      const c = settingsStore.getAlleConfigs().find((x) => x.imapUser === anderAccount);
+      if (!c) return res.status(404).json({ error: "Die mailbox ken ik niet." });
+      let body = mailstore.getBody(anderAccount, "INBOX", uid);
+      if (!leesbaar(body)) {
+        await mailbox.haalBodiesVan(c, [uid], (mail) => {
+          bewaarInhoud(anderAccount, "INBOX", mail.uid, mail);
+          body = mail;
+        });
+      }
+      if (!body) return res.status(404).json({ error: "Mail niet gevonden." });
+      const k = classifications.getAll(anderAccount)[uid] || {};
+      const kop = mailstore.getMails(anderAccount, "INBOX").find((m) => m.uid === uid) || {};
+      return res.json({ ...kop, ...k, ...body, account: anderAccount, mailbox: c.label || anderAccount });
+    }
 
     // Mail uit een andere map: geen AI-gegevens, gewoon de inhoud tonen.
     if (folder && folder !== "INBOX") {
@@ -1888,6 +1920,102 @@ const PORT = process.env.PORT || 10000;
 const ACHTERGROND_MS = 3 * 60 * 1000;   // elke drie minuten kijken of er nieuwe post is
 const EERSTE_START_MS = 4 * 1000;       // meteen na het opstarten beginnen
 let achtergrondBezig = false;
+
+// ---------------------------------------------------------------------------
+// JE ANDERE MAILBOX WORDT OOK BIJGEHOUDEN
+// ---------------------------------------------------------------------------
+// Je hebt twee mailboxen maar één hoofd. Mailvio werkt met één open verbinding
+// naar de mailbox waar je in zit; je andere mailbox krijgt hier zijn eigen,
+// korte verbinding. Zo staat de post van allebei op de schijf van de server en
+// kan ze samen in één inbox getoond worden, zonder dat er ooit iets van de ene
+// mailbox in de andere terechtkomt.
+const ANDERE_MAILBOX_MS = 4 * 60 * 1000;
+const ANDERE_MAILBOX_BODIES = 25;
+let andereBezig = false;
+
+async function andereMailboxenBeurt() {
+  if (andereBezig) return;
+  const alle = settingsStore.getAlleConfigs();
+  if (alle.length < 2) return;
+  const actief = settingsStore.getConfig().imapUser;
+  andereBezig = true;
+  try {
+    for (const c of alle) {
+      if (!c.imapUser || c.imapUser === actief) continue;
+      // Nooit terwijl jij bezig bent: jouw scherm gaat voor.
+      await mailbox.wachtOpRust();
+      await belasting.wachtOpRust(5000);
+      const sleutel = c.imapUser;
+      try {
+        belasting.zetBezig(`post van ${sleutel} ophalen`);
+        const hoogste = mailstore.getHoogsteUid(sleutel, "INBOX");
+        const data = await mailbox.haalInboxVan(c, hoogste);
+        if (!data.configured) continue;
+        if (data.nieuwe.length) mailstore.bewaarMails(sleutel, "INBOX", data.nieuwe, data.uidValidity);
+        if (data.alleUids && data.alleUids.length) mailstore.verwijderOntbrekende(sleutel, "INBOX", data.alleUids);
+
+        // En van de recentste berichten ook de inhoud, zodat ze meteen opengaan.
+        const teDoen = mailstore.getMails(sleutel, "INBOX")
+          .slice(0, 200)
+          .filter((m) => !mailstore.heeftBody(sleutel, "INBOX", m.uid))
+          .slice(0, ANDERE_MAILBOX_BODIES)
+          .map((m) => m.uid);
+        if (teDoen.length) {
+          await mailbox.haalBodiesVan(c, teDoen, (mail) => bewaarInhoud(sleutel, "INBOX", mail.uid, mail));
+        }
+        console.log(`Mailbox ${sleutel}: ${data.nieuwe.length} nieuw, ${teDoen.length} inhoud opgehaald.`);
+      } catch (e) {
+        console.error(`Post van ${sleutel} ophalen mislukt:`, mailbox.leesbareImapFout(e));
+      }
+    }
+  } finally {
+    andereBezig = false;
+    belasting.zetBezig("niets");
+  }
+}
+
+setTimeout(() => {
+  andereMailboxenBeurt();
+  setInterval(andereMailboxenBeurt, ANDERE_MAILBOX_MS);
+}, EERSTE_START_MS + 20000);
+
+// De post van je andere mailboxen, zoals ze op de schijf van de server staat.
+// Er wordt hier NIET met een mailserver gepraat: dit is wat de motor hierboven
+// al binnengehaald heeft, dus het gaat meteen.
+function mailsVanAndereMailboxen() {
+  const alle = settingsStore.getAlleConfigs();
+  if (alle.length < 2) return [];
+  const actief = settingsStore.getConfig().imapUser;
+  const uit = [];
+  for (const c of alle) {
+    if (!c.imapUser || c.imapUser === actief) continue;
+    const store = classifications.getAll(c.imapUser);
+    for (const m of mailstore.getMails(c.imapUser, "INBOX")) {
+      const k = store[m.uid] || {};
+      uit.push({
+        ...m,
+        // Waar deze mail vandaan komt. Zonder dit zou je hem niet kunnen openen
+        // — twee mailboxen kunnen dezelfde nummers gebruiken.
+        account: c.imapUser,
+        mailbox: c.label || c.imapUser,
+        snippet: k.snippet || m.snippet || "",
+        categorie: k.categorie || "onbekend",
+        reden: k.reden || "",
+        vanType: k.vanType || "onbekend",
+        actieLabel: k.actieLabel || "",
+        soort: k.soort || "overig",
+        belangrijk: !!k.belangrijk,
+        reclameTwijfel: !!k.reclameTwijfel,
+        aanvraag: k.aanvraag,
+        antwoordNodig: k.antwoordNodig,
+        resolved: !!k.resolved,
+        beantwoord: !!k.beantwoord,
+        genegeerd: !!k.genegeerd,
+      });
+    }
+  }
+  return uit;
+}
 
 // ---------------------------------------------------------------------------
 // MAILS DIE VANZELF NAAR EEN MAP MOETEN

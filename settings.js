@@ -118,6 +118,12 @@ function getConfig() {
     // heeft dat een afzender ziet dat de mail geopend is, kan dit uitzetten
     // bij Instellingen.
     toonAfbeeldingen: stored.toonAfbeeldingen !== false,
+    // ÉÉN INBOX VOOR AL JE MAILBOXEN.
+    // Je hebt twee mailboxen maar één hoofd. Staat dit aan, dan komt de post van
+    // allebei in dezelfde lijst te staan, met bij elke mail een label van welke
+    // mailbox ze komt. Standaard aan; je kan het uitzetten als je ze liever
+    // apart houdt.
+    samenvoegen: stored.samenvoegen !== false,
     // Hoe Mailvio JOU aanspreekt. Los van de mailboxnaam: die kan
     // "info@daklo.be" of "boekhouding" zijn, maar jij blijft dezelfde persoon.
     aanspreektitel: stored.aanspreektitel || "",
@@ -185,12 +191,20 @@ function addAccount() {
   return stored.actief;
 }
 
+// EEN INGESTELDE MAILBOX KAN NIET VERWIJDERD WORDEN.
+// Je mailboxen mogen nooit verdwijnen — niet door een misklik, niet door een
+// fout hier. Enkel een leeg, nog niet ingevuld vakje mag weg. Wil je er toch
+// eentje kwijt, dan maak je eerst zelf de gegevens leeg; dan pas kan het.
 function removeAccount(index) {
   const stored = normaliseer(readStoredSettings());
   const i = Number(index);
   if (stored.accounts.length <= 1) throw new Error("De laatste mailbox kan je niet verwijderen.");
   if (!Number.isInteger(i) || i < 0 || i >= stored.accounts.length) {
     throw new Error("Die mailbox bestaat niet.");
+  }
+  const c = accountConfig(stored.accounts[i]);
+  if (c.imapHost && c.imapUser && c.imapPassword) {
+    throw new Error(`"${accountLabel(c, i)}" is ingesteld en kan niet verwijderd worden. Maak eerst de gegevens leeg als je ze echt kwijt wil.`);
   }
   stored.accounts.splice(i, 1);
   stored.actief = Math.min(stored.actief, stored.accounts.length - 1);
@@ -219,6 +233,7 @@ function getPublicConfig() {
     aiToon: config.aiToon,
     aiHandtekening: config.aiHandtekening,
     toonAfbeeldingen: config.toonAfbeeldingen,
+    samenvoegen: config.samenvoegen,
     aanspreektitel: config.aanspreektitel,
     heeftWorkspaceId: !!config.anthropicWorkspaceId,
     anthropicWorkspaceId: config.anthropicWorkspaceId,
@@ -243,6 +258,14 @@ function updateSettings(update) {
   const tekst = (veld) => {
     if (typeof update[veld] === "string") acc[veld] = update[veld].trim();
   };
+  // DE KERN VAN EEN MAILBOX KAN NIET LEEGGEMAAKT WORDEN.
+  // Het adres en de server zijn wat een mailbox ÍS. Kwam er ooit een lege
+  // waarde binnen — een formulier dat nog niet ingevuld was, een oproep die
+  // maar één veld meestuurde — dan was je mailbox in één klap weg. Een leeg
+  // veld betekent nu "niet wijzigen", net zoals bij een wachtwoord.
+  const kern = (veld) => {
+    if (typeof update[veld] === "string" && update[veld].trim().length > 0) acc[veld] = update[veld].trim();
+  };
   const geheim = (veld) => {
     // Een leeg wachtwoordveld betekent "niet wijzigen" — zo hoef je een
     // bestaand wachtwoord niet opnieuw te typen bij elke aanpassing.
@@ -251,13 +274,13 @@ function updateSettings(update) {
 
   tekst("naam");
   tekst("displayName");
-  tekst("imapHost");
+  kern("imapHost");
   tekst("imapPort");
-  tekst("imapUser");
+  kern("imapUser");
   geheim("imapPassword");
-  tekst("smtpHost");
+  kern("smtpHost");
   tekst("smtpPort");
-  tekst("smtpUser");
+  kern("smtpUser");
   geheim("smtpPassword");
   // Handtekening mag meerdere regels bevatten — enkel spaties/lege regels aan
   // het einde weghalen, de opmaak binnenin blijft zoals de gebruiker ze typte.
@@ -275,6 +298,7 @@ function updateSettings(update) {
   if (typeof update.aiToon === "string") stored.aiToon = update.aiToon.trim();
   if (typeof update.aiHandtekening === "string") stored.aiHandtekening = update.aiHandtekening.trim();
   if (typeof update.toonAfbeeldingen === "boolean") stored.toonAfbeeldingen = update.toonAfbeeldingen;
+  if (typeof update.samenvoegen === "boolean") stored.samenvoegen = update.samenvoegen;
   if (typeof update.aanspreektitel === "string") stored.aanspreektitel = update.aanspreektitel.trim();
   if (typeof update.anthropicWorkspaceId === "string") stored.anthropicWorkspaceId = update.anthropicWorkspaceId.replace(/[\s\u200b-\u200d\ufeff]/g, "");
   if (typeof update.aiModelSnel === "string" && update.aiModelSnel.trim()) stored.aiModelSnel = update.aiModelSnel.trim();

@@ -331,3 +331,52 @@ standaard aangevinkt, en ik heb het op je account weer aangezet.
   even hoog als de mail.
 - openen 9/9 · voorrang 8/8 · sync 8/8 · bewaren 5/5 · AI 26/26 · kosten 7/7 ·
   mappen 3/3
+
+---
+
+## 19. De twee mailboxen (03-09)
+
+**Ze kunnen niet meer verdwijnen.** Een mailbox die ingesteld is — server,
+adres en wachtwoord ingevuld — kan niet verwijderd worden. Wil je er toch
+eentje kwijt, dan maak je eerst zelf de gegevens leeg. En er zat nog een
+stiller gevaar in: het adres of de server leeg opslaan wiste die mailbox
+zonder dat je het doorhad. Een leeg veld betekent nu "niet wijzigen", net als
+bij een wachtwoord.
+
+**De post van allebei staat samen in één inbox.** Op datum door elkaar, met bij
+elke mail een label van welke mailbox ze komt. Je tweede mailbox krijgt zijn
+eigen, korte verbinding — los van de verbinding met de mailbox waar je in zit —
+zodat er nooit post van de ene in de andere kan belanden. Elke vier minuten
+worden de nieuwe berichten en de inhoud van de recentste opgehaald, altijd
+alleen wanneer jij niets aan het doen bent.
+
+Gemeten in de test, met twee mailboxen die met opzet DEZELFDE mailnummers
+gebruiken: 40 mails uit info@daklo.be en 25 uit boekhouding@daklo.be samen in
+één lijst, en mail nummer 3 uit je boekhoudmailbox opent ook echt die mail —
+niet nummer 3 uit je andere mailbox.
+
+Wil je ze liever apart houden, dan zet je het samenvoegen uit.
+
+## 20. Acties gebeuren nu meteen (03-09)
+
+**Klacht:** "als je in dat dashboard wilt kiezen of iets reclame is of een echte
+mail, dat duurt superlang" — en hetzelfde bij verwijderen.
+
+**Oorzaak:** je zat te wachten tot je mailserver klaar was vóór er iets op je
+scherm veranderde. Bij tweeënzeventig afzenders is dat tweeënzeventig keer
+wachten.
+
+**Nu:** je beslissing is meteen zichtbaar en het echte werk gebeurt erachter.
+Dat geldt voor ✓ Reclame en ✗ Echte mail, voor verwijderen, archiveren en
+verplaatsen, voor afvinken, en voor het opruimen van een hele reeks tegelijk.
+Loopt er toch iets mis bij je mailserver, dan zetten we het terug en zeggen we
+het — je scherm toont nooit iets dat niet echt gebeurd is.
+
+Getest met een mailserver die er expres 2,5 seconde over doet: de kaart en de
+mail verdwijnen binnen een halve seconde.
+
+## 21. Tests (03-09)
+
+- browsertest als een mens: **93 geslaagd, 0 gefaald**
+- twee mailboxen: 10/10 · openen 9/9 · voorrang 8/8 · sync 8/8 · bewaren 5/5 ·
+  AI 26/26 · kosten 7/7 · mappen 3/3

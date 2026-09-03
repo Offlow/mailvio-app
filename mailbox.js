@@ -3,6 +3,20 @@ const { ImapFlow } = require("imapflow");
 const { simpleParser } = require("mailparser");
 const settings = require("./settings");
 
+// ---------------------------------------------------------------------------
+// TIJDELIJK IN EEN ANDERE MAILBOX WERKEN
+// ---------------------------------------------------------------------------
+// Mailvio praat met ÉÉN mailbox tegelijk, via één open verbinding. Om de post
+// van je tweede mailbox ook binnen te halen zonder dat jij van mailbox moet
+// wisselen, kan de achtergrond hier even van mailbox veranderen: de verbinding
+// gaat netjes dicht, het werk gebeurt in de andere mailbox, en daarna staat
+// alles weer zoals het stond. Alles wat jij ondertussen doet, wacht gewoon in
+// dezelfde wachtrij — er kan dus nooit post in de verkeerde mailbox belanden.
+let tijdelijkeConfig = null;
+function huidigeConfig() {
+  return tijdelijkeConfig || settings.getConfig();
+}
+
 // Veiligheidslimiet: hoeveel mails we maximaal in één keer ophalen, om een
 // (zeer) grote mailbox niet te laten vastlopen op een trage/timeoutende aanvraag.
 // Binnen die grens wordt ECHT DE VOLLEDIGE mailbox getoond — dit is enkel een
@@ -15,7 +29,7 @@ const ENVELOPE_CAP = 1500;
 const BULK_MAX_BYTES = 262144; // 256 kB
 
 function isConfigured() {
-  const c = settings.getConfig();
+  const c = huidigeConfig();
   return !!(c.imapHost && c.imapUser && c.imapPassword);
 }
 
@@ -162,13 +176,13 @@ function onthoudVerbindingsFout(e) {
     uitleg = "Je mailserver is niet bereikbaar. Kijk het adres na bij Instellingen.";
   }
   // MET TWEE MAILBOXEN MOET JE WETEN WELKE. Anders zoek je in de verkeerde.
-  const c = settings.getConfig();
+  const c = huidigeConfig();
   const mailbox = c.imapUser || "";
   foutPerMailbox.set(mailbox, { soort, uitleg, technisch: tekst, mailbox, op: Date.now() });
 }
 // De klacht over de mailbox die je NU bekijkt.
 function getVerbindingsFout(welke) {
-  const naam = welke || settings.getConfig().imapUser || "";
+  const naam = welke || huidigeConfig().imapUser || "";
   return foutPerMailbox.get(naam) || null;
 }
 // Alle klachten, zodat het scherm kan tonen dat één van je twee mailboxen niet
@@ -177,7 +191,7 @@ function alleVerbindingsFouten() {
   return [...foutPerMailbox.values()];
 }
 function wisVerbindingsFout(welke) {
-  const naam = welke || settings.getConfig().imapUser || "";
+  const naam = welke || huidigeConfig().imapUser || "";
   foutPerMailbox.delete(naam);
 }
 
@@ -200,7 +214,7 @@ setInterval(() => {
 }, 60000).unref?.();
 
 function client(config) {
-  const c = config || settings.getConfig();
+  const c = config || huidigeConfig();
   const imap = new ImapFlow({
     host: c.imapHost,
     port: Number(c.imapPort || 993),
@@ -1170,10 +1184,85 @@ async function searchAlleMailboxen(query, limitPerBox = 15) {
   return { configured: true, mails: resultaten };
 }
 
+// ---------------------------------------------------------------------------
+// DE POST VAN JE ANDERE MAILBOX OOK BINNENHALEN
+// ---------------------------------------------------------------------------
+// Mailvio houdt één verbinding open met de mailbox waar je in werkt. Je tweede
+// mailbox krijgt hier zijn EIGEN, kortstondige verbinding — los van die ene, en
+// los van de wachtrij. Zo kan er nooit post van de ene mailbox in de andere
+// terechtkomen, en hoeft er ook niets te wachten.
+// Er wordt bewust weinig gedaan: enkel de nieuwe kopregels en de inhoud van de
+// recentste berichten. Genoeg om ze in je gezamenlijke inbox te zien staan en
+// te kunnen openen.
+async function haalInboxVan(config, sindsUid, maxNieuw = 300) {
+  if (!config || !config.imapHost || !config.imapUser || !config.imapPassword) {
+    return { configured: false, nieuwe: [], alleUids: [], uidValidity: null };
+  }
+  const imap = client(config);
+  await imap.connect();
+  try {
+    const lock = await imap.getMailboxLock("INBOX");
+    try {
+      const uidValidity = imap.mailbox && imap.mailbox.uidValidity ? String(imap.mailbox.uidValidity) : null;
+      const alle = (await imap.search({ all: true }, { uid: true })) || [];
+      const bestaande = alle.map(Number);
+      const teHalen = bestaande.filter((u) => u > Number(sindsUid || 0)).slice(-maxNieuw);
+      const nieuwe = [];
+      if (teHalen.length) {
+        for await (const msg of imap.fetch(teHalen, { envelope: true, flags: true, bodyStructure: true }, { uid: true })) {
+          nieuwe.push({
+            uid: msg.uid,
+            from: msg.envelope.from?.[0]?.name || msg.envelope.from?.[0]?.address || "Onbekend",
+            fromAddress: msg.envelope.from?.[0]?.address || "",
+            subject: msg.envelope.subject || "(geen onderwerp)",
+            date: veiligeDatum(msg.envelope.date),
+            unread: !msg.flags.has("\\Seen"),
+            heeftBijlage: heeftBijlage(msg.bodyStructure),
+          });
+          // De app tussendoor laten ademen, net als bij je eigen mailbox.
+          await new Promise((r) => setImmediate(r));
+        }
+      }
+      return { configured: true, nieuwe, alleUids: bestaande, uidValidity };
+    } finally {
+      lock.release();
+    }
+  } finally {
+    await imap.logout().catch(() => {});
+  }
+}
+
+// De inhoud van een reeks berichten uit je andere mailbox, over diezelfde
+// eigen verbinding.
+async function haalBodiesVan(config, uids, onMail) {
+  if (!config || !uids || !uids.length) return 0;
+  const imap = client(config);
+  await imap.connect();
+  let aantal = 0;
+  try {
+    const lock = await imap.getMailboxLock("INBOX");
+    try {
+      for await (const msg of imap.fetch(uids, { envelope: true, bodyStructure: true, size: true, source: { start: 0, maxLength: BULK_MAX_BYTES } }, { uid: true })) {
+        try {
+          const afgekapt = typeof msg.size === "number" && msg.size > BULK_MAX_BYTES;
+          const mail = await bouwMail(msg.uid, msg, { afgekapt });
+          if (mail) { onMail(mail); aantal++; }
+        } catch (e) { /* deze mail overslaan */ }
+        await new Promise((r) => setImmediate(r));
+      }
+    } finally {
+      lock.release();
+    }
+  } finally {
+    await imap.logout().catch(() => {});
+  }
+  return aantal;
+}
+
 // Even proberen aan te melden bij je mailserver en meteen zeggen of het lukt.
 // Zo hoef je na het invullen van een wachtwoord niet te gokken.
 async function testAanmelden(config) {
-  const c = config || settings.getConfig();
+  const c = config || huidigeConfig();
   if (!c.imapHost || !c.imapUser || !c.imapPassword) {
     return { ok: false, uitleg: "Vul eerst de server, je e-mailadres en je wachtwoord in." };
   }
@@ -1202,6 +1291,8 @@ module.exports = {
   metVoorrang,
   wachtOpRust,
   fetchMailBodies,
+  haalInboxVan,
+  haalBodiesVan,
   searchAlleMailboxen,
   fetchAllMails,
   fetchNieuweMails,

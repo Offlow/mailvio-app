@@ -321,6 +321,8 @@
   .notitieStatus{font-size:11.5px;color:var(--ink-faint);margin-top:5px;min-height:15px}
 
   /* Reclame-vraag op het dashboard */
+  /* Uit welke van je mailboxen een bericht komt. */
+  .tag.mailboxTag{background:#eef2ff;color:#3730a3;border:1px solid #c7d2fe}
   .twijfelKaart{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:12px;margin-bottom:8px}
   .twijfelKaart .info{flex:1 1 auto;min-width:0}
   .twijfelKaart .van{font-weight:800;font-size:13px}
@@ -1734,8 +1736,17 @@ function renderOpruimen() {
       })).json();
       showToast(`${r.gelukt} mail${r.gelukt === 1 ? "" : "s"} naar de prullenmand.${(r.mislukt || []).length ? ` ${r.mislukt.length} lukte niet.` : ""}`);
       state.opruimGekozen = new Set();
-      await loadMails(true);
-      await laadOpruimen();
+      // De lijst meteen bijwerken zonder op de server te wachten: wat weg is,
+      // is weg. Het opnieuw ophalen gebeurt erachter.
+      const weg = new Set(uids.filter((u) => !(r.mislukt || []).includes(u)));
+      state.mails = (state.mails || []).filter((m) => !weg.has(m.uid));
+      if (state.opruimen && Array.isArray(state.opruimen.voorstellen)) {
+        state.opruimen.voorstellen = state.opruimen.voorstellen.filter((m) => !weg.has(m.uid));
+      }
+      state._mailAfdruk = null;
+      renderSidebarCounts();
+      renderView(true);
+      loadMails(true).then(() => laadOpruimen());
       loadFolders();
     } catch (e) {
       showToast("Opruimen mislukte: " + e.message);
@@ -2890,24 +2901,15 @@ function renderVandaag() {
 // adres meteen op de juiste plek — Mailvio vraagt het geen tweede keer.
 async function beslisOverAfzender(adres, reclame) {
   if (!adres) return;
-  try {
-    await fetch("/api/afzender/oordeel", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ adres, reclame }),
-    });
-  } catch (e) {
-    showToast("Kon dit niet bewaren: " + e.message);
-    return;
-  }
-  showToast(reclame ? `Alles van ${adres} gaat voortaan naar Reclame.` : `${adres} blijft gewone post.`);
-  // METEEN WEG UIT HET SCHERM.
-  // Vroeger bleef de kaart staan tot de mails op de achtergrond ververst waren
-  // — en omdat er verder niets veranderde, werd het scherm soms helemaal niet
-  // opnieuw getekend. Nu passen we het hier zelf aan en tekenen we meteen.
+  // EERST JE SCHERM, DAN PAS DE SERVER.
+  // Je zat te wachten tot de server geantwoord had vóór de kaart verdween — bij
+  // tweeënzeventig afzenders is dat tweeënzeventig keer wachten. Je beslissing
+  // is meteen zichtbaar; het bewaren gebeurt erachter.
   const a = String(adres).toLowerCase();
+  const vorige = [];
   for (const m of state.mails || []) {
     if (String(m.fromAddress || "").toLowerCase() !== a) continue;
+    vorige.push({ m, soort: m.soort, categorie: m.categorie, belangrijk: m.belangrijk, actieLabel: m.actieLabel, twijfel: m.reclameTwijfel, beslist: m.afzenderBeslist });
     m.afzenderBeslist = true;
     m.reclameTwijfel = false;
     if (reclame) { m.soort = "reclame"; m.categorie = "geen_actie"; m.belangrijk = false; m.actieLabel = ""; }
@@ -2916,7 +2918,29 @@ async function beslisOverAfzender(adres, reclame) {
   state._mailAfdruk = null; // zorgt dat de volgende verversing wél hertekent
   renderSidebarCounts();
   renderView(true);
-  await loadMails(true);
+
+  try {
+    const res = await fetch("/api/afzender/oordeel", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ adres, reclame }),
+    });
+    if (!res.ok) throw new Error("de server gaf een fout");
+  } catch (e) {
+    // Niet bewaard? Dan mag je scherm het ook niet blijven beweren.
+    for (const v of vorige) {
+      v.m.soort = v.soort; v.m.categorie = v.categorie; v.m.belangrijk = v.belangrijk;
+      v.m.actieLabel = v.actieLabel; v.m.reclameTwijfel = v.twijfel; v.m.afzenderBeslist = v.beslist;
+    }
+    state._mailAfdruk = null;
+    renderSidebarCounts();
+    renderView(true);
+    showToast("Kon dit niet bewaren: " + e.message);
+    return;
+  }
+  showToast(reclame ? `Alles van ${adres} gaat voortaan naar Reclame.` : `${adres} blijft gewone post.`);
+  // De mails opnieuw ophalen mag rustig achter je rug gebeuren.
+  loadMails(true);
 }
 
 // Vroeg je om een mail te schrijven? Dan bieden we hem meteen aan om te
@@ -3027,17 +3051,21 @@ function statusPill(m) {
 // Vandaag/Openstaande Zaken verdwijnt. Werkt de lokale state bij én de
 // server, zodat het overleeft tot de gebruiker het zelf weer terugzet.
 async function resolveMail(uid, resolved) {
+  // Afvinken is meteen zichtbaar; het bewaren gebeurt erachter. Lukt dat niet,
+  // dan gaat het vinkje weer weg.
+  markResolvedLocally(uid, resolved);
   try {
-    await fetch(`/api/mails/${uid}/resolve`, {
+    const res = await fetch(`/api/mails/${uid}/resolve`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ resolved }),
     });
+    if (!res.ok) throw new Error("de server gaf een fout");
   } catch (e) {
+    markResolvedLocally(uid, !resolved);
     showToast("Kon niet bijwerken: " + e.message);
     return;
   }
-  markResolvedLocally(uid, resolved);
   showToast(resolved ? "Gemarkeerd als afgehandeld." : "Terug geopend.");
 }
 
@@ -3070,12 +3098,18 @@ function vanTypeLabel(t) {
   return VANTYPE_LABEL[t] || t.charAt(0).toUpperCase() + t.slice(1);
 }
 
+// Het deel voor de @ volstaat om te zien uit welke mailbox iets komt.
+function korteMailbox(naam) {
+  const n = String(naam || "");
+  return n.includes("@") ? n.split("@")[0] : n;
+}
+
 function mailRowHtml(m, plain) {
   return `
-    <div class="mailRow" draggable="true" data-open="${m.uid}" data-sleep="${m.uid}">
+    <div class="mailRow" draggable="true" data-open="${m.uid}" data-sleep="${m.uid}"${m.account ? ` data-account="${escapeHtml(m.account)}"` : ""}>
       <span class="unreadDot ${m.unread ? "" : "read"}"></span>
       <span class="avatar" style="width:32px;height:32px;font-size:11px">${initials(m.from)}</span>
-      <div class="from"><span class="name">${escapeHtml(m.from)}</span>${!plain && m.vanType && m.vanType !== "onbekend" ? `<span class="tag ${m.vanType}">${vanTypeLabel(m.vanType)}</span>` : ""}</div>
+      <div class="from"><span class="name">${escapeHtml(m.from)}</span>${m.mailbox ? `<span class="tag mailboxTag" title="Uit je mailbox ${escapeHtml(m.mailbox)}">${escapeHtml(korteMailbox(m.mailbox))}</span>` : ""}${!plain && m.vanType && m.vanType !== "onbekend" ? `<span class="tag ${m.vanType}">${vanTypeLabel(m.vanType)}</span>` : ""}</div>
       <div class="subj">${m.soort === "phishing" ? '<span class="phishing" title="Dit lijkt oplichting — niet op klikken, niets betalen">⚠ Oplichting?</span>' : ""}<b>${escapeHtml(m.subject)}</b>${m.heeftBijlage ? `<span class="clip" title="Heeft een bijlage">📎</span>` : ""}<span class="snip">— ${escapeHtml(m.snippet || "")}</span></div>
       ${plain ? "" : (() => { const p = statusPill(m); return p ? `<span class="pill ${p.cls}">${escapeHtml(p.text)}</span>` : ""; })()}
       <div class="time">${tijdOfDatum(m.date)}</div>
@@ -3713,8 +3747,11 @@ async function openKlantContext(address, name) {
 // ---------------------------------------------------------------------------
 // Mail detail
 // ---------------------------------------------------------------------------
-async function openMail(uid, folder) {
+async function openMail(uid, folder, account) {
   const uitMap = folder && folder !== "INBOX";
+  // Uit welke mailbox komt deze mail? Twee mailboxen kunnen dezelfde nummers
+  // gebruiken, dus zonder dit zou je de verkeerde mail openen.
+  const uitAndereMailbox = account || ((state.mails || []).find((m) => m.uid === uid) || {}).account || "";
   state.view = "mail";
   state.currentUid = uid;
   state.currentFolder = uitMap ? folder : "INBOX";
@@ -3746,11 +3783,13 @@ async function openMail(uid, folder) {
     renderView();
   });
 
-  const cacheKey = uitMap ? `${folder}:${uid}` : String(uid);
+  const cacheKey = (uitAndereMailbox ? uitAndereMailbox + ":" : "") + (uitMap ? `${folder}:${uid}` : String(uid));
   let detail = state.mailDetail[cacheKey];
   if (!detail) {
     try {
-      const url = `/api/mails/${uid}` + (uitMap ? "?folder=" + encodeURIComponent(folder) : "");
+      const url = `/api/mails/${uid}`
+        + (uitMap ? "?folder=" + encodeURIComponent(folder) : "")
+        + (uitAndereMailbox ? (uitMap ? "&" : "?") + "account=" + encodeURIComponent(uitAndereMailbox) : "");
       detail = await (await fetch(url)).json();
       state.mailDetail[cacheKey] = detail;
     } catch (e) {
@@ -4388,6 +4427,21 @@ async function verplaatsMail(uid, doel) {
     : doel.startsWith("map:") ? `de map ${doel.slice(4)}`
     : "het archief";
   const folder = state.currentFolder && state.currentFolder !== "INBOX" ? state.currentFolder : undefined;
+
+  // METEEN VAN JE SCHERM, DAARNA PAS NAAR DE MAILSERVER.
+  // Vroeger stond je te wachten tot je mailserver klaar was vóór je iets zag
+  // gebeuren — bij het opruimen van tien mails is dat tien keer wachten. Nu
+  // verdwijnt de mail meteen en gebeurt het echte werk erachter. Loopt het toch
+  // mis, dan zetten we hem terug en zeggen we het.
+  const wegMails = (state.mails || []).filter((m) => m.uid === uid);
+  const wegMap = (state.folderMails || []).filter((m) => m.uid === uid);
+  state.mails = (state.mails || []).filter((m) => m.uid !== uid);
+  state.folderMails = (state.folderMails || []).filter((m) => m.uid !== uid);
+  // BLIJF WAAR JE BENT. Vroeger sprong je na elke actie terug naar de inbox.
+  state._mailAfdruk = null;
+  renderSidebarCounts();
+  renderView(true);
+
   try {
     const res = await fetch(`/api/mails/${uid}/move`, {
       method: "POST",
@@ -4396,20 +4450,18 @@ async function verplaatsMail(uid, doel) {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Verplaatsen mislukt.");
-    // Uit de lijsten halen zodat het overzicht meteen klopt.
-    state.mails = state.mails.filter((m) => m.uid !== uid);
-    state.folderMails = (state.folderMails || []).filter((m) => m.uid !== uid);
     showToast(data.gemarkeerd
       ? `Gemarkeerd als verwijderd (geen aparte map op de server).`
       : `Verplaatst naar ${naam}.`);
-    // BLIJF WAAR JE BENT. Vroeger sprong je na elke actie terug naar de inbox,
-    // ook als je op je dashboard of in een ander scherm bezig was.
+    loadFolders();
+  } catch (e) {
+    // Terugzetten: je scherm mag nooit iets tonen dat niet echt gebeurd is.
+    state.mails = wegMails.concat(state.mails || []).sort((a, b) => new Date(b.date) - new Date(a.date));
+    state.folderMails = wegMap.concat(state.folderMails || []);
     state._mailAfdruk = null;
     renderSidebarCounts();
     renderView(true);
-    loadFolders();
-  } catch (e) {
-    showToast(e.message);
+    showToast("Verplaatsen lukte niet: " + e.message);
   }
 }
 
